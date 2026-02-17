@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
+label="${PROMPTPAD_LAUNCH_AGENT_LABEL:-com.promptpad.app}"
+plist_path="${HOME}/Library/LaunchAgents/${label}.plist"
+app_path_default="$repo_root/.build/release/promptpad-app"
+
+usage() {
+  cat <<'EOF'
+usage:
+  promptpad-launch-agent install [--app /abs/path/to/promptpad-app]
+  promptpad-launch-agent uninstall
+  promptpad-launch-agent status
+EOF
+}
+
+require_macos() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "promptpad-launch-agent is macOS-only" >&2
+    exit 2
+  fi
+}
+
+uid="$(id -u)"
+
+bootout_if_loaded() {
+  launchctl bootout "gui/${uid}" "$plist_path" >/dev/null 2>&1 || true
+}
+
+install_agent() {
+  local app_path="$app_path_default"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --app)
+        [[ $# -ge 2 ]] || { echo "missing value for --app" >&2; exit 2; }
+        app_path="$2"
+        shift 2
+        ;;
+      *)
+        echo "unknown arg: $1" >&2
+        exit 2
+        ;;
+    esac
+  done
+
+  if [[ ! -x "$app_path" ]]; then
+    echo "promptpad-app not executable at: $app_path" >&2
+    echo "build first: swift build -c release" >&2
+    exit 1
+  fi
+
+  mkdir -p "${HOME}/Library/LaunchAgents"
+  cat >"$plist_path" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${label}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${app_path}</string>
+    <string>--start-hidden</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+</dict>
+</plist>
+EOF
+
+  bootout_if_loaded
+  launchctl bootstrap "gui/${uid}" "$plist_path"
+  launchctl enable "gui/${uid}/${label}" >/dev/null 2>&1 || true
+  launchctl kickstart -k "gui/${uid}/${label}" >/dev/null 2>&1 || true
+
+  echo "Installed LaunchAgent:"
+  echo "$plist_path"
+}
+
+uninstall_agent() {
+  bootout_if_loaded
+  rm -f "$plist_path"
+  echo "Uninstalled LaunchAgent:"
+  echo "$plist_path"
+}
+
+status_agent() {
+  if [[ ! -f "$plist_path" ]]; then
+    echo "not installed"
+    return 0
+  fi
+  echo "installed plist:"
+  echo "$plist_path"
+  launchctl print "gui/${uid}/${label}" 2>/dev/null || true
+}
+
+main() {
+  require_macos
+  [[ $# -ge 1 ]] || { usage; exit 2; }
+  case "$1" in
+    install)
+      shift
+      install_agent "$@"
+      ;;
+    uninstall)
+      shift
+      uninstall_agent "$@"
+      ;;
+    status)
+      shift
+      status_agent "$@"
+      ;;
+    -h|--help|help)
+      usage
+      ;;
+    *)
+      usage
+      exit 2
+      ;;
+  esac
+}
+
+main "$@"

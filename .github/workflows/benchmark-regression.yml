@@ -1,0 +1,45 @@
+name: benchmark-editor-regression
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "Sources/**"
+      - "scripts/**"
+      - "bench/**"
+      - "Package.swift"
+      - ".github/workflows/benchmark-regression.yml"
+
+jobs:
+  editor-benchmark:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build release binaries
+        run: swift build -c release
+
+      - name: Run benchmark
+        run: |
+          mkdir -p tmp/bench-ci
+          ./.build/release/promptpad bench run \
+            --path bench/fixtures/dictation_flush_mode.md \
+            --warm 20 \
+            --cold 4 \
+            --out tmp/bench-ci/editor-results.json
+
+      - name: Enforce baseline thresholds
+        run: |
+          ./.build/release/promptpad bench check \
+            --baseline bench/editor/baseline.json \
+            --results tmp/bench-ci/editor-results.json
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: promptpad-editor-benchmark-results
+          path: |
+            tmp/bench-ci/editor-results.json

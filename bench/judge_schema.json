@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PromptPadPromptEngineeringJudge",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "overall",
+    "fidelity",
+    "structure",
+    "specificity",
+    "constraints",
+    "testability",
+    "safety",
+    "has_code_fences",
+    "looks_like_chat",
+    "notes"
+  ],
+  "properties": {
+    "overall": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "fidelity": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "structure": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "specificity": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "constraints": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "testability": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "safety": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "has_code_fences": { "type": "boolean" },
+    "looks_like_chat": { "type": "boolean" },
+    "notes": {
+      "type": "array",
+      "maxItems": 6,
+      "items": { "type": "string", "maxLength": 200 }
+    }
+  }
+}
+
