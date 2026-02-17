@@ -6,4 +6,5 @@ public enum PromptPadMethod {
   public static let sessionSave = "promptpad.session.save"
   public static let sessionWait = "promptpad.session.wait"
   public static let appQuit = "promptpad.app.quit"
+  public static let benchMetrics = "promptpad.bench.metrics"
 }

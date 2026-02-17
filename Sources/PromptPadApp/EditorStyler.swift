@@ -92,7 +92,7 @@ final class MarkdownStyler {
         attrs = [.foregroundColor: EditorTheme.markerText]
       case let .quoteText(level):
         _ = level
-        attrs = [.foregroundColor: EditorTheme.secondaryText]
+        attrs = [.foregroundColor: EditorTheme.primaryText]
       case .horizontalRule:
         attrs = [.foregroundColor: EditorTheme.markerText]
       case .inlineCodeDelimiter:

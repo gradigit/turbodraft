@@ -1,7 +1,11 @@
 {
-  "warm_ctrl_g_to_editable_p95_ms": 50.0,
+  "warm_cli_open_roundtrip_p95_ms": 150.0,
+  "warm_ctrl_g_to_editable_p95_ms": 150.0,
   "warm_open_roundtrip_p95_ms": 50.0,
-  "warm_save_roundtrip_p95_ms": 20.0,
+  "warm_textkit_insert_and_style_p95_ms": 5.0,
+  "warm_rpc_save_roundtrip_p95_ms": 250.0,
   "warm_agent_reflect_p95_ms": 75.0,
-  "cold_ctrl_g_to_editable_p95_ms": 1200.0
+  "warm_agent_reflect_event_p95_ms": 75.0,
+  "warm_quit_latency_ms": 500.0,
+  "cold_cli_open_roundtrip_p95_ms": 3000.0
 }

@@ -111,6 +111,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     editorVC.restorePreviousBuffer()
   }
 
+  var typingLatencySamples: [Double] {
+    editorVC.typingLatencySamples
+  }
+
   func flushAutosaveNow(reason: String = "forced_flush") async {
     await editorVC.flushAutosaveNow(reason: reason)
   }

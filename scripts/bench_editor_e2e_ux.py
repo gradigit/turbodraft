@@ -121,7 +121,7 @@ tell application "System Events"
     delay 0.01
   end repeat
   if found is false then error "PromptPad did not become frontmost"
-  delay 0.06
+  delay 0.04
   -- Click near center to force text focus before typing.
   try
     tell targetProc
@@ -133,12 +133,11 @@ tell application "System Events"
       end if
     end tell
   end try
-  delay 0.03
+  delay 0.02
   keystroke "{safe_token}"
-  -- Allow autosave debounce window to flush to disk.
   delay {autosave_settle_s:.2f}
   keystroke "s" using command down
-  delay 0.10
+  delay 0.05
   keystroke "w" using command down
 end tell
 '''
@@ -147,36 +146,63 @@ end tell
         raise RuntimeError(f"failed to automate PromptPad edit/close: {cp.stderr.strip()}")
 
 
-def kill_promptpad(socket_path: pathlib.Path) -> None:
-    try:
-        ps = subprocess.run(
-            ["ps", "-axo", "pid=,command="],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            check=False,
-        )
-        for line in ps.stdout.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split(None, 1)
-            if len(parts) != 2:
-                continue
-            pid_s, cmd = parts
-            if "promptpad-app" not in cmd:
-                continue
-            try:
-                os.kill(int(pid_s), 15)
-            except Exception:
-                pass
-    except Exception:
-        pass
+def kill_promptpad(socket_path: pathlib.Path, bin_path: Optional[pathlib.Path] = None) -> None:
+    if bin_path:
+        # Targeted kill: match exact binary path to avoid killing unrelated processes.
+        subprocess.run(["pkill", "-9", "-f", str(bin_path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        try:
+            ps = subprocess.run(
+                ["ps", "-axo", "pid=,command="],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                check=False,
+            )
+            for line in ps.stdout.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split(None, 1)
+                if len(parts) != 2:
+                    continue
+                pid_s, cmd = parts
+                if "promptpad-app" not in cmd:
+                    continue
+                try:
+                    os.kill(int(pid_s), 15)
+                except Exception:
+                    pass
+        except Exception:
+            pass
     try:
         socket_path.unlink(missing_ok=True)
     except Exception:
         pass
     time.sleep(0.10)
+
+
+def measure_applescript_overhead(process_name: str, n: int = 10) -> Dict[str, float]:
+    """Measure bare AppleScript round-trip overhead for calibration."""
+    script = f'''
+tell application "System Events"
+    get frontmost of process "{apple_escape(process_name)}"
+end tell
+'''
+    samples: List[float] = []
+    for _ in range(n):
+        t0 = time.perf_counter()
+        try:
+            run_osascript(script, timeout_s=5.0)
+        except Exception:
+            continue
+        samples.append((time.perf_counter() - t0) * 1000.0)
+    if not samples:
+        return {"median_ms": 0.0, "p95_ms": 0.0}
+    return {
+        "median_ms": float(statistics.median(samples)),
+        "p95_ms": float(percentile_nearest_rank(samples, 0.95) or 0.0),
+    }
 
 
 def wait_for_record(log_path: pathlib.Path, offset: int, timeout_s: float) -> Tuple[Dict[str, Any], int]:
@@ -292,6 +318,7 @@ def run_mode(
     offset: int,
     harness_proc: Optional[subprocess.Popen] = None,
     autosave_settle_s: float = 0.20,
+    bin_path: Optional[pathlib.Path] = None,
 ) -> Tuple[ModeResult, int]:
     valid: List[Dict[str, Any]] = []
     invalid: List[Dict[str, Any]] = []
@@ -303,11 +330,12 @@ def run_mode(
             errors.append({"mode": mode, "attempt": attempts + 1, "error": f"harness died (rc={harness_proc.returncode})"})
             break
         attempts += 1
-        token = f"e2e{mode}{attempts}{int(time.time() * 1000)}"
+        # Short token (6 chars) to minimize AppleScript keystroke overhead.
+        token = f"{mode[0]}{attempts}{int(time.time()) % 10000:04d}"
 
         try:
             if mode == "cold":
-                kill_promptpad(socket_path)
+                kill_promptpad(socket_path, bin_path=bin_path)
 
             trigger_ctrl_g(harness_process_name)
             automate_promptpad_edit(token, timeout_s=max(5.0, timeout_s - 2.0), autosave_settle_s=autosave_settle_s)
@@ -418,6 +446,12 @@ def main() -> int:
         offset = 0
         multiplier = max(1, int(args.max_attempt_multiplier))
 
+        # Calibrate AppleScript overhead before benchmark runs.
+        overhead = measure_applescript_overhead(args.harness_process_name, n=10)
+        overhead_median_ms = overhead["median_ms"]
+        print(f"applescript_overhead_median_ms\t{overhead_median_ms:.1f}")
+        print(f"applescript_overhead_p95_ms\t{overhead['p95_ms']:.1f}")
+
         cold_result, offset = run_mode(
             mode="cold",
             target_valid=max(0, args.cold),
@@ -430,6 +464,7 @@ def main() -> int:
             offset=offset,
             harness_proc=harness_proc,
             autosave_settle_s=float(args.autosave_settle_s),
+            bin_path=harness_bin.parent / "promptpad-app",
         )
 
         warm_result, offset = run_mode(
@@ -444,7 +479,14 @@ def main() -> int:
             offset=offset,
             harness_proc=harness_proc,
             autosave_settle_s=float(args.autosave_settle_s),
+            bin_path=harness_bin.parent / "promptpad-app",
         )
+
+        # Add adjusted interaction metric (subtracting AppleScript overhead).
+        for rec in warm_result.valid + warm_result.invalid:
+            interaction_ms = numeric(rec.get("phasePromptPadInteractionMs"))
+            if interaction_ms is not None:
+                rec["phasePromptPadInteractionMs_adjusted"] = max(0.0, interaction_ms - overhead_median_ms)
 
         cold_all = cold_result.valid + cold_result.invalid
         warm_all = warm_result.valid + warm_result.invalid
@@ -489,6 +531,9 @@ def main() -> int:
                 "median_ci": "bootstrap_95",
                 "bootstrap_rounds": 2000,
                 "reporting": "p95 is computed from valid runs only",
+                "applescript_overhead_median_ms": overhead_median_ms,
+                "applescript_overhead_p95_ms": overhead["p95_ms"],
+                "adjusted_metrics_note": "phasePromptPadInteractionMs_adjusted subtracts AppleScript overhead (approximate)",
             },
         }
 
@@ -519,7 +564,7 @@ def main() -> int:
             harness_proc.kill()
         harness_log.close()
         harness_err.close()
-        kill_promptpad(socket_path)
+        kill_promptpad(socket_path, bin_path=harness_bin.parent / "promptpad-app")
 
 
 if __name__ == "__main__":

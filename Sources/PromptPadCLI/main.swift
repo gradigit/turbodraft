@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import Foundation
 import PromptPadConfig
@@ -21,8 +22,8 @@ promptpad
 Commands:
   promptpad config init [--path <path>]
   promptpad open --path <file> [--line N] [--column N] [--wait] [--timeout-ms N] [--stdio]
-  promptpad bench run --path <file> [--warm N] [--cold N] [--out <file.json>]
-  promptpad bench check --baseline <file.json> --results <file.json>
+  promptpad bench run --path <file> [--fixture-dir <dir>] [--warm N] [--cold N] [--warmup-discard N] [--out <file.json>]
+  promptpad bench check --baseline <file.json> --results <file.json> [--compare <previous.json>]
 """
 
   func run() throws {
@@ -146,213 +147,438 @@ Commands:
     var osVersion: String
     var warmN: Int
     var coldN: Int
+    var warmupDiscard: Int
     var metrics: [String: Double]
+    var rawSamples: [String: [Double]]
   }
 
   private func runBenchRun() throws {
-    guard let path = argValue("--path") else { throw CLIError.invalidArgs("bench run requires --path") }
     let warmN = argInt("--warm") ?? 50
-    let coldN = argInt("--cold") ?? 0
+    let coldN = argInt("--cold") ?? 10
+    let warmupDiscard = argInt("--warmup-discard") ?? 3
     let outPath = argValue("--out")
 
     let cfg = PromptPadConfig.load()
     let socketPath = cfg.socketPath
 
-    // Save original fixture content so we can restore it after the bench mutates it.
-    let fixtureURL = URL(fileURLWithPath: path)
-    let originalContent = try String(contentsOf: fixtureURL, encoding: .utf8)
-    defer {
-      // SIGKILL the app so its terminate flush can't overwrite our restore.
-      _ = try? posixSpawnAndWait(command: "pkill", arguments: ["-9", "-f", "promptpad-app"])
-      Thread.sleep(forTimeInterval: 0.5)
-      try? FileManager.default.removeItem(atPath: socketPath)
-      try? Data(originalContent.utf8).write(to: fixtureURL, options: [.atomic])
-    }
-
-    var metrics: [String: Double] = [:]
-
-    // Warm bench: ensure running.
-    _ = try openViaSocket(socketPath: socketPath, path: path, line: 1, column: 1, timeoutMs: 60_000)
-    Thread.sleep(forTimeInterval: 0.05)
-
-    // Warm Ctrl+G to editable: include CLI process startup (spawn 'promptpad open' repeatedly).
-    _ = try runCtrlGOpenOnce(path: path) // warm caches
-    Thread.sleep(forTimeInterval: 0.05)
-
-    var ctrlGSamplesMs: [Double] = []
-    for _ in 0..<warmN {
-      let start = DispatchTime.now().uptimeNanoseconds
-      let code = try runCtrlGOpenOnce(path: path)
-      if code != 0 {
-        throw CLIError.benchFailed("spawned open exited \(code)")
+    // Bench lockfile to prevent concurrent runs.
+    let lockDir = try PromptPadPaths.applicationSupportDir()
+    let lockPath = lockDir.appendingPathComponent("bench.lock").path
+    if FileManager.default.fileExists(atPath: lockPath) {
+      let existingPid = try? String(contentsOfFile: lockPath, encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      if let pidStr = existingPid, let pid = Int(pidStr), kill(pid_t(pid), 0) == 0 {
+        throw CLIError.benchFailed("Another bench is running (PID \(pidStr))")
       }
-      let end = DispatchTime.now().uptimeNanoseconds
-      ctrlGSamplesMs.append(Double(end - start) / 1_000_000.0)
-      Thread.sleep(forTimeInterval: 0.01)
+      try? FileManager.default.removeItem(atPath: lockPath)
     }
-    let warmCtrlGP95 = percentile(ctrlGSamplesMs, p: 0.95)
-    let warmCtrlGMedian = percentile(ctrlGSamplesMs, p: 0.50)
-    print("warm_ctrl_g_to_editable_p95_ms=\(String(format: "%.2f", warmCtrlGP95))")
-    print("warm_ctrl_g_to_editable_median_ms=\(String(format: "%.2f", warmCtrlGMedian))")
-    metrics["warm_ctrl_g_to_editable_p95_ms"] = warmCtrlGP95
-    metrics["warm_ctrl_g_to_editable_median_ms"] = warmCtrlGMedian
+    try "\(getpid())".write(toFile: lockPath, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(atPath: lockPath) }
 
-    // Warm open round-trip (in-process, no extra process launch).
-    var samplesMs: [Double] = []
-    for _ in 0..<warmN {
-      let start = DispatchTime.now().uptimeNanoseconds
-      _ = try openViaSocket(socketPath: socketPath, path: path, line: 1, column: 1, timeoutMs: 60_000)
-      let end = DispatchTime.now().uptimeNanoseconds
-      samplesMs.append(Double(end - start) / 1_000_000.0)
-    }
-    let warmOpenP95 = percentile(samplesMs, p: 0.95)
-    let warmOpenMedian = percentile(samplesMs, p: 0.50)
-    print("warm_open_roundtrip_p95_ms=\(String(format: "%.2f", warmOpenP95))")
-    print("warm_open_roundtrip_median_ms=\(String(format: "%.2f", warmOpenMedian))")
-    metrics["warm_open_roundtrip_p95_ms"] = warmOpenP95
-    metrics["warm_open_roundtrip_median_ms"] = warmOpenMedian
-
-    // Warm text engine microbenchmark (synthetic insertion + markdown highlight pass).
-    let initialText = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
-    let textKitTimings = syntheticTypingTimings(initialText: initialText, samples: warmN)
-    let warmTextKitP95 = percentile(textKitTimings, p: 0.95)
-    let warmTextKitMedian = percentile(textKitTimings, p: 0.50)
-    print("warm_textkit_highlight_p95_ms=\(String(format: "%.2f", warmTextKitP95))")
-    print("warm_textkit_highlight_median_ms=\(String(format: "%.2f", warmTextKitMedian))")
-    metrics["warm_textkit_highlight_p95_ms"] = warmTextKitP95
-    metrics["warm_textkit_highlight_median_ms"] = warmTextKitMedian
-
-    // Warm autosave bench: measure sessionSave RPC time over a single connection.
-    do {
-      let fd = try connectOrLaunch(socketPath: socketPath, timeoutMs: 60_000)
-      let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-      let conn = JSONRPCConnection(readHandle: handle, writeHandle: handle)
-      try sendHello(conn)
-      let openRes = try sendSessionOpen(conn, path: path, line: 1, column: 1)
-
-      var saveSamplesMs: [Double] = []
-      for i in 0..<warmN {
-        let content = "PromptPad bench save \(i)\n\n" + String(repeating: "x", count: 4096)
-        let start = DispatchTime.now().uptimeNanoseconds
-        _ = try sendSessionSave(conn, sessionId: openRes.sessionId, content: content)
-        let end = DispatchTime.now().uptimeNanoseconds
-        saveSamplesMs.append(Double(end - start) / 1_000_000.0)
+    // Determine fixture paths: --fixture-dir iterates all .md files, --path uses a single file.
+    let fixturePaths: [(path: String, suffix: String)]
+    if let dir = argValue("--fixture-dir") {
+      let files = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+      let mdFiles = files.filter { $0.hasSuffix(".md") }.sorted()
+      guard !mdFiles.isEmpty else { throw CLIError.invalidArgs("no .md files in --fixture-dir") }
+      fixturePaths = mdFiles.map { name in
+        let fullPath = (dir as NSString).appendingPathComponent(name)
+        let size = (try? FileManager.default.attributesOfItem(atPath: fullPath)[.size] as? Int) ?? 0
+        return (path: fullPath, suffix: "_\(sizeSuffix(size))")
       }
-      let warmSaveP95 = percentile(saveSamplesMs, p: 0.95)
-      let warmSaveMedian = percentile(saveSamplesMs, p: 0.50)
-      print("warm_save_roundtrip_p95_ms=\(String(format: "%.2f", warmSaveP95))")
-      print("warm_save_roundtrip_median_ms=\(String(format: "%.2f", warmSaveMedian))")
-      metrics["warm_save_roundtrip_p95_ms"] = warmSaveP95
-      metrics["warm_save_roundtrip_median_ms"] = warmSaveMedian
+    } else if let path = argValue("--path") {
+      fixturePaths = [(path: path, suffix: "")]
+    } else {
+      throw CLIError.invalidArgs("bench run requires --path or --fixture-dir")
     }
 
-    // Warm reflect bench: external disk writes should reflect back into session content quickly.
-    // This uses an event-driven server wait (no client poll loop) to avoid quantization bias.
-    do {
-      let fileURL = URL(fileURLWithPath: path)
-      let fd = try connectOrLaunch(socketPath: socketPath, timeoutMs: 60_000)
-      let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-      let conn = JSONRPCConnection(readHandle: handle, writeHandle: handle)
-      try sendHello(conn)
-      let openRes = try sendSessionOpen(conn, path: path, line: 1, column: 1)
+    var allMetrics: [String: Double] = [:]
+    var allRawSamples: [String: [Double]] = [:]
+    var serverPid: Int?
 
-      var lastRevision = openRes.revision
-      var reflectSamplesMs: [Double] = []
-      for i in 0..<warmN {
-        let externalContent = "PromptPad bench reflect \(i)\n" + String(repeating: "y", count: 2048)
-        try Data(externalContent.utf8).write(to: fileURL, options: [.atomic])
+    for (fixturePath, suffix) in fixturePaths {
+      let fixtureURL = URL(fileURLWithPath: fixturePath)
+      let originalContent = try String(contentsOf: fixtureURL, encoding: .utf8)
+      defer {
+        try? Data(originalContent.utf8).write(to: fixtureURL, options: [.atomic])
+      }
 
-        let start = DispatchTime.now().uptimeNanoseconds
-        let wait = try sendSessionWaitForRevision(
-          conn,
-          sessionId: openRes.sessionId,
-          baseRevision: lastRevision,
-          timeoutMs: 5_000
-        )
-        var revision = wait.revision
-        var matched = wait.changed && wait.content == externalContent
-        if !matched {
-          let fallbackDeadline = DispatchTime.now().uptimeNanoseconds + 5_000_000_000
-          while DispatchTime.now().uptimeNanoseconds < fallbackDeadline {
-            let reload = try sendSessionReload(conn, sessionId: openRes.sessionId)
-            if reload.content == externalContent {
-              revision = reload.revision
-              matched = true
-              break
-            }
-            Thread.sleep(forTimeInterval: 0.02)
-          }
+      func killServer() {
+        if let pid = serverPid {
+          kill(pid_t(pid), SIGKILL)
+          var status: Int32 = 0
+          waitpid(pid_t(pid), &status, 0)
+          serverPid = nil
+        } else {
+          _ = try? posixSpawnAndWait(command: "pkill", arguments: ["-9", "-f", "promptpad-app"])
         }
-        if !matched {
-          throw CLIError.benchFailed("reflect did not update within deadline")
-        }
-
-        let end = DispatchTime.now().uptimeNanoseconds
-        reflectSamplesMs.append(Double(end - start) / 1_000_000.0)
-        lastRevision = revision
-      }
-
-      let warmReflectP95 = percentile(reflectSamplesMs, p: 0.95)
-      let warmReflectMedian = percentile(reflectSamplesMs, p: 0.50)
-      print("warm_agent_reflect_p95_ms=\(String(format: "%.2f", warmReflectP95))")
-      print("warm_agent_reflect_median_ms=\(String(format: "%.2f", warmReflectMedian))")
-      metrics["warm_agent_reflect_p95_ms"] = warmReflectP95
-      metrics["warm_agent_reflect_median_ms"] = warmReflectMedian
-    }
-
-    if coldN > 0 {
-      var coldCtrlGSamplesMs: [Double] = []
-      for _ in 0..<coldN {
-        // Force non-resident cold path.
-        _ = try? posixSpawnAndWait(command: "pkill", arguments: ["-f", "promptpad-app"])
         try? FileManager.default.removeItem(atPath: socketPath)
-        Thread.sleep(forTimeInterval: 0.02)
+      }
 
-        let start = DispatchTime.now().uptimeNanoseconds
-        let code = try runCtrlGOpenOnce(path: path)
-        let end = DispatchTime.now().uptimeNanoseconds
-        guard code == 0 else {
-          throw CLIError.benchFailed("cold ctrl+g open exited \(code)")
-        }
-        coldCtrlGSamplesMs.append(Double(end - start) / 1_000_000.0)
+      // Ensure app is running and capture server PID.
+      do {
+        let fd = try connectOrLaunch(socketPath: socketPath, timeoutMs: 60_000)
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        let conn = JSONRPCConnection(readHandle: handle, writeHandle: handle)
+        let hello = try sendHelloWithResult(conn)
+        serverPid = hello.serverPid
+        _ = try sendSessionOpen(conn, path: fixturePath, line: 1, column: 1)
+      }
+      Thread.sleep(forTimeInterval: 0.05)
+
+      // --- Warm CLI open roundtrip (spawn 'promptpad open' repeatedly) ---
+      for _ in 0..<warmupDiscard {
+        _ = try runCtrlGOpenOnce(path: fixturePath)
         Thread.sleep(forTimeInterval: 0.01)
       }
-      let coldCtrlGP95 = percentile(coldCtrlGSamplesMs, p: 0.95)
-      let coldCtrlGMedian = percentile(coldCtrlGSamplesMs, p: 0.50)
-      print("cold_ctrl_g_to_editable_p95_ms=\(String(format: "%.2f", coldCtrlGP95))")
-      print("cold_ctrl_g_to_editable_median_ms=\(String(format: "%.2f", coldCtrlGMedian))")
-      metrics["cold_ctrl_g_to_editable_p95_ms"] = coldCtrlGP95
-      metrics["cold_ctrl_g_to_editable_median_ms"] = coldCtrlGMedian
+      var ctrlGSamplesMs: [Double] = []
+      for _ in 0..<warmN {
+        let start = DispatchTime.now().uptimeNanoseconds
+        let code = try runCtrlGOpenOnce(path: fixturePath)
+        if code != 0 { throw CLIError.benchFailed("spawned open exited \(code)") }
+        let end = DispatchTime.now().uptimeNanoseconds
+        ctrlGSamplesMs.append(Double(end - start) / 1_000_000.0)
+        Thread.sleep(forTimeInterval: 0.01)
+      }
+      emitMetric("warm_cli_open_roundtrip", ctrlGSamplesMs, suffix: suffix, metrics: &allMetrics, rawSamples: &allRawSamples)
+      // Compat aliases for one release cycle:
+      allMetrics["warm_ctrl_g_to_editable_p95_ms\(suffix)"] = percentile(ctrlGSamplesMs, p: 0.95)
+      allMetrics["warm_ctrl_g_to_editable_median_ms\(suffix)"] = percentile(ctrlGSamplesMs, p: 0.50)
+
+      // --- Warm in-process open roundtrip (includes server timing decomposition) ---
+      for _ in 0..<warmupDiscard {
+        _ = try openViaSocket(socketPath: socketPath, path: fixturePath, line: 1, column: 1, timeoutMs: 60_000)
+      }
+      var openSamplesMs: [Double] = []
+      var serverOpenSamplesMs: [Double] = []
+      for _ in 0..<warmN {
+        let fd = try connectOrLaunch(socketPath: socketPath, timeoutMs: 60_000)
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        let conn = JSONRPCConnection(readHandle: handle, writeHandle: handle)
+        _ = try sendHelloWithResult(conn)
+        let start = DispatchTime.now().uptimeNanoseconds
+        let openRes = try sendSessionOpen(conn, path: fixturePath, line: 1, column: 1)
+        let end = DispatchTime.now().uptimeNanoseconds
+        openSamplesMs.append(Double(end - start) / 1_000_000.0)
+        if let srvMs = openRes.serverOpenMs {
+          serverOpenSamplesMs.append(srvMs)
+        }
+      }
+      emitMetric("warm_open_roundtrip", openSamplesMs, suffix: suffix, metrics: &allMetrics, rawSamples: &allRawSamples)
+      if !serverOpenSamplesMs.isEmpty {
+        emitMetric("warm_server_open", serverOpenSamplesMs, suffix: suffix, metrics: &allMetrics, rawSamples: &allRawSamples)
+      }
+
+      // --- Warm text engine microbenchmark (synthetic insertion + highlight) ---
+      let initialText = originalContent
+      // Warmup discard for textkit too.
+      _ = syntheticTypingTimings(initialText: initialText, samples: warmupDiscard)
+      let textKitTimings = syntheticTypingTimings(initialText: initialText, samples: warmN)
+      emitMetric("warm_textkit_insert_and_style", textKitTimings, suffix: suffix, metrics: &allMetrics, rawSamples: &allRawSamples)
+      // Compat alias:
+      allMetrics["warm_textkit_highlight_p95_ms\(suffix)"] = percentile(textKitTimings, p: 0.95)
+      allMetrics["warm_textkit_highlight_median_ms\(suffix)"] = percentile(textKitTimings, p: 0.50)
+
+      // --- Warm RPC save roundtrip (uses actual fixture content for realistic payloads) ---
+      do {
+        let fd = try connectOrLaunch(socketPath: socketPath, timeoutMs: 60_000)
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        let conn = JSONRPCConnection(readHandle: handle, writeHandle: handle)
+        _ = try sendHelloWithResult(conn)
+        let openRes = try sendSessionOpen(conn, path: fixturePath, line: 1, column: 1)
+
+        for _ in 0..<warmupDiscard {
+          _ = try sendSessionSave(conn, sessionId: openRes.sessionId, content: originalContent + "\n// warmup\n")
+        }
+        var saveSamplesMs: [Double] = []
+        var serverSaveSamplesMs: [Double] = []
+        for i in 0..<warmN {
+          let mutatedContent = originalContent + "\n// bench save \(i)\n"
+          let start = DispatchTime.now().uptimeNanoseconds
+          let saveRes = try sendSessionSave(conn, sessionId: openRes.sessionId, content: mutatedContent)
+          let end = DispatchTime.now().uptimeNanoseconds
+          saveSamplesMs.append(Double(end - start) / 1_000_000.0)
+          if let srvMs = saveRes.serverSaveMs {
+            serverSaveSamplesMs.append(srvMs)
+          }
+        }
+        emitMetric("warm_rpc_save_roundtrip", saveSamplesMs, suffix: suffix, metrics: &allMetrics, rawSamples: &allRawSamples)
+        // Compat alias:
+        allMetrics["warm_save_roundtrip_p95_ms\(suffix)"] = percentile(saveSamplesMs, p: 0.95)
+        allMetrics["warm_save_roundtrip_median_ms\(suffix)"] = percentile(saveSamplesMs, p: 0.50)
+        if !serverSaveSamplesMs.isEmpty {
+          emitMetric("warm_server_save", serverSaveSamplesMs, suffix: suffix, metrics: &allMetrics, rawSamples: &allRawSamples)
+        }
+      }
+
+      // --- Warm reflect bench with event-driven vs polling fallback tracking ---
+      do {
+        let fileURL = URL(fileURLWithPath: fixturePath)
+        let fd = try connectOrLaunch(socketPath: socketPath, timeoutMs: 60_000)
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        let conn = JSONRPCConnection(readHandle: handle, writeHandle: handle)
+        _ = try sendHelloWithResult(conn)
+        let openRes = try sendSessionOpen(conn, path: fixturePath, line: 1, column: 1)
+
+        var lastRevision = openRes.revision
+        // Warmup discard for reflect.
+        for i in 0..<warmupDiscard {
+          let warmupContent = "warmup reflect \(i)\n"
+          try Data(warmupContent.utf8).write(to: fileURL, options: [.atomic])
+          let wait = try sendSessionWaitForRevision(conn, sessionId: openRes.sessionId, baseRevision: lastRevision, timeoutMs: 5_000)
+          lastRevision = wait.revision
+          if !wait.changed || wait.content != warmupContent {
+            let reload = try sendSessionReload(conn, sessionId: openRes.sessionId)
+            lastRevision = reload.revision
+          }
+        }
+
+        var reflectEventMs: [Double] = []
+        var reflectPolledMs: [Double] = []
+        var reflectAllMs: [Double] = []
+        for i in 0..<warmN {
+          let externalContent = "PromptPad bench reflect \(i)\n" + String(repeating: "y", count: 2048)
+          try Data(externalContent.utf8).write(to: fileURL, options: [.atomic])
+
+          let start = DispatchTime.now().uptimeNanoseconds
+          let wait = try sendSessionWaitForRevision(conn, sessionId: openRes.sessionId, baseRevision: lastRevision, timeoutMs: 5_000)
+          var revision = wait.revision
+          var matched = wait.changed && wait.content == externalContent
+          var usedPollingFallback = false
+          if !matched {
+            usedPollingFallback = true
+            let fallbackDeadline = DispatchTime.now().uptimeNanoseconds + 5_000_000_000
+            while DispatchTime.now().uptimeNanoseconds < fallbackDeadline {
+              let reload = try sendSessionReload(conn, sessionId: openRes.sessionId)
+              if reload.content == externalContent {
+                revision = reload.revision
+                matched = true
+                break
+              }
+              Thread.sleep(forTimeInterval: 0.02)
+            }
+          }
+          if !matched { throw CLIError.benchFailed("reflect did not update within deadline") }
+
+          let end = DispatchTime.now().uptimeNanoseconds
+          let elapsedMs = Double(end - start) / 1_000_000.0
+          reflectAllMs.append(elapsedMs)
+          if usedPollingFallback {
+            reflectPolledMs.append(elapsedMs)
+          } else {
+            reflectEventMs.append(elapsedMs)
+          }
+          lastRevision = revision
+        }
+
+        emitMetric("warm_agent_reflect", reflectAllMs, suffix: suffix, metrics: &allMetrics, rawSamples: &allRawSamples)
+        if !reflectEventMs.isEmpty {
+          emitMetric("warm_agent_reflect_event", reflectEventMs, suffix: suffix, metrics: &allMetrics, rawSamples: &allRawSamples)
+        }
+        allMetrics["warm_agent_reflect_polled_count\(suffix)"] = Double(reflectPolledMs.count)
+        if Double(reflectPolledMs.count) > Double(warmN) * 0.10 {
+          fputs("WARNING: \(reflectPolledMs.count)/\(warmN) reflect iterations used polling fallback\n", stderr)
+        }
+      }
+
+      // --- Query typing latency + memory from bench metrics RPC ---
+      do {
+        let fd = try connectOrLaunch(socketPath: socketPath, timeoutMs: 60_000)
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        let conn = JSONRPCConnection(readHandle: handle, writeHandle: handle)
+        _ = try sendHelloWithResult(conn)
+        let openRes = try sendSessionOpen(conn, path: fixturePath, line: 1, column: 1)
+        if let benchResult = try? sendBenchMetrics(conn, sessionId: openRes.sessionId) {
+          if !benchResult.typingLatencySamples.isEmpty {
+            emitMetric("warm_typing_latency", benchResult.typingLatencySamples, suffix: suffix, metrics: &allMetrics, rawSamples: &allRawSamples)
+          }
+          allMetrics["peak_memory_resident_bytes\(suffix)"] = Double(benchResult.memoryResidentBytes)
+          if let readyMs = benchResult.sessionOpenToReadyMs {
+            allMetrics["warm_session_open_to_ready_ms\(suffix)"] = readyMs
+          }
+        }
+      }
+
+      // --- Quit latency (only for last fixture) ---
+      if fixturePath == fixturePaths.last?.path {
+        do {
+          let fd = try connectOrLaunch(socketPath: socketPath, timeoutMs: 60_000)
+          let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+          let conn = JSONRPCConnection(readHandle: handle, writeHandle: handle)
+          let hello = try sendHelloWithResult(conn)
+          serverPid = hello.serverPid
+          let quitStart = DispatchTime.now().uptimeNanoseconds
+          _ = try quitViaConnection(conn)
+          if let pid = serverPid {
+            var quitStatus: Int32 = 0
+            waitpid(pid_t(pid), &quitStatus, 0)
+          }
+          let quitMs = Double(DispatchTime.now().uptimeNanoseconds - quitStart) / 1_000_000.0
+          allMetrics["warm_quit_latency_ms"] = quitMs
+          print("warm_quit_latency_ms=\(String(format: "%.2f", quitMs))")
+          serverPid = nil
+        }
+      }
     }
+
+    // --- Cold measurements ---
+    let coldPath = fixturePaths.first?.path ?? ""
+    if coldN > 0, !coldPath.isEmpty {
+      let fixtureURL = URL(fileURLWithPath: coldPath)
+      let originalContent = try String(contentsOf: fixtureURL, encoding: .utf8)
+      defer {
+        try? Data(originalContent.utf8).write(to: fixtureURL, options: [.atomic])
+      }
+
+      // Kill any lingering server before cold runs.
+      if let pid = serverPid {
+        kill(pid_t(pid), SIGKILL)
+        var s: Int32 = 0
+        waitpid(pid_t(pid), &s, 0)
+        serverPid = nil
+      } else {
+        _ = try? posixSpawnAndWait(command: "pkill", arguments: ["-9", "-f", "promptpad-app"])
+      }
+      try? FileManager.default.removeItem(atPath: socketPath)
+      Thread.sleep(forTimeInterval: 0.30)
+
+      var coldSamplesMs: [Double] = []
+      for _ in 0..<coldN {
+        // Force non-resident cold path: kill with verification.
+        if let pid = serverPid {
+          kill(pid_t(pid), SIGKILL)
+          var s: Int32 = 0
+          waitpid(pid_t(pid), &s, 0)
+          serverPid = nil
+        } else {
+          _ = try? posixSpawnAndWait(command: "pkill", arguments: ["-9", "-f", "promptpad-app"])
+        }
+        let killDeadline = DispatchTime.now().uptimeNanoseconds + 2_000_000_000
+        while DispatchTime.now().uptimeNanoseconds < killDeadline {
+          let rc = try? posixSpawnAndWait(command: "pgrep", arguments: ["-f", "promptpad-app"])
+          if rc != 0 { break }
+          Thread.sleep(forTimeInterval: 0.05)
+        }
+        try? FileManager.default.removeItem(atPath: socketPath)
+        Thread.sleep(forTimeInterval: 0.20)
+
+        let start = DispatchTime.now().uptimeNanoseconds
+        let code = try runCtrlGOpenOnce(path: coldPath)
+        let end = DispatchTime.now().uptimeNanoseconds
+        guard code == 0 else { throw CLIError.benchFailed("cold open exited \(code)") }
+        coldSamplesMs.append(Double(end - start) / 1_000_000.0)
+
+        // Capture new server PID for next kill.
+        if let fd = try? connectOrLaunch(socketPath: socketPath, timeoutMs: 5_000) {
+          let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+          let conn = JSONRPCConnection(readHandle: handle, writeHandle: handle)
+          if let hello = try? sendHelloWithResult(conn) {
+            serverPid = hello.serverPid
+          }
+        }
+        Thread.sleep(forTimeInterval: 0.01)
+      }
+      emitMetric("cold_cli_open_roundtrip", coldSamplesMs, suffix: "", metrics: &allMetrics, rawSamples: &allRawSamples)
+      // Compat aliases:
+      allMetrics["cold_ctrl_g_to_editable_p95_ms"] = percentile(coldSamplesMs, p: 0.95)
+      allMetrics["cold_ctrl_g_to_editable_median_ms"] = percentile(coldSamplesMs, p: 0.50)
+    }
+
+    // Cleanup: kill server.
+    if let pid = serverPid {
+      kill(pid_t(pid), SIGKILL)
+      var s: Int32 = 0
+      waitpid(pid_t(pid), &s, 0)
+    } else {
+      _ = try? posixSpawnAndWait(command: "pkill", arguments: ["-9", "-f", "promptpad-app"])
+      Thread.sleep(forTimeInterval: 0.5)
+    }
+    try? FileManager.default.removeItem(atPath: socketPath)
 
     if let outPath {
       let now = ISO8601DateFormatter().string(from: Date())
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
       let res = BenchRunResult(
         timestamp: now,
         osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
         warmN: warmN,
         coldN: coldN,
-        metrics: metrics
+        warmupDiscard: warmupDiscard,
+        metrics: allMetrics,
+        rawSamples: allRawSamples
       )
       let url = URL(fileURLWithPath: outPath)
-      let data = try JSONEncoder().encode(res)
+      let data = try encoder.encode(res)
       try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
       try data.write(to: url, options: [.atomic])
     }
   }
 
+  private func sizeSuffix(_ bytes: Int) -> String {
+    if bytes < 1_000 { return "\(bytes)b" }
+    if bytes < 10_000 { return "\(bytes / 1_000)k" }
+    if bytes < 100_000 { return "\(bytes / 1_000)k" }
+    return "\(bytes / 1_000)k"
+  }
+
+  private func emitMetric(_ name: String, _ samples: [Double], suffix: String, metrics: inout [String: Double], rawSamples: inout [String: [Double]]) {
+    let p95 = percentile(samples, p: 0.95)
+    let median = percentile(samples, p: 0.50)
+    print("\(name)_p95_ms\(suffix)=\(String(format: "%.2f", p95))")
+    print("\(name)_median_ms\(suffix)=\(String(format: "%.2f", median))")
+    metrics["\(name)_p95_ms\(suffix)"] = p95
+    metrics["\(name)_median_ms\(suffix)"] = median
+    rawSamples["\(name)\(suffix)"] = samples
+  }
+
   private func runBenchCheck() throws {
-    guard let baselinePath = argValue("--baseline") else { throw CLIError.invalidArgs("bench check requires --baseline") }
     guard let resultsPath = argValue("--results") else { throw CLIError.invalidArgs("bench check requires --results") }
-
-    let baselineURL = URL(fileURLWithPath: baselinePath)
-    let resultsURL = URL(fileURLWithPath: resultsPath)
-
-    let baselineData = try Data(contentsOf: baselineURL)
-    let baseline = try JSONDecoder().decode([String: Double].self, from: baselineData)
-
-    let resultsData = try Data(contentsOf: resultsURL)
+    let resultsData = try Data(contentsOf: URL(fileURLWithPath: resultsPath))
     let results = try JSONDecoder().decode(BenchRunResult.self, from: resultsData)
+
+    // A/B comparison mode: --compare <previous.json>
+    if let comparePath = argValue("--compare") {
+      let prevData = try Data(contentsOf: URL(fileURLWithPath: comparePath))
+      let prev = try JSONDecoder().decode(BenchRunResult.self, from: prevData)
+      let thresholdPct = Double(argValue("--threshold-pct") ?? "5.0") ?? 5.0
+
+      let commonKeys = Set(prev.rawSamples.keys).intersection(results.rawSamples.keys)
+      var regressions: [String] = []
+      print(String(format: "%-40s %10s %10s %8s %8s %s", "Metric", "Median A", "Median B", "Delta%", "p-value", "Verdict"))
+      print(String(repeating: "-", count: 88))
+      for key in commonKeys.sorted() {
+        let a = prev.rawSamples[key] ?? []
+        let b = results.rawSamples[key] ?? []
+        guard a.count >= 3, b.count >= 3 else { continue }
+        let medA = percentile(a, p: 0.50)
+        let medB = percentile(b, p: 0.50)
+        let deltaPct = medA != 0 ? (medB - medA) / medA * 100.0 : 0.0
+        let pValue = mannWhitneyU(a, b)
+        let significant = pValue < 0.05
+        let verdict: String
+        if significant && deltaPct > thresholdPct {
+          verdict = "REGRESSION"
+          regressions.append("\(key): \(String(format: "%.1f", deltaPct))% slower (p=\(String(format: "%.4f", pValue)))")
+        } else if significant && deltaPct < -thresholdPct {
+          verdict = "IMPROVEMENT"
+        } else {
+          verdict = "NO_CHANGE"
+        }
+        print(String(format: "%-40s %10.2f %10.2f %7.1f%% %8.4f %s", key, medA, medB, deltaPct, pValue, verdict))
+      }
+      if !regressions.isEmpty {
+        throw CLIError.benchFailed("Regressions detected: " + regressions.joined(separator: "; "))
+      }
+      return
+    }
+
+    // Threshold mode: --baseline <file.json>
+    guard let baselinePath = argValue("--baseline") else {
+      throw CLIError.invalidArgs("bench check requires --baseline or --compare")
+    }
+    let baselineData = try Data(contentsOf: URL(fileURLWithPath: baselinePath))
+    let baseline = try JSONDecoder().decode([String: Double].self, from: baselineData)
 
     var failures: [String] = []
     for (k, cap) in baseline {
@@ -367,6 +593,47 @@ Commands:
     if !failures.isEmpty {
       throw CLIError.benchFailed(failures.joined(separator: "; "))
     }
+  }
+
+  /// Mann-Whitney U test with normal approximation. Returns p-value.
+  private func mannWhitneyU(_ a: [Double], _ b: [Double]) -> Double {
+    let na = a.count
+    let nb = b.count
+    guard na > 0, nb > 0 else { return 1.0 }
+
+    // Combine and rank.
+    struct TaggedValue: Comparable {
+      let value: Double
+      let group: Int // 0 = a, 1 = b
+      static func < (lhs: TaggedValue, rhs: TaggedValue) -> Bool { lhs.value < rhs.value }
+    }
+    var combined = a.map { TaggedValue(value: $0, group: 0) } + b.map { TaggedValue(value: $0, group: 1) }
+    combined.sort()
+    let n = combined.count
+
+    // Assign average ranks for ties.
+    var ranks = [Double](repeating: 0, count: n)
+    var i = 0
+    while i < n {
+      var j = i + 1
+      while j < n, combined[j].value == combined[i].value { j += 1 }
+      let avgRank = Double(i + 1 + j) / 2.0
+      for k in i..<j { ranks[k] = avgRank }
+      i = j
+    }
+
+    var rankSumA = 0.0
+    for k in 0..<n where combined[k].group == 0 {
+      rankSumA += ranks[k]
+    }
+    let u1 = rankSumA - Double(na * (na + 1)) / 2.0
+    let meanU = Double(na * nb) / 2.0
+    let sigmaU = sqrt(Double(na * nb * (na + nb + 1)) / 12.0)
+    guard sigmaU > 0 else { return 1.0 }
+    let z = abs(u1 - meanU) / sigmaU
+    // Two-tailed p-value approximation using error function.
+    let p = erfc(z / sqrt(2.0))
+    return min(1.0, p)
   }
 
   private func openViaSocket(socketPath: String, path: String, line: Int?, column: Int?, timeoutMs: Int) throws -> String {
@@ -417,13 +684,22 @@ Commands:
     return decoded.reason
   }
 
-  private func sendHello(_ conn: JSONRPCConnection) throws {
+  @discardableResult
+  private func sendHelloWithResult(_ conn: JSONRPCConnection) throws -> HelloResult {
     let hello = JSONRPCRequest(id: .int(1), method: PromptPadMethod.hello, params: JSONValue.object([
       "client": .string("promptpad-cli"),
       "clientVersion": .string("dev"),
     ]))
     try conn.sendJSON(hello)
-    _ = try conn.readResponse()
+    let resp = try conn.readResponse()
+    guard let result = resp.result else {
+      return HelloResult(protocolVersion: 1, capabilities: PromptPadCapabilities(supportsWait: false, supportsAgentDraft: false, supportsQuit: false), serverPid: 0)
+    }
+    return try result.decode(HelloResult.self)
+  }
+
+  private func sendHello(_ conn: JSONRPCConnection) throws {
+    _ = try sendHelloWithResult(conn)
   }
 
   private func sendSessionOpen(_ conn: JSONRPCConnection, path: String, line: Int?, column: Int?) throws -> SessionOpenResult {
@@ -510,6 +786,19 @@ Commands:
     try conn.sendJSON(req)
     let resp = try conn.readResponse()
     return resp.error == nil
+  }
+
+  private func sendBenchMetrics(_ conn: JSONRPCConnection, sessionId: String) throws -> BenchMetricsResult {
+    let req = JSONRPCRequest(id: .int(8), method: PromptPadMethod.benchMetrics, params: .object([
+      "sessionId": .string(sessionId),
+    ]))
+    try conn.sendJSON(req)
+    let resp = try conn.readResponse()
+    if let err = resp.error {
+      throw CLIError.connectFailed("benchMetrics error \(err.code): \(err.message)")
+    }
+    guard let result = resp.result else { throw CLIError.connectFailed("missing benchMetrics result") }
+    return try result.decode(BenchMetricsResult.self)
   }
 
   private enum SpawnError: Error {
@@ -614,8 +903,9 @@ Commands:
 
   private func syntheticTypingTimings(initialText: String, samples: Int) -> [Double] {
     if samples <= 0 { return [] }
-    var content = initialText
-    var cursor = (content as NSString).length
+    // Use NSMutableAttributedString to approximate NSTextStorage editing cost.
+    let storage = NSMutableAttributedString(string: initialText)
+    var cursor = storage.length
     var timingsMs: [Double] = []
     timingsMs.reserveCapacity(samples)
 
@@ -625,17 +915,47 @@ Commands:
       let ch = String(insertionPattern[i % insertionPattern.count])
       let start = DispatchTime.now().uptimeNanoseconds
 
-      let mutable = NSMutableString(string: content)
-      mutable.insert(ch, at: cursor)
-      content = String(mutable)
+      // 1. Insert character (simulates NSTextStorage.replaceCharacters).
+      let insertRange = NSRange(location: cursor, length: 0)
+      storage.replaceCharacters(in: insertRange, with: ch)
 
-      let changedRange = NSRange(location: cursor, length: (ch as NSString).length)
+      // 2. Compute changed line range.
+      let chLen = (ch as NSString).length
+      let changedRange = NSRange(location: cursor, length: chLen)
+      let content = storage.string
       let lineRange = (content as NSString).lineRange(for: changedRange)
-      _ = MarkdownHighlighter.highlights(in: content, range: lineRange)
+
+      // 3. Run highlighter.
+      let highlights = MarkdownHighlighter.highlights(in: content, range: lineRange)
+
+      // 4. Apply attributes back (simulates applyStyling).
+      storage.beginEditing()
+      let defaultAttrs: [NSAttributedString.Key: Any] = [
+        .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+      ]
+      storage.setAttributes(defaultAttrs, range: lineRange)
+      for h in highlights {
+        // Map highlight kinds to dummy attributes (real colors require AppKit EditorTheme).
+        var attrs: [NSAttributedString.Key: Any] = [:]
+        switch h.kind {
+        case .headerText(let level):
+          attrs[.font] = NSFont.monospacedSystemFont(ofSize: CGFloat(17 - min(level, 4)), weight: .bold)
+        case .strongText:
+          attrs[.font] = NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold)
+        case .codeFenceDelimiter, .codeFenceInfo, .codeBlockLine, .headerMarker,
+             .listMarker, .quoteMarker, .horizontalRule, .inlineCodeDelimiter,
+             .strongMarker, .emphasisMarker, .strikethroughMarker, .highlightMarker, .linkPunctuation:
+          attrs[.foregroundColor] = NSColor.secondaryLabelColor
+        default:
+          attrs[.foregroundColor] = NSColor.labelColor
+        }
+        storage.addAttributes(attrs, range: h.range)
+      }
+      storage.endEditing()
 
       let end = DispatchTime.now().uptimeNanoseconds
       timingsMs.append(Double(end - start) / 1_000_000.0)
-      cursor += (ch as NSString).length
+      cursor += chLen
     }
 
     return timingsMs

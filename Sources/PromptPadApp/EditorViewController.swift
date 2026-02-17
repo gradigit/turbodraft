@@ -42,6 +42,9 @@ final class EditorViewController: NSViewController {
   private let saveStatus = NSTextField(labelWithString: "Saved")
   private var agentAdapter: AgentAdapting?
   private var agentRunning = false
+  private var _typingLatencies: [Double] = []
+
+  var typingLatencySamples: [Double] { _typingLatencies }
 
   private enum SaveState {
     case saved
@@ -396,6 +399,7 @@ final class EditorViewController: NSViewController {
 
   @objc private func handleTextDidChange(_ note: Notification) {
     if isApplyingProgrammaticUpdate { return }
+    let changeStartNs = DispatchTime.now().uptimeNanoseconds
     let content = textView.string
     setSaveState(.unsaved)
     Task { await session.updateBufferContent(content) }
@@ -418,7 +422,17 @@ final class EditorViewController: NSViewController {
       guard let self else { return }
       await MainActor.run {
         self.applyStyling(forChangedRange: styleRange)
+        let endNs = DispatchTime.now().uptimeNanoseconds
+        let latencyMs = Double(endNs - changeStartNs) / 1_000_000.0
+        self.recordTypingLatency(latencyMs)
       }
+    }
+  }
+
+  private func recordTypingLatency(_ ms: Double) {
+    _typingLatencies.append(ms)
+    if _typingLatencies.count > 100 {
+      _typingLatencies.removeFirst()
     }
   }
 

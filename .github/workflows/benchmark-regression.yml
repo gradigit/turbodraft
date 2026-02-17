@@ -26,9 +26,19 @@ jobs:
           mkdir -p tmp/bench-ci
           ./.build/release/promptpad bench run \
             --path bench/fixtures/dictation_flush_mode.md \
-            --warm 20 \
-            --cold 4 \
+            --warm 30 \
+            --cold 15 \
+            --warmup-discard 3 \
             --out tmp/bench-ci/editor-results.json
+
+      - name: Run multi-fixture benchmark
+        run: |
+          ./.build/release/promptpad bench run \
+            --fixture-dir bench/fixtures/ \
+            --warm 15 \
+            --cold 0 \
+            --warmup-discard 3 \
+            --out tmp/bench-ci/editor-multifixture-results.json
 
       - name: Enforce baseline thresholds
         run: |
@@ -43,3 +53,4 @@ jobs:
           name: promptpad-editor-benchmark-results
           path: |
             tmp/bench-ci/editor-results.json
+            tmp/bench-ci/editor-multifixture-results.json

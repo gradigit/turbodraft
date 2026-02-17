@@ -121,27 +121,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  func applicationWillTerminate(_ notification: Notification) {
-    let windows = allWindowControllers
-    let sessions = Array(sessionsById.values)
-    let sem = DispatchSemaphore(value: 0)
-    DispatchQueue.global(qos: .userInitiated).async {
-      let group = DispatchGroup()
-      for wc in windows {
-        group.enter()
-        Task { @MainActor in
-          await wc.flushAutosaveNow(reason: "app_terminate")
-          group.leave()
-        }
-      }
-      for session in sessions {
-        group.enter()
-        Task { await session.markClosed(); group.leave() }
-      }
-      group.wait()
-      sem.signal()
+  @objc private func gracefulQuit(_ sender: Any?) {
+    Task { @MainActor in
+      await performGracefulShutdown()
+      NSApplication.shared.terminate(nil)
     }
-    _ = sem.wait(timeout: .now() + 2.0)
+  }
+
+  private func performGracefulShutdown() async {
+    for wc in allWindowControllers {
+      await wc.flushAutosaveNow(reason: "app_terminate")
+    }
+    for session in sessionsById.values {
+      await session.markClosed()
+    }
   }
 
   @objc private func handleAppWillResignActive(_ note: Notification) {
@@ -164,6 +157,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func makeWindowController(session: EditorSession) -> EditorWindowController {
+    // If launched as an accessory app (--start-hidden), promote to regular so
+    // the window appears in the Dock and System Events reports frontmost correctly.
+    if NSApp.activationPolicy() == .accessory {
+      NSApp.setActivationPolicy(.regular)
+    }
     let wc = EditorWindowController(session: session, config: cfg)
     wc.onClosed = { [weak self, weak wc] in
       guard let self, let wc else { return }
@@ -312,7 +310,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               path: current.fileURL.path,
               content: current.content,
               revision: current.diskRevision,
-              isDirty: current.isDirty
+              isDirty: current.isDirty,
+              serverOpenMs: openMs
             )
             return ok(out)
           }
@@ -340,7 +339,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           path: info.fileURL.path,
           content: info.content,
           revision: info.diskRevision,
-          isDirty: info.isDirty
+          isDirty: info.isDirty,
+          serverOpenMs: openMs
         )
         return ok(out)
       } catch {
@@ -399,6 +399,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case PromptPadMethod.sessionSave:
       do {
         let params = try (req.params ?? .object([:])).decode(SessionSaveParams.self)
+        let saveT0 = nowMs()
         guard let editorSession = sessionsById[params.sessionId] else {
           return err(JSONRPCStandardErrorCode.invalidRequest, "Invalid sessionId")
         }
@@ -411,8 +412,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Session-bound save: ignore params.path and only save current session content.
         await editorSession.updateBufferContent(params.content)
         let _ = try await editorSession.autosave(reason: "rpc_save")
+        let saveMs = nowMs() - saveT0
         if let info = await editorSession.currentInfo() {
-          return ok(SessionSaveResult(ok: true, revision: info.diskRevision))
+          return ok(SessionSaveResult(ok: true, revision: info.diskRevision, serverSaveMs: saveMs))
         }
         return err(JSONRPCStandardErrorCode.invalidRequest, "No session")
       } catch {
@@ -438,10 +440,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return err(JSONRPCStandardErrorCode.invalidParams, "wait failed: \(error)")
       }
 
+    case PromptPadMethod.benchMetrics:
+      do {
+        let params = try (req.params ?? .object([:])).decode(BenchMetricsParams.self)
+        guard sessionsById[params.sessionId] != nil else {
+          return err(JSONRPCStandardErrorCode.invalidRequest, "Invalid sessionId")
+        }
+        // Collect typing latencies from the editor view controller.
+        let wc = windowsById[params.sessionId]
+        let latencies = wc?.typingLatencySamples ?? []
+        // Query process memory via mach_task_info.
+        let memBytes = processResidentBytes()
+        return ok(BenchMetricsResult(
+          typingLatencySamples: latencies,
+          memoryResidentBytes: memBytes
+        ))
+      } catch {
+        return err(JSONRPCStandardErrorCode.invalidParams, "benchMetrics failed: \(error)")
+      }
+
     case PromptPadMethod.appQuit:
       Task { @MainActor in
         // Give the JSON-RPC response a chance to flush before terminating.
         try? await Task.sleep(nanoseconds: 50_000_000)
+        await self.performGracefulShutdown()
         NSApplication.shared.terminate(nil)
       }
       return ok(["ok": true])
@@ -479,7 +501,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     appMenu.items.last?.keyEquivalentModifierMask = [.command, .option]
     appMenu.addItem(NSMenuItem(title: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: ""))
     appMenu.addItem(.separator())
-    appMenu.addItem(NSMenuItem(title: "Quit \(appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+    appMenu.addItem(NSMenuItem(title: "Quit \(appName)", action: #selector(gracefulQuit(_:)), keyEquivalent: "q"))
 
     // File menu
     let fileItem = NSMenuItem()
@@ -826,6 +848,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000.0
   }
 
+  private func processResidentBytes() -> Int64 {
+    var taskInfo = mach_task_basic_info()
+    var count = mach_msg_type_number_t(MemoryLayout.size(ofValue: taskInfo) / MemoryLayout<natural_t>.size)
+    let result = withUnsafeMutablePointer(to: &taskInfo) { ptr in
+      ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
+        task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), intPtr, &count)
+      }
+    }
+    guard result == KERN_SUCCESS else { return 0 }
+    return Int64(taskInfo.resident_size)
+  }
+
   private func appendLatencyRecord(_ payload: [String: Any]) {
     do {
       let dir = try PromptPadPaths.applicationSupportDir().appendingPathComponent("telemetry", isDirectory: true)
@@ -859,9 +893,12 @@ extension JSONValue {
   static func fromJSONObject(_ obj: Any) -> JSONValue {
     switch obj {
     case is NSNull: return .null
-    case let b as Bool: return .bool(b)
     case let n as NSNumber:
-      // NSNumber can be Bool; ensure we already handled Bool above.
+      // CFBooleanGetTypeID() is the only reliable way to distinguish
+      // JSON true/false from integers — NSNumber(1) matches `as Bool`.
+      if CFGetTypeID(n) == CFBooleanGetTypeID() {
+        return .bool(n.boolValue)
+      }
       let cfType = CFNumberGetType(n)
       switch cfType {
       case .sInt8Type, .sInt16Type, .sInt32Type, .sInt64Type, .charType, .shortType, .intType, .longType, .longLongType:

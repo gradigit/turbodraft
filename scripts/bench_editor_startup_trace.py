@@ -95,8 +95,18 @@ end tell
         raise RuntimeError(f"failed to send Ctrl+G to harness: {cp.stderr.strip()}")
 
 
-def kill_promptpad(socket_path: pathlib.Path) -> None:
-    subprocess.run(["pkill", "-f", "promptpad-app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def kill_promptpad(socket_path: pathlib.Path, bin_path: Optional[pathlib.Path] = None) -> None:
+    if bin_path:
+        subprocess.run(["pkill", "-9", "-f", str(bin_path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        subprocess.run(["pkill", "-9", "-f", "promptpad-app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Wait for process to actually die
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        rc = subprocess.run(["pgrep", "-f", str(bin_path or "promptpad-app")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+        if rc != 0:
+            break
+        time.sleep(0.05)
     try:
         socket_path.unlink(missing_ok=True)
     except Exception:
@@ -214,6 +224,7 @@ def run_mode(
     log_path: pathlib.Path,
     offset: int,
     harness_proc: Optional[subprocess.Popen] = None,
+    bin_path: Optional[pathlib.Path] = None,
 ) -> Tuple[ModeResult, int]:
     valid: List[Dict[str, Any]] = []
     invalid: List[Dict[str, Any]] = []
@@ -227,7 +238,7 @@ def run_mode(
         attempts += 1
         try:
             if mode == "cold":
-                kill_promptpad(socket_path)
+                kill_promptpad(socket_path, bin_path=bin_path)
 
             trigger_ctrl_g(harness_process_name)
             rec, offset = wait_for_record(log_path, offset, timeout_s=timeout_s)
@@ -272,6 +283,7 @@ def main() -> int:
     if not harness_bin.exists():
         raise SystemExit(f"missing binary: {harness_bin}")
 
+    app_bin_path = harness_bin.parent / "promptpad-app"
     out_dir = pathlib.Path(args.out_dir) if args.out_dir else (repo / "tmp" / f"bench_editor_startup_{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}")
     out_dir.mkdir(parents=True, exist_ok=True)
     log_path = out_dir / "harness.jsonl"
@@ -325,6 +337,7 @@ def main() -> int:
             log_path=log_path,
             offset=offset,
             harness_proc=harness_proc,
+            bin_path=app_bin_path,
         )
         warm_result, offset = run_mode(
             mode="warm",
@@ -336,6 +349,7 @@ def main() -> int:
             log_path=log_path,
             offset=offset,
             harness_proc=harness_proc,
+            bin_path=app_bin_path,
         )
 
         cold_all = cold_result.valid + cold_result.invalid
@@ -400,7 +414,7 @@ def main() -> int:
             harness_proc.kill()
         harness_log.close()
         harness_err.close()
-        kill_promptpad(socket_path)
+        kill_promptpad(socket_path, bin_path=app_bin_path)
 
 
 if __name__ == "__main__":

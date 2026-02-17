@@ -355,6 +355,7 @@ private final class HarnessWindowController: NSWindowController {
       "ok": ok,
       "textChangedByEditor": textChanged,
       "ctrlGToEditorCommandReturnMs": endMs,
+      "harnessResidentBytes": harnessResidentBytes(),
       "ts": ISO8601DateFormatter().string(from: Date()),
     ]
     if benchmarkMode == .roundtrip {
@@ -373,15 +374,23 @@ private final class HarnessWindowController: NSWindowController {
 
   private func ensureTextFocusAndMeasure(since startedNs: UInt64) -> Double? {
     guard let window else { return nil }
-    let deadline = DispatchTime.now().uptimeNanoseconds + 500_000_000
+    // Try once synchronously first.
+    window.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+    _ = window.makeFirstResponder(textView)
+    if window.firstResponder === textView {
+      return elapsedMs(since: startedNs)
+    }
+    // Fallback: 2ms polling, 200ms timeout (reduced from 8ms/500ms to cut quantization noise).
+    let deadline = DispatchTime.now().uptimeNanoseconds + 200_000_000
     while DispatchTime.now().uptimeNanoseconds < deadline {
+      RunLoop.current.run(until: Date().addingTimeInterval(0.002))
       window.makeKeyAndOrderFront(nil)
       NSApp.activate(ignoringOtherApps: true)
       _ = window.makeFirstResponder(textView)
       if window.firstResponder === textView {
         return elapsedMs(since: startedNs)
       }
-      RunLoop.current.run(until: Date().addingTimeInterval(0.008))
     }
     return window.firstResponder === textView ? elapsedMs(since: startedNs) : nil
   }
@@ -389,6 +398,18 @@ private final class HarnessWindowController: NSWindowController {
   private func elapsedMs(since startedNs: UInt64) -> Double {
     let now = DispatchTime.now().uptimeNanoseconds
     return Double(now - startedNs) / 1_000_000.0
+  }
+
+  private func harnessResidentBytes() -> Int64 {
+    var taskInfo = mach_task_basic_info()
+    var count = mach_msg_type_number_t(MemoryLayout.size(ofValue: taskInfo) / MemoryLayout<natural_t>.size)
+    let result = withUnsafeMutablePointer(to: &taskInfo) { ptr in
+      ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
+        task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), intPtr, &count)
+      }
+    }
+    guard result == KERN_SUCCESS else { return 0 }
+    return Int64(taskInfo.resident_size)
   }
 
   private func setStatus(_ text: String, color: NSColor) {

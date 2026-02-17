@@ -54,13 +54,15 @@ public struct SessionOpenResult: Codable, Sendable, Equatable {
   public var content: String
   public var revision: String
   public var isDirty: Bool
+  public var serverOpenMs: Double?
 
-  public init(sessionId: String, path: String, content: String, revision: String, isDirty: Bool) {
+  public init(sessionId: String, path: String, content: String, revision: String, isDirty: Bool, serverOpenMs: Double? = nil) {
     self.sessionId = sessionId
     self.path = path
     self.content = content
     self.revision = revision
     self.isDirty = isDirty
+    self.serverOpenMs = serverOpenMs
   }
 }
 
@@ -119,9 +121,27 @@ public struct SessionSaveParams: Codable, Sendable, Equatable {
 public struct SessionSaveResult: Codable, Sendable, Equatable {
   public var ok: Bool
   public var revision: String
-  public init(ok: Bool, revision: String) {
+  public var serverSaveMs: Double?
+  public init(ok: Bool, revision: String, serverSaveMs: Double? = nil) {
     self.ok = ok
     self.revision = revision
+    self.serverSaveMs = serverSaveMs
+  }
+}
+
+public struct BenchMetricsParams: Codable, Sendable {
+  public var sessionId: String
+  public init(sessionId: String) { self.sessionId = sessionId }
+}
+
+public struct BenchMetricsResult: Codable, Sendable {
+  public var typingLatencySamples: [Double]
+  public var memoryResidentBytes: Int64
+  public var sessionOpenToReadyMs: Double?
+  public init(typingLatencySamples: [Double], memoryResidentBytes: Int64, sessionOpenToReadyMs: Double? = nil) {
+    self.typingLatencySamples = typingLatencySamples
+    self.memoryResidentBytes = memoryResidentBytes
+    self.sessionOpenToReadyMs = sessionOpenToReadyMs
   }
 }
 

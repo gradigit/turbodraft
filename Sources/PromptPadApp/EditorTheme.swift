@@ -14,7 +14,10 @@ enum EditorTheme {
 
   static let primaryText: NSColor = NSColor.labelColor
   static let secondaryText: NSColor = NSColor.secondaryLabelColor
-  static let markerText: NSColor = NSColor.tertiaryLabelColor
+  /// Markdown syntax characters (#, >, *, `, -, [ ] etc.).
+  /// tertiaryLabelColor was too faint in dark mode; secondaryLabelColor is
+  /// visually de-emphasized but still legible.
+  static let markerText: NSColor = NSColor.secondaryLabelColor
   static let caret: NSColor = NSColor.labelColor
 
   static let codeBlockBackground: NSColor = NSColor(name: nil) { appearance in

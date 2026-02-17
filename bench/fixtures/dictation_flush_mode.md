@@ -32,4 +32,4 @@ Update the UI in “flush mode” so window tiles/bars look more square (reduced
 - When 2+ windows are present in flush mode, each window is visually separable at a glance without looking like a single continuous bar.
 - App icons remain visible, aligned, and unaffected in size/position.
 - Non-flush mode styling is unchanged.
-- No layout regressions with 1 window, many windows, or varying window titles/icon combinations.
+- No layout regressions with 1 window, many windows, or varying window titles/icon combinations
