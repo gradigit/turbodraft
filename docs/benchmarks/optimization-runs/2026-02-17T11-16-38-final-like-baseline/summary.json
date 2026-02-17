@@ -1,0 +1,68 @@
+{
+  "meta": {
+    "timestamp": "2026-02-17T11-16-38",
+    "label": "final-like-baseline",
+    "fixture": "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+    "warm": 3,
+    "cold": 1
+  },
+  "bench_status": {
+    "command": [
+      "/Users/aaaaa/Projects/promptpad/.build/release/promptpad",
+      "bench",
+      "run",
+      "--path",
+      "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+      "--warm",
+      "3",
+      "--cold",
+      "1",
+      "--out",
+      "/Users/aaaaa/Projects/promptpad/docs/benchmarks/optimization-runs/2026-02-17T11-16-38-final-like-baseline/promptpad-bench.json"
+    ],
+    "elapsed_ms": 794.44625,
+    "returncode": 0
+  },
+  "bench_metrics": {
+    "metrics": {
+      "warm_type_p95_ms": 0.072167,
+      "warm_save_roundtrip_p95_ms": 1.047208,
+      "cold_open_roundtrip_p95_ms": 231.428666,
+      "warm_agent_reflect_p95_ms": 0.601708,
+      "warm_open_roundtrip_p95_ms": 7.573542,
+      "warm_ctrl_g_to_editable_p95_ms": 5.051416
+    },
+    "timestamp": "2026-02-17T02:16:39Z",
+    "osVersion": "Version 26.2 (Build 25C56)",
+    "coldN": 1,
+    "warmN": 3
+  },
+  "warm_promptpad_open": {
+    "n_ok": 3,
+    "n_err": 0,
+    "p50_ms": 18.64170800000009,
+    "p95_ms": 18.64170800000009,
+    "mean_ms": 20.40258300000001,
+    "errors": []
+  },
+  "warm_promptpad_open_cshim": {
+    "n_ok": 3,
+    "n_err": 0,
+    "p50_ms": 12.158957999999886,
+    "p95_ms": 12.158957999999886,
+    "mean_ms": 10.422027666666667,
+    "errors": []
+  },
+  "cold_promptpad_open": {
+    "n_ok": 1,
+    "n_err": 0,
+    "p50_ms": 185.48579199999992,
+    "p95_ms": 185.48579199999992
+  },
+  "cold_promptpad_open_cshim": {
+    "n_ok": 0,
+    "n_err": 1,
+    "p50_ms": null,
+    "p95_ms": null
+  }
+}

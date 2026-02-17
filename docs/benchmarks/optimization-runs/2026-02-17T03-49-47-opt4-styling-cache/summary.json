@@ -1,0 +1,68 @@
+{
+  "meta": {
+    "timestamp": "2026-02-17T03-49-47",
+    "label": "opt4-styling-cache",
+    "fixture": "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+    "warm": 3,
+    "cold": 1
+  },
+  "bench_status": {
+    "command": [
+      "/Users/aaaaa/Projects/promptpad/.build/release/promptpad",
+      "bench",
+      "run",
+      "--path",
+      "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+      "--warm",
+      "3",
+      "--cold",
+      "1",
+      "--out",
+      "/Users/aaaaa/Projects/promptpad/docs/benchmarks/optimization-runs/2026-02-17T03-49-47-opt4-styling-cache/promptpad-bench.json"
+    ],
+    "timeout": true,
+    "returncode": 124
+  },
+  "bench_metrics": {},
+  "warm_promptpad_open": {
+    "n_ok": 3,
+    "n_err": 0,
+    "p50_ms": 74.01116699999832,
+    "p95_ms": 74.01116699999832,
+    "mean_ms": 63.23912499999906,
+    "errors": []
+  },
+  "warm_promptpad_open_cshim": {
+    "n_ok": 0,
+    "n_err": 3,
+    "p50_ms": null,
+    "p95_ms": null,
+    "mean_ms": null,
+    "errors": [
+      {
+        "timeout": true,
+        "stderr_tail": ""
+      },
+      {
+        "timeout": true,
+        "stderr_tail": ""
+      },
+      {
+        "timeout": true,
+        "stderr_tail": ""
+      }
+    ]
+  },
+  "cold_promptpad_open": {
+    "n_ok": 0,
+    "n_err": 1,
+    "p50_ms": null,
+    "p95_ms": null
+  },
+  "cold_promptpad_open_cshim": {
+    "n_ok": 0,
+    "n_err": 1,
+    "p50_ms": null,
+    "p95_ms": null
+  }
+}

@@ -1,0 +1,331 @@
+{
+  "meta": {
+    "timestamp": "2026-02-17T04-11-07",
+    "fixture": "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+    "warm_n": 12,
+    "cold_n": 4,
+    "bench_warm_n": 6,
+    "bench_cold_n": 1,
+    "launchagent_label": "com.promptpad.app.bench"
+  },
+  "scenarios": {
+    "no_launchagent": {
+      "warm_promptpad_open": {
+        "n_ok": 12,
+        "n_err": 0,
+        "p50_ms": 11.810958000000028,
+        "p95_ms": 22.31712499999992,
+        "mean_ms": 15.112229250000004,
+        "samples_ms": [
+          9.936416999999892,
+          10.858833000000118,
+          10.916167000000087,
+          11.137666999999965,
+          11.241125000000011,
+          11.810958000000028,
+          12.67691699999989,
+          14.254750000000058,
+          15.248916999999892,
+          19.465250000000083,
+          22.31712499999992,
+          31.4826250000001
+        ],
+        "errors": []
+      },
+      "cold_promptpad_open": {
+        "n_ok": 3,
+        "n_err": 1,
+        "p50_ms": 503.19091599999956,
+        "p95_ms": 503.19091599999956,
+        "mean_ms": 569.5862083333328,
+        "samples_ms": [
+          498.84620899999936,
+          503.19091599999956,
+          706.7214999999997
+        ],
+        "errors": [
+          {
+            "rc": 124,
+            "timeout": true,
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "bench": {
+        "status": {
+          "cmd": [
+            "/Users/aaaaa/Projects/promptpad/.build/release/promptpad",
+            "bench",
+            "run",
+            "--path",
+            "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+            "--warm",
+            "6",
+            "--cold",
+            "1",
+            "--out",
+            "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/scenario1_no_launchagent.bench.json"
+          ],
+          "rc": 1,
+          "timeout": false,
+          "elapsed_ms": 519.1507499999989
+        },
+        "metrics": null,
+        "out_file": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/scenario1_no_launchagent.bench.json",
+        "stdout_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/logs/scenario1_no_launchagent.bench.stdout.log",
+        "stderr_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/logs/scenario1_no_launchagent.bench.stderr.log"
+      }
+    },
+    "launchagent_resident": {
+      "launchagent_install": {
+        "cmd": [
+          "/Users/aaaaa/Projects/promptpad/scripts/promptpad-launch-agent",
+          "install",
+          "--app",
+          "/Users/aaaaa/Projects/promptpad/.build/release/promptpad-app"
+        ],
+        "rc": -15,
+        "timeout": false,
+        "elapsed_ms": 537.778792000001,
+        "stdout": "",
+        "stderr": ""
+      },
+      "warm_promptpad_open": {
+        "n_ok": 12,
+        "n_err": 0,
+        "p50_ms": 13.79662499999904,
+        "p95_ms": 1384.2768750000032,
+        "mean_ms": 753.2576597499996,
+        "samples_ms": [
+          10.878165999994962,
+          11.196208999997907,
+          12.5280840000014,
+          12.797624999999243,
+          13.612624999997934,
+          13.79662499999904,
+          14.107041999999637,
+          16.17987500000163,
+          25.507582999998704,
+          26.672207999999955,
+          1384.2768750000032,
+          7497.539000000001
+        ],
+        "errors": []
+      },
+      "cold_promptpad_open": {
+        "n_ok": 4,
+        "n_err": 0,
+        "p50_ms": 63.50433299999713,
+        "p95_ms": 71.88379200000054,
+        "mean_ms": 66.79425000000447,
+        "samples_ms": [
+          59.251374999999825,
+          63.50433299999713,
+          71.88379200000054,
+          72.53750000002037
+        ],
+        "errors": []
+      },
+      "bench": {
+        "status": {
+          "cmd": [
+            "/Users/aaaaa/Projects/promptpad/.build/release/promptpad",
+            "bench",
+            "run",
+            "--path",
+            "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+            "--warm",
+            "6",
+            "--cold",
+            "1",
+            "--out",
+            "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/scenario2_launchagent.bench.json"
+          ],
+          "rc": 0,
+          "timeout": false,
+          "elapsed_ms": 594.4249579999887
+        },
+        "metrics": {
+          "metrics": {
+            "warm_agent_reflect_p95_ms": 6.845833,
+            "warm_type_p95_ms": 0.083875,
+            "warm_ctrl_g_to_editable_p95_ms": 6.889458,
+            "cold_open_roundtrip_p95_ms": 194.960625,
+            "warm_open_roundtrip_p95_ms": 3.858,
+            "warm_save_roundtrip_p95_ms": 0.687834
+          },
+          "timestamp": "2026-02-16T19:12:15Z",
+          "osVersion": "Version 26.2 (Build 25C56)",
+          "warmN": 6,
+          "coldN": 1
+        },
+        "out_file": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/scenario2_launchagent.bench.json",
+        "stdout_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/logs/scenario2_launchagent.bench.stdout.log",
+        "stderr_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/logs/scenario2_launchagent.bench.stderr.log"
+      }
+    },
+    "lifecycle_compare": {
+      "stay_resident_warm_promptpad_open": {
+        "n_ok": 12,
+        "n_err": 0,
+        "p50_ms": 16.84541699998954,
+        "p95_ms": 37.747375000006286,
+        "mean_ms": 20.495638916670334,
+        "samples_ms": [
+          13.432667000015499,
+          14.00129200000083,
+          14.767583000008017,
+          15.416417000000365,
+          16.67262500000652,
+          16.84541699998954,
+          16.917500000010477,
+          16.933792000010726,
+          17.218708000000333,
+          20.3138750000071,
+          37.747375000006286,
+          45.68041599998833
+        ],
+        "errors": []
+      },
+      "stay_resident_cold_promptpad_open": {
+        "n_ok": 0,
+        "n_err": 4,
+        "p50_ms": null,
+        "p95_ms": null,
+        "mean_ms": null,
+        "samples_ms": [],
+        "errors": [
+          {
+            "rc": 124,
+            "timeout": true,
+            "stderr_tail": ""
+          },
+          {
+            "rc": 124,
+            "timeout": true,
+            "stderr_tail": ""
+          },
+          {
+            "rc": 124,
+            "timeout": true,
+            "stderr_tail": ""
+          },
+          {
+            "rc": 124,
+            "timeout": true,
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "stay_resident_bench": {
+        "status": {
+          "cmd": [
+            "/Users/aaaaa/Projects/promptpad/.build/release/promptpad",
+            "bench",
+            "run",
+            "--path",
+            "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+            "--warm",
+            "6",
+            "--cold",
+            "1",
+            "--out",
+            "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/scenario3_stay_resident.bench.json"
+          ],
+          "rc": 0,
+          "timeout": false,
+          "elapsed_ms": 3873.9083329999994
+        },
+        "metrics": {
+          "warmN": 6,
+          "timestamp": "2026-02-16T19:13:07Z",
+          "coldN": 1,
+          "osVersion": "Version 26.2 (Build 25C56)",
+          "metrics": {
+            "cold_open_roundtrip_p95_ms": 181.819,
+            "warm_agent_reflect_p95_ms": 1517.630125,
+            "warm_ctrl_g_to_editable_p95_ms": 8.107084,
+            "warm_type_p95_ms": 0.075833,
+            "warm_save_roundtrip_p95_ms": 0.756042,
+            "warm_open_roundtrip_p95_ms": 3.013541
+          }
+        },
+        "out_file": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/scenario3_stay_resident.bench.json",
+        "stdout_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/logs/scenario3_stay_resident.bench.stdout.log",
+        "stderr_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/logs/scenario3_stay_resident.bench.stderr.log"
+      },
+      "terminate_on_last_close_warm_promptpad_open": {
+        "n_ok": 12,
+        "n_err": 0,
+        "p50_ms": 15.536791999984416,
+        "p95_ms": 41.40295800000604,
+        "mean_ms": 22.1047566666651,
+        "samples_ms": [
+          13.283624999996391,
+          13.933041000011144,
+          14.190749999994296,
+          14.254915999990772,
+          14.684125000014319,
+          15.536791999984416,
+          15.586833000008482,
+          19.1033749999915,
+          19.726957999984734,
+          20.562791000003926,
+          41.40295800000604,
+          62.990915999995195
+        ],
+        "errors": []
+      },
+      "terminate_on_last_close_cold_promptpad_open": {
+        "n_ok": 4,
+        "n_err": 0,
+        "p50_ms": 47.14970800001174,
+        "p95_ms": 49.79833299999882,
+        "mean_ms": 47.75415599999906,
+        "samples_ms": [
+          42.19045799999731,
+          47.14970800001174,
+          49.79833299999882,
+          51.87812499998836
+        ],
+        "errors": []
+      },
+      "terminate_on_last_close_bench_warm_only": {
+        "status": {
+          "cmd": [
+            "/Users/aaaaa/Projects/promptpad/.build/release/promptpad",
+            "bench",
+            "run",
+            "--path",
+            "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+            "--warm",
+            "6",
+            "--cold",
+            "0",
+            "--out",
+            "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/scenario3_terminate_warm_only.bench.json"
+          ],
+          "rc": 0,
+          "timeout": false,
+          "elapsed_ms": 3060.3510420000093
+        },
+        "metrics": {
+          "osVersion": "Version 26.2 (Build 25C56)",
+          "warmN": 6,
+          "coldN": 0,
+          "metrics": {
+            "warm_type_p95_ms": 0.097917,
+            "warm_open_roundtrip_p95_ms": 4.453,
+            "warm_ctrl_g_to_editable_p95_ms": 5.953666,
+            "warm_save_roundtrip_p95_ms": 1.567041,
+            "warm_agent_reflect_p95_ms": 1237.903416
+          },
+          "timestamp": "2026-02-16T19:13:14Z"
+        },
+        "out_file": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/scenario3_terminate_warm_only.bench.json",
+        "stdout_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/logs/scenario3_terminate_warm_only.bench.stdout.log",
+        "stderr_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-11-07/logs/scenario3_terminate_warm_only.bench.stderr.log"
+      }
+    }
+  }
+}
