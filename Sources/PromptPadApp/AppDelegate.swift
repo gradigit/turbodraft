@@ -283,6 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     switch req.method {
     case PromptPadMethod.hello:
+      // TODO: enforce protocolVersion mismatch — reject clients with incompatible versions (#28)
       let caps = PromptPadCapabilities(supportsWait: true, supportsAgentDraft: cfg.agent.enabled, supportsQuit: true)
       let res = HelloResult(protocolVersion: 1, capabilities: caps, serverPid: Int(getpid()))
       return ok(res)
@@ -400,6 +401,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let editorSession = sessionsById[params.sessionId] else {
           return err(JSONRPCStandardErrorCode.invalidRequest, "Invalid sessionId")
         }
+        // Optimistic concurrency: reject stale saves unless force is true.
+        if let baseRev = params.baseRevision, params.force != true {
+          if let info = await editorSession.currentInfo(), info.diskRevision != baseRev {
+            return err(JSONRPCStandardErrorCode.invalidRequest, "baseRevision mismatch (stale save)")
+          }
+        }
         // Session-bound save: ignore params.path and only save current session content.
         await editorSession.updateBufferContent(params.content)
         let _ = try await editorSession.autosave(reason: "rpc_save")
@@ -410,6 +417,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       } catch {
         return err(JSONRPCStandardErrorCode.invalidParams, "save failed: \(error)")
       }
+
+    // TODO: add sessionClose RPC and periodic GC sweep for orphaned sessions (#27)
 
     case PromptPadMethod.sessionWait:
       do {
@@ -693,12 +702,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     activeWindowController()?.restorePreviousBuffer()
   }
 
-  @MainActor @objc private func selectAgentModel(_ sender: NSMenuItem) {
-    guard let model = sender.representedObject as? String else { return }
-    cfg.agent.model = model
+  private func sanitizeReasoningForModel(_ model: String) {
     if model.contains("spark"), cfg.agent.reasoningEffort == .minimal {
       cfg.agent.reasoningEffort = .low
     }
+  }
+
+  @MainActor @objc private func selectAgentModel(_ sender: NSMenuItem) {
+    guard let model = sender.representedObject as? String else { return }
+    cfg.agent.model = model
+    sanitizeReasoningForModel(model)
     sender.menu?.items.forEach {
       if $0.action == #selector(selectAgentModel(_:)) {
         $0.state = .off
@@ -725,9 +738,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard !model.isEmpty else { return }
 
     cfg.agent.model = model
-    if model.contains("spark"), cfg.agent.reasoningEffort == .minimal {
-      cfg.agent.reasoningEffort = .low
-    }
+    sanitizeReasoningForModel(model)
     applyAgentConfigToAllWindows()
     try? cfg.write()
     installMenu()
@@ -823,8 +834,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       record["ts"] = ISO8601DateFormatter().string(from: Date())
       let data = try JSONSerialization.data(withJSONObject: record, options: [])
       let line = data + Data([0x0A])
-      if FileManager.default.fileExists(atPath: file.path) {
-        let fh = try FileHandle(forWritingTo: file)
+      if let fh = try? FileHandle(forWritingTo: file) {
         try fh.seekToEnd()
         try fh.write(contentsOf: line)
         try fh.close()

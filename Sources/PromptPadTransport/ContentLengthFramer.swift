@@ -16,6 +16,7 @@ public enum ContentLengthFramerError: Error, CustomStringConvertible {
   }
 }
 
+/// Not thread-safe; expected to be used by a single owner (one framer per connection reader).
 public final class ContentLengthFramer {
   private var buffer = Data()
   private let maxFrameBytes: Int

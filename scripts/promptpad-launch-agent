@@ -29,6 +29,15 @@ bootout_if_loaded() {
   launchctl bootout "gui/${uid}" "$plist_path" >/dev/null 2>&1 || true
 }
 
+xml_escape() {
+  local s="$1"
+  s="${s//&/&amp;}"
+  s="${s//</&lt;}"
+  s="${s//>/&gt;}"
+  s="${s//\"/&quot;}"
+  printf '%s' "$s"
+}
+
 install_agent() {
   local app_path="$app_path_default"
   while [[ $# -gt 0 ]]; do
@@ -51,6 +60,10 @@ install_agent() {
     exit 1
   fi
 
+  local safe_label safe_app_path
+  safe_label="$(xml_escape "$label")"
+  safe_app_path="$(xml_escape "$app_path")"
+
   mkdir -p "${HOME}/Library/LaunchAgents"
   cat >"$plist_path" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -58,10 +71,10 @@ install_agent() {
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>${label}</string>
+  <string>${safe_label}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${app_path}</string>
+    <string>${safe_app_path}</string>
     <string>--start-hidden</string>
   </array>
   <key>RunAtLoad</key>

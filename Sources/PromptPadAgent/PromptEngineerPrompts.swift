@@ -43,6 +43,17 @@ public enum PromptEngineerPrompts {
         return text
       }
     }
+
+    // Fallback for release builds where #filePath may not resolve.
+    if let resourcePath = Bundle.main.resourcePath {
+      let bundled = URL(fileURLWithPath: resourcePath).appendingPathComponent(rel).path
+      if let data = try? Data(contentsOf: URL(fileURLWithPath: bundled)),
+        let text = String(data: data, encoding: .utf8),
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      {
+        return text
+      }
+    }
     return nil
   }
 

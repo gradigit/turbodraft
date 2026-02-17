@@ -117,8 +117,7 @@ Commands:
       record["ts"] = ISO8601DateFormatter().string(from: Date())
       let data = try JSONSerialization.data(withJSONObject: record, options: [])
       let line = data + Data([0x0A])
-      if FileManager.default.fileExists(atPath: file.path) {
-        let fh = try FileHandle(forWritingTo: file)
+      if let fh = try? FileHandle(forWritingTo: file) {
         try fh.seekToEnd()
         try fh.write(contentsOf: line)
         try fh.close()
@@ -463,7 +462,7 @@ Commands:
   }
 
   private func sendSessionWait(_ conn: JSONRPCConnection, sessionId: String, timeoutMs: Int) throws -> SessionWaitResult {
-    let waitReq = JSONRPCRequest(id: .int(3), method: PromptPadMethod.sessionWait, params: .object([
+    let waitReq = JSONRPCRequest(id: .int(6), method: PromptPadMethod.sessionWait, params: .object([
       "sessionId": .string(sessionId),
       "timeoutMs": .int(Int64(timeoutMs)),
     ]))
@@ -477,7 +476,7 @@ Commands:
   }
 
   private func quitViaConnection(_ conn: JSONRPCConnection) throws -> Bool {
-    let req = JSONRPCRequest(id: .int(4), method: PromptPadMethod.appQuit, params: .null)
+    let req = JSONRPCRequest(id: .int(7), method: PromptPadMethod.appQuit, params: .null)
     try conn.sendJSON(req)
     let resp = try conn.readResponse()
     return resp.error == nil

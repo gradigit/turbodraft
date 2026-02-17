@@ -200,24 +200,25 @@ public enum MarkdownHighlighter {
       return
     }
 
-    // Headers
-    if let m = headerRegex.firstMatch(in: line, range: full) {
-      let level = lineNS.substring(with: m.range(at: 2)).count
-      add(m.range(at: 2), .headerMarker(level: level))
-      // Header text (group 4)
-      let textRange = m.range(at: 4)
-      if textRange.length > 0 {
-        add(textRange, .headerText(level: level))
-      }
-    }
-
-    // Block quotes
+    // Block quotes (detect before headers to avoid overlapping highlights on `> # Heading`)
+    var isBlockquote = false
     if let m = quoteRegex.firstMatch(in: line, range: full) {
+      isBlockquote = true
       let level = lineNS.substring(with: m.range(at: 2)).count
       add(m.range(at: 2), .quoteMarker(level: level))
       let textRange = m.range(at: 4)
       if textRange.length > 0 {
         add(textRange, .quoteText(level: level))
+      }
+    }
+
+    // Headers (skip if already matched as blockquote to avoid overlapping spans)
+    if !isBlockquote, let m = headerRegex.firstMatch(in: line, range: full) {
+      let level = lineNS.substring(with: m.range(at: 2)).count
+      add(m.range(at: 2), .headerMarker(level: level))
+      let textRange = m.range(at: 4)
+      if textRange.length > 0 {
+        add(textRange, .headerText(level: level))
       }
     }
 
