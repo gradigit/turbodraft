@@ -2,6 +2,7 @@ import Foundation
 
 public enum FileIOError: Error {
   case notAFile
+  case fileTooLarge(Int)
 }
 
 public enum FileIO {
@@ -11,7 +12,7 @@ public enum FileIO {
       throw FileIOError.notAFile
     }
     if let size = values.fileSize, size > maxBytes {
-      throw FileIOError.notAFile
+      throw FileIOError.fileTooLarge(size)
     }
     let data = try Data(contentsOf: url)
     return String(decoding: data, as: UTF8.self)

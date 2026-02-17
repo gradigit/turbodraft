@@ -52,6 +52,19 @@ public actor EditorSession {
   public init() {}
 
   public func open(fileURL: URL) throws -> SessionInfo {
+    // Perform failable I/O before mutating instance state (#13).
+    if !FileManager.default.fileExists(atPath: fileURL.path) {
+      try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+      FileManager.default.createFile(atPath: fileURL.path, contents: Data())
+    }
+
+    // PERF: sync file I/O on actor — acceptable for single-file editor
+    let text = try FileIO.readText(at: fileURL)
+    // PERF: sync disk I/O for recovery store
+    let recovered = recoveryStore.loadSnapshots(for: fileURL, maxCount: 48)
+
+    // All failable operations succeeded — now mutate instance state.
+
     // Opening a new file/session supersedes any existing waiters from
     // previous external-editor invocations. Release them to avoid stuck CLIs.
     if !waiters.isEmpty {
@@ -64,14 +77,6 @@ public actor EditorSession {
     self.fileURL = fileURL
     self.sessionId = UUID().uuidString
     self.isClosed = false
-
-    if !FileManager.default.fileExists(atPath: fileURL.path) {
-      try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-      FileManager.default.createFile(atPath: fileURL.path, contents: Data())
-    }
-
-    let text = try FileIO.readText(at: fileURL)
-    let recovered = recoveryStore.loadSnapshots(for: fileURL, maxCount: 48)
 
     self.history = HistoryStore(maxCount: 64)
     for snap in recovered.suffix(48) {
@@ -91,6 +96,7 @@ public actor EditorSession {
 
     let openSnap = HistorySnapshot(reason: "open_buffer", content: text)
     self.history.append(openSnap)
+    // PERF: sync disk I/O for recovery store
     _ = recoveryStore.appendSnapshot(openSnap, for: fileURL)
 
     return SessionInfo(
@@ -113,6 +119,7 @@ public actor EditorSession {
     guard let url = fileURL else { return nil }
     let snap = HistorySnapshot(reason: reason, content: content)
     history.append(snap)
+    // PERF: sync disk I/O for recovery store
     _ = recoveryStore.appendSnapshot(snap, for: url)
     return snap.id
   }
@@ -136,7 +143,9 @@ public actor EditorSession {
 
     let snap = HistorySnapshot(reason: reason, content: content)
     history.append(snap)
+    // PERF: sync disk I/O for recovery store
     _ = recoveryStore.appendSnapshot(snap, for: url)
+    // PERF: sync file write on actor
     let newRev = try FileIO.writeTextAtomically(content, to: url)
     diskRevision = newRev
     isDirty = false
@@ -148,6 +157,7 @@ public actor EditorSession {
 
   public func applyExternalDiskChange() throws -> SessionInfo? {
     guard let url = fileURL else { return nil }
+    // PERF: sync file read on actor
     let diskText = try FileIO.readText(at: url)
     let diskRev = Revision.sha256(text: diskText)
     if diskRev == diskRevision {
@@ -157,6 +167,7 @@ public actor EditorSession {
     if isDirty {
       let snap = HistorySnapshot(reason: "before_external_apply", content: content)
       history.append(snap)
+      // PERF: sync disk I/O for recovery store
       _ = recoveryStore.appendSnapshot(snap, for: url)
       conflictSnapshotId = snap.id
       bannerMessage = "File changed externally. Newest version applied. You can restore your previous buffer."
@@ -210,16 +221,17 @@ public actor EditorSession {
       if let timeoutMs {
         let pollIntervalNs: UInt64 = 20_000_000
         let timeoutNs = UInt64(max(0, timeoutMs)) * 1_000_000
-        timeoutTask = Task { [weak self] in
+        // Strong capture to prevent continuation leak if self is deallocated (#11).
+        timeoutTask = Task {
           var elapsedNs: UInt64 = 0
           while elapsedNs < timeoutNs {
             if Task.isCancelled { return }
             try? await Task.sleep(nanoseconds: pollIntervalNs)
             elapsedNs += pollIntervalNs
             if Task.isCancelled { return }
-            _ = try? await self?.applyExternalDiskChange()
+            _ = try? await self.applyExternalDiskChange()
           }
-          await self?.finishRevisionWaiter(id: waiterID, with: nil)
+          await self.finishRevisionWaiter(id: waiterID, with: nil)
         }
       } else {
         timeoutTask = nil

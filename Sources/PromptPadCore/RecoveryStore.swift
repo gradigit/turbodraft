@@ -9,7 +9,7 @@ public final class RecoveryStore: @unchecked Sendable {
     var contentHash: String
   }
 
-  private static let ioLock = NSLock()
+  private let ioLock = NSLock()
   private let maxSnapshotsPerFile: Int
   private let maxBytesPerFile: Int
   private let ttlDays: Int
@@ -28,8 +28,8 @@ public final class RecoveryStore: @unchecked Sendable {
   }
 
   public func loadSnapshots(for fileURL: URL, maxCount: Int = 64) -> [HistorySnapshot] {
-    Self.ioLock.lock()
-    defer { Self.ioLock.unlock() }
+    ioLock.lock()
+    defer { ioLock.unlock() }
 
     let path = normalizedPath(for: fileURL)
     let file = snapshotsFileURL(forPath: path)
@@ -49,8 +49,8 @@ public final class RecoveryStore: @unchecked Sendable {
       return snapshot.id
     }
 
-    Self.ioLock.lock()
-    defer { Self.ioLock.unlock() }
+    ioLock.lock()
+    defer { ioLock.unlock() }
 
     let path = normalizedPath(for: fileURL)
     let file = snapshotsFileURL(forPath: path)

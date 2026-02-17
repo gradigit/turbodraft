@@ -51,7 +51,11 @@ INSTRUCTION:
     }
 
     let inputData = Data(stdin.utf8)
-    let result = try spawnAndCapture(executablePath: resolved, arguments: args, stdin: inputData)
+    // Run blocking posix_spawn + poll loop off the cooperative thread pool (#10).
+    let adapter = self
+    let result = try await Task.detached {
+      try adapter.spawnAndCapture(executablePath: resolved, arguments: adapter.args, stdin: inputData)
+    }.value
     if result.didOverflow {
       throw CodexCLIAgentError.outputTooLarge
     }
