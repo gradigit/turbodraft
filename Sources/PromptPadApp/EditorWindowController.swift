@@ -52,12 +52,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
       Task { @MainActor [weak self] in
         guard let self else { return }
         self.editorVC.focusEditor()
-        DispatchQueue.main.async { [weak self] in
-          self?.editorVC.focusEditor()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-          self?.editorVC.focusEditor()
-        }
       }
     }
   }
@@ -81,9 +75,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
   func windowDidBecomeKey(_ notification: Notification) {
     editorVC.focusEditor()
-    DispatchQueue.main.async { [weak self] in
-      self?.editorVC.focusEditor()
-    }
   }
 
   func windowDidBecomeMain(_ notification: Notification) {
@@ -134,12 +125,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     NSApp.activate(ignoringOtherApps: true)
     NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
     editorVC.focusEditor()
-    DispatchQueue.main.async { [weak self] in
-      self?.editorVC.focusEditor()
-    }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
-      self?.editorVC.focusEditor()
-    }
     if config.editorMode == .reliable {
       _ = await editorVC.waitUntilEditorReady(timeoutMs: 350)
     }

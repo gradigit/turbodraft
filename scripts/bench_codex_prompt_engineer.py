@@ -205,7 +205,8 @@ def read_text_file(path: str, *, label: str) -> str:
         raise SystemExit(f"{label} path is empty")
     if not os.path.isfile(path):
         raise SystemExit(f"{label} file not found: {path}")
-    txt = open(path, "r", encoding="utf-8", errors="replace").read()
+    with open(path, "r", encoding="utf-8", errors="replace") as _f:
+        txt = _f.read()
     out = txt.strip()
     if not out:
         raise SystemExit(f"{label} file is empty: {path}")
@@ -789,15 +790,22 @@ def run_codex_exec(
 
         last_err: Optional[str] = None
         for attempt in range(6):
-            t0 = time.perf_counter()
-            p = subprocess.run(
-                cmd,
-                input=prompt_stdin.encode("utf-8"),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=timeout_s,
-            )
-            dt = time.perf_counter() - t0
+            try:
+                t0 = time.perf_counter()
+                p = subprocess.run(
+                    cmd,
+                    input=prompt_stdin.encode("utf-8"),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=timeout_s,
+                )
+                dt = time.perf_counter() - t0
+            except subprocess.TimeoutExpired:
+                last_err = f"timeout after {timeout_s}s"
+                if attempt < 5:
+                    time.sleep(min(3.0, 0.75 * (attempt + 1)))
+                    continue
+                raise RuntimeError(f"codex exec failed {last_err}")
 
             if verbose:
                 if p.stdout:
@@ -812,7 +820,8 @@ def run_codex_exec(
                         pass
 
             usage = parse_codex_exec_usage(p.stdout or b"")
-            improved = open(out_path, "r", encoding="utf-8", errors="replace").read()
+            with open(out_path, "r", encoding="utf-8", errors="replace") as _f:
+                improved = _f.read()
             if not (improved or "").strip():
                 improved = parse_codex_exec_agent_message(p.stdout or b"")
 
@@ -962,7 +971,8 @@ def run_codex_judge_exec(
         if p.returncode != 0:
             raise RuntimeError(f"codex judge failed rc={p.returncode}")
 
-        raw = open(out_path, "r", encoding="utf-8", errors="replace").read()
+        with open(out_path, "r", encoding="utf-8", errors="replace") as _f:
+            raw = _f.read()
         obj = parse_json_object(raw)
         return dt, obj
     finally:
@@ -1053,7 +1063,8 @@ def run_codex_pairwise_judge_exec(
         if p.returncode != 0:
             raise RuntimeError(f"codex pairwise judge failed rc={p.returncode}")
 
-        raw = open(out_path, "r", encoding="utf-8", errors="replace").read()
+        with open(out_path, "r", encoding="utf-8", errors="replace") as _f:
+            raw = _f.read()
         obj = parse_json_object(raw)
         return dt, obj
     finally:
@@ -1518,7 +1529,8 @@ def main() -> int:
 
         results: List[CaseResult] = []
         for draft_path in draft_paths:
-            draft_md = open(draft_path, "r", encoding="utf-8", errors="replace").read()
+            with open(draft_path, "r", encoding="utf-8", errors="replace") as _f:
+                draft_md = _f.read()
             draft_len = len((draft_md or "").strip())
             draft_key = safe_name(os.path.basename(draft_path))
 
@@ -1535,7 +1547,8 @@ def main() -> int:
             if pairwise_enabled and baseline_path:
                 if not os.path.isfile(baseline_path):
                     raise SystemExit(f"pairwise baseline missing for draft {draft_path}: {baseline_path}")
-                baseline_text = open(baseline_path, "r", encoding="utf-8", errors="replace").read().strip()
+                with open(baseline_path, "r", encoding="utf-8", errors="replace") as _f:
+                    baseline_text = _f.read().strip()
                 if not baseline_text:
                     raise SystemExit(f"pairwise baseline is empty: {baseline_path}")
 
@@ -1946,6 +1959,11 @@ def main() -> int:
         try:
             if app_proc is not None:
                 app_proc.terminate()
+                try:
+                    app_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    app_proc.kill()
+                    app_proc.wait(timeout=5)
         except Exception:
             pass
 

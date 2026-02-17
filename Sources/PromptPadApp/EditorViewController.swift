@@ -41,6 +41,7 @@ final class EditorViewController: NSViewController {
   private let agentButton = NSButton(title: "Improve Prompt", target: nil, action: nil)
   private let saveStatus = NSTextField(labelWithString: "Saved")
   private var agentAdapter: AgentAdapting?
+  private var agentRunning = false
 
   private enum SaveState {
     case saved
@@ -244,6 +245,7 @@ final class EditorViewController: NSViewController {
 
   func focusEditor() {
     guard view.window != nil else { return }
+    if isEditorFirstResponder() { return }
     let attemptFocus = { [weak self] in
       guard let self, let window = self.view.window else { return }
       if !window.isKeyWindow {
@@ -265,10 +267,7 @@ final class EditorViewController: NSViewController {
     }
 
     attemptFocus()
-    DispatchQueue.main.async { attemptFocus() }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { attemptFocus() }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { attemptFocus() }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) { attemptFocus() }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { attemptFocus() }
   }
 
   func waitUntilEditorReady(timeoutMs: Int = 320) async -> Bool {
@@ -550,6 +549,7 @@ final class EditorViewController: NSViewController {
   }
 
   @objc private func runAgent() {
+    guard !agentRunning else { return }
     guard agentConfig.enabled else {
       banner.set(message: "Prompt engineer is disabled. Enable it from the Agent menu.", snapshotId: nil)
       banner.isHidden = false
@@ -572,6 +572,7 @@ final class EditorViewController: NSViewController {
     let oldTitle = agentButton.title
     agentButton.title = "Improving..."
     agentButton.isEnabled = false
+    agentRunning = true
     banner.set(message: "Running prompt engineer...", snapshotId: nil)
     banner.isHidden = false
 
@@ -613,6 +614,7 @@ final class EditorViewController: NSViewController {
       await MainActor.run {
         self.agentButton.title = oldTitle
         self.agentButton.isEnabled = true
+        self.agentRunning = false
       }
     }
   }
