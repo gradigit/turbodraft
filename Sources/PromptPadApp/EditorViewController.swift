@@ -692,6 +692,7 @@ extension EditorViewController: NSTextViewDelegate {
 #endif
 
 @MainActor
+// Already @MainActor via NSView inheritance.
 final class BannerView: NSView {
   private let label = NSTextField(labelWithString: "")
   private let button = NSButton(title: "Restore", target: nil, action: nil)

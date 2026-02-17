@@ -37,7 +37,8 @@ let package = Package(
   ],
   dependencies: includeCodeEditSpike
     ? [
-      // Spike candidate text engine for A/B benchmarking.
+      // Spike candidate text engine for A/B benchmarking. Uses branch: "main"
+      // because this is env-gated (PROMPTPAD_SPIKE_CODEEDIT=1) and not shipped (#42).
       .package(url: "https://github.com/CodeEditApp/CodeEditTextView.git", branch: "main"),
     ]
     : [],

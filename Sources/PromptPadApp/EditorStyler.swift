@@ -143,6 +143,8 @@ final class MarkdownStyler {
 
     cache[key] = out
     cacheOrder.append(key)
+    // O(n) FIFO eviction is fine here — cacheLimit is small (512) and this runs
+    // at most once per highlight pass, removing only a handful of entries.
     if cacheOrder.count > cacheLimit {
       let removeCount = cacheOrder.count - cacheLimit
       for _ in 0..<removeCount {

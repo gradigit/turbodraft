@@ -54,6 +54,7 @@ public struct JSONRPCErrorObject: Codable, Sendable {
   }
 }
 
+/// Note: JSON-RPC 2.0 spec requires exactly one of result/error, but we allow both for lenient parsing.
 public struct JSONRPCResponse: Codable, Sendable {
   public var jsonrpc: String
   public var id: JSONRPCID

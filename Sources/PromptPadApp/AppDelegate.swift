@@ -270,6 +270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func handleRequest(_ req: JSONRPCRequest) async -> JSONRPCResponse? {
     guard let id = req.id else { return nil }
 
+    // Known: encode → serialize → wrap round-trip is ~microsecond overhead per RPC (#46).
     func ok(_ value: Encodable) -> JSONRPCResponse {
       let data = (try? JSONEncoder().encode(AnyEncodable(value))) ?? Data()
       let json = (try? JSONSerialization.jsonObject(with: data)) ?? NSNull()

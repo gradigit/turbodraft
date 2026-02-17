@@ -3,6 +3,7 @@ import Foundation
 public enum FileIOError: Error {
   case notAFile
   case fileTooLarge(Int)
+  case createFailed
 }
 
 public enum FileIO {
@@ -27,7 +28,9 @@ public enum FileIO {
     let tmpName = ".\(url.lastPathComponent).promptpad.tmp.\(UUID().uuidString)"
     let tmpURL = url.deletingLastPathComponent().appendingPathComponent(tmpName)
     let data = Data(text.utf8)
-    fm.createFile(atPath: tmpURL.path, contents: data)
+    guard fm.createFile(atPath: tmpURL.path, contents: data) else {
+      throw FileIOError.createFailed
+    }
     if let perms = existingPerms {
       try? fm.setAttributes([.posixPermissions: perms], ofItemAtPath: tmpURL.path)
     }

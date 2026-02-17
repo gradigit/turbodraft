@@ -48,6 +48,7 @@ public enum MarkdownHighlighter {
     var fenceLen: Int
   }
 
+  // Static regex properties: try! is safe — patterns are compile-time literals.
   private static let fenceRegex = try! NSRegularExpression(pattern: #"^(\s*)(`{3,}|~{3,})(.*)$"#)
   private static let headerRegex = try! NSRegularExpression(pattern: #"^(\s*)(#{1,6})(\s+)(.*)$"#)
   private static let quoteRegex = try! NSRegularExpression(pattern: #"^(\s*)(>+)(\s*)(.*)$"#)
