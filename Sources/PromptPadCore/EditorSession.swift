@@ -239,11 +239,8 @@ public actor EditorSession {
 
     if let timeoutMs {
       return await withTaskGroup(of: Bool.self) { group in
-        group.addTask { [weak self] in
-          guard let self else { return false }
-          await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            Task { await self.addWaiter(cont) }
-          }
+        group.addTask {
+          await self.waitForClose()
           return true
         }
         group.addTask {
@@ -256,10 +253,14 @@ public actor EditorSession {
       }
     }
 
+    await waitForClose()
+    return true
+  }
+
+  private func waitForClose() async {
     await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
       addWaiter(cont)
     }
-    return true
   }
 
   private func addWaiter(_ cont: CheckedContinuation<Void, Never>) {

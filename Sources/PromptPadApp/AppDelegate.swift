@@ -98,7 +98,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func application(_ sender: NSApplication, openFiles filenames: [String]) {
-    guard let first = filenames.first else { return }
+    guard let first = filenames.first else {
+      sender.reply(toOpenOrPrint: .failure)
+      return
+    }
     Task { @MainActor in
       let editorSession = EditorSession()
       let wc = makeWindowController(session: editorSession)
@@ -110,24 +113,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           session: editorSession,
           window: wc
         )
+        sender.reply(toOpenOrPrint: .success)
       } catch {
         NSLog("openFiles failed: \(error)")
+        sender.reply(toOpenOrPrint: .failure)
       }
     }
-    sender.reply(toOpenOrPrint: .success)
   }
 
   func applicationWillTerminate(_ notification: Notification) {
     let windows = allWindowControllers
     let sessions = Array(sessionsById.values)
-    Task { @MainActor in
+    let sem = DispatchSemaphore(value: 0)
+    DispatchQueue.global(qos: .userInitiated).async {
+      let group = DispatchGroup()
       for wc in windows {
-        await wc.flushAutosaveNow(reason: "app_terminate")
+        group.enter()
+        Task { @MainActor in
+          await wc.flushAutosaveNow(reason: "app_terminate")
+          group.leave()
+        }
       }
       for session in sessions {
-        await session.markClosed()
+        group.enter()
+        Task { await session.markClosed(); group.leave() }
       }
+      group.wait()
+      sem.signal()
     }
+    _ = sem.wait(timeout: .now() + 2.0)
   }
 
   @objc private func handleAppWillResignActive(_ note: Notification) {

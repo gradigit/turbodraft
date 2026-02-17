@@ -182,7 +182,15 @@ public enum UnixDomainSocket {
 public final class UnixDomainSocketServer: @unchecked Sendable {
   private let listenFD: Int32
   private let queue: DispatchQueue
-  private var running = true
+  private let lock = NSLock()
+  private var _running = true
+  private var _stopped = false
+
+  private var running: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return _running
+  }
 
   public init(socketPath: String) throws {
     self.listenFD = try UnixDomainSocket.bindAndListen(path: socketPath)
@@ -210,7 +218,14 @@ public final class UnixDomainSocketServer: @unchecked Sendable {
   }
 
   public func stop() {
-    running = false
-    close(listenFD)
+    lock.lock()
+    let wasRunning = _running
+    _running = false
+    let alreadyStopped = _stopped
+    _stopped = true
+    lock.unlock()
+    if wasRunning && !alreadyStopped {
+      close(listenFD)
+    }
   }
 }
