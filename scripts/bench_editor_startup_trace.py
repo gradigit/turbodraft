@@ -113,11 +113,16 @@ def wait_for_record(log_path: pathlib.Path, offset: int, timeout_s: float) -> Tu
                 tail = data[offset:]
                 nl = tail.find(b"\n")
                 if nl >= 0:
+                    new_offset = offset + nl + 1
                     line = tail[:nl].decode("utf-8", errors="replace").strip()
-                    if line:
+                    if not line:
+                        offset = new_offset
+                        continue
+                    try:
                         obj = json.loads(line)
-                        return obj, offset + nl + 1
-                    return {}, offset + nl + 1
+                    except (json.JSONDecodeError, ValueError):
+                        obj = {"_parse_error": True, "_raw": line[:200]}
+                    return obj, new_offset
         time.sleep(0.02)
     raise TimeoutError(f"timed out waiting for harness record ({timeout_s}s)")
 
@@ -208,6 +213,7 @@ def run_mode(
     socket_path: pathlib.Path,
     log_path: pathlib.Path,
     offset: int,
+    harness_proc: Optional[subprocess.Popen] = None,
 ) -> Tuple[ModeResult, int]:
     valid: List[Dict[str, Any]] = []
     invalid: List[Dict[str, Any]] = []
@@ -215,6 +221,9 @@ def run_mode(
     attempts = 0
 
     while attempts < max_attempts and len(valid) < target_valid:
+        if harness_proc is not None and harness_proc.poll() is not None:
+            errors.append({"mode": mode, "attempt": attempts + 1, "error": f"harness died (rc={harness_proc.returncode})"})
+            break
         attempts += 1
         try:
             if mode == "cold":
@@ -282,16 +291,26 @@ def main() -> int:
     env["PROMPTPAD_E2E_LOG"] = str(log_path.resolve())
     env["PROMPTPAD_E2E_MODE"] = "startup"
 
+    harness_log = open(out_dir / "harness_stdout.log", "w")
+    harness_err = open(out_dir / "harness_stderr.log", "w")
     harness_proc = subprocess.Popen(
         [str(harness_bin)],
         cwd=str(repo),
         env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=harness_log,
+        stderr=harness_err,
     )
 
     try:
-        time.sleep(0.9)
+        # Wait for harness readiness: poll for log file or process death, then settle.
+        _startup_deadline = time.time() + 3.0
+        while time.time() < _startup_deadline:
+            if harness_proc.poll() is not None:
+                raise SystemExit(f"harness exited immediately with rc={harness_proc.returncode}")
+            if log_path.exists():
+                break
+            time.sleep(0.05)
+        time.sleep(0.5)
         socket_path = pathlib.Path(args.socket_path).expanduser()
         offset = 0
         mult = max(1, int(args.max_attempt_multiplier))
@@ -305,6 +324,7 @@ def main() -> int:
             socket_path=socket_path,
             log_path=log_path,
             offset=offset,
+            harness_proc=harness_proc,
         )
         warm_result, offset = run_mode(
             mode="warm",
@@ -315,6 +335,7 @@ def main() -> int:
             socket_path=socket_path,
             log_path=log_path,
             offset=offset,
+            harness_proc=harness_proc,
         )
 
         cold_all = cold_result.valid + cold_result.invalid
@@ -377,6 +398,8 @@ def main() -> int:
             harness_proc.wait(timeout=2)
         except subprocess.TimeoutExpired:
             harness_proc.kill()
+        harness_log.close()
+        harness_err.close()
 
 
 if __name__ == "__main__":

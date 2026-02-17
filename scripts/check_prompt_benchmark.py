@@ -67,6 +67,10 @@ def main() -> int:
         for metric_key, baseline_key, threshold in checks:
             val = as_float(row.get(metric_key))
             if val is None:
+                if threshold > 0:
+                    failures.append(
+                        f"{run_id}: {metric_key}=None (missing) vs {baseline_key}={threshold:.3f}"
+                    )
                 continue
             if val < threshold:
                 failures.append(

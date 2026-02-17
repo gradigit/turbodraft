@@ -11,8 +11,8 @@ import sys
 from typing import List
 
 
-def run(cmd: List[str], *, cwd: pathlib.Path) -> int:
-    p = subprocess.run(cmd, cwd=str(cwd))
+def run(cmd: List[str], *, cwd: pathlib.Path, timeout: float = 3600) -> int:
+    p = subprocess.run(cmd, cwd=str(cwd), timeout=timeout)
     return int(p.returncode)
 
 
