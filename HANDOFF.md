@@ -1,9 +1,9 @@
-# HANDOFF — PromptPad (fresh Claude Code agent)
+# HANDOFF — PromptPad
 
 ## Branch and commit chain
 - Branch: `main`
-- Current HEAD: `20ee4b9`
-- Commit sequence created in this wrap:
+- Current HEAD: `8d51c6b`
+- Prior commit sequence (unchanged this session):
   1. `63d9020` chore: bootstrap repository and Swift package
   2. `47b24ae` feat(core): add protocol, transport, core session, config, and cli open path
   3. `3559c79` feat(app): add native AppKit editor with markdown behavior, autosave, and window/session flow
@@ -11,10 +11,16 @@
   5. `6b142c6` test: add unit and integration coverage
   6. `e80fa7c` perf(bench): add benchmark scripts, fixtures, baselines, and CI workflows
   7. `20ee4b9` docs: add benchmark methodology, research notes, and planning artifacts
+  8. `8d51c6b` docs: refresh HANDOFF for fresh Claude Code continuation
+
+## This session's work
+- Full codebase evaluation audit (no code changes — read-only analysis)
+- Produced `docs/EVALUATION_REPORT.md` with 46 findings across 4 severity levels
 
 ## Current repo state
 - Untracked:
   - `HANDOFF.md` (this file, pending commit)
+  - `docs/EVALUATION_REPORT.md` (new — codebase audit report)
   - `tmp/` (local benchmark artifacts; intentionally not committed)
 - No modified tracked files.
 
@@ -22,46 +28,44 @@
 - `swift build -c release`: pass
 - `swift test`: pass (58 tests, 0 failures)
 
-## Important benchmark status (latest known)
+## Codebase evaluation summary (docs/EVALUATION_REPORT.md)
 
-### Startup-trace benchmark (primary objective editor-open signal)
-Artifact:
-/Users/aaaaa/Projects/promptpad/tmp/bench_editor_startup_20260217-175434/report.json
+### Critical (5)
+1. `applicationWillTerminate` async Task never completes — last edits lost on quit
+2. `application(_:openFiles:)` replies success before async open finishes
+3. `waitUntilClosed` continuation race — registered too late, permanent hang
+4. Data race on `running` Bool in `UnixDomainSocketServer`
+5. `wait_for_record()` json.loads without try/except corrupts JSONL offset
 
-Summary:
-- cold valid runs: 5/5
-- warm valid runs: 20/20
-- all validity gates: pass
-- warm `ctrlGToPromptPadActiveMs` p95: `43.643 ms`
-- warm `ctrlGToEditorCommandReturnMs` p95: `51.428 ms`
-- warm `phasePromptPadReadyMs` p95: `9.864 ms`
+### High (15)
+6-20: Sync I/O on actor, double-close fd, static lock contention, oversized-file error, thread pool blocking, continuation leak, retain cycle, partial state on throw, silent harness crash, FD exhaustion, zombie processes, timeout bypass, focus spam, concurrent agent guard, empty JSONL inflation
 
-### E2E UX benchmark (integration/reliability path)
-Known good run:
-/Users/aaaaa/Projects/promptpad/tmp/bench_editor_e2e_20260217-154642/report.json
+### Medium (14)
+21-34: Missing optimistic concurrency, preamble loading in release builds, duplicate RPC IDs, thread safety gaps, overlapping highlights, TOCTOU races, orphan sessions, no protocol version enforcement, fragile CI sleeps, no subprocess timeouts, silent metric skips, XML injection, coercion duplication, hardcoded delays
 
-Later runs became unstable (some zero-valid / no report produced), indicating harness automation fragility rather than pure editor-open regression.
+### Low (12)
+35-46: Cache performance, type safety, annotations, regex crash risk, menu state, race edge cases, gitignore gaps, dependency pinning, dead targets, accidental retention, ignored return values, double encoding
 
-## Known issue to continue on next session
-Primary open issue:
-- E2E automation path intermittently fails or yields no valid runs.
-- Startup-trace path is stable and should remain the primary latency gate while E2E harness is hardened.
+## Suggested next actions (priority order)
+1. **Fix the 5 critical issues** — data loss on quit, openFiles reply, waitUntilClosed race, data race on Bool, JSONL parse corruption
+2. **Harden E2E benchmark** — guaranteed report emission, early abort on consecutive errors, harness liveness checks, progress output (issues #5, #14, #20, #29)
+3. **Fix high-severity Swift concurrency issues** — actor I/O blocking, continuation leaks, retain cycles (issues #6, #10, #11, #12)
+4. **Add test coverage** — AppDelegate RPC dispatch, session reuse, timeout behavior, concurrent clients
 
-Suggested next actions:
-1. Harden `scripts/bench_editor_e2e_ux.py` failure/reporting paths so every attempt emits a report with explicit invalid reasons.
-2. Add deterministic focus telemetry probes around first-responder acquisition and harness reactivation.
-3. Keep startup trace as the strict latency benchmark and treat E2E as reliability/integration benchmark.
+## Key files for critical fixes
+- Sources/PromptPadApp/AppDelegate.swift (issues #1, #2)
+- Sources/PromptPadCore/EditorSession.swift (issues #3, #11, #13)
+- Sources/PromptPadTransport/UnixDomainSocket.swift (issue #4)
+- scripts/bench_editor_e2e_ux.py (issues #5, #14, #20)
+- scripts/bench_editor_startup_trace.py (issue #5)
 
-## Key files to inspect first
-- `/Users/aaaaa/Projects/promptpad/scripts/bench_editor_e2e_ux.py`
-- `/Users/aaaaa/Projects/promptpad/scripts/bench_editor_suite.py`
-- `/Users/aaaaa/Projects/promptpad/scripts/bench_editor_startup_trace.py`
-- `/Users/aaaaa/Projects/promptpad/Sources/PromptPadE2EHarness/main.swift`
-- `/Users/aaaaa/Projects/promptpad/Sources/PromptPadCLI/main.swift`
-- `/Users/aaaaa/Projects/promptpad/Sources/PromptPadApp/AppDelegate.swift`
-- `/Users/aaaaa/Projects/promptpad/Sources/PromptPadApp/EditorWindowController.swift`
-- `/Users/aaaaa/Projects/promptpad/Sources/PromptPadCore/EditorSession.swift`
+## Benchmark status (unchanged from prior session)
 
-## Wrap skill notes
-- `syncing-docs` and `claude-md-improver` could not be fully executed in this repo because there is no `CLAUDE.md` to audit/improve.
-- Handoff step is completed via this file and final commit below.
+### Startup-trace benchmark (stable — primary latency gate)
+- warm `ctrlGToPromptPadActiveMs` p95: 43.643 ms
+- warm `ctrlGToEditorCommandReturnMs` p95: 51.428 ms
+- warm `phasePromptPadReadyMs` p95: 9.864 ms
+
+### E2E UX benchmark (flaky — needs hardening)
+- Intermittent zero-valid runs due to AppleScript automation fragility
+- Root cause: PromptPad process not found as frontmost in System Events
