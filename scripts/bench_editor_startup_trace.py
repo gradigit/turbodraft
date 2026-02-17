@@ -400,6 +400,7 @@ def main() -> int:
             harness_proc.kill()
         harness_log.close()
         harness_err.close()
+        kill_promptpad(socket_path)
 
 
 if __name__ == "__main__":

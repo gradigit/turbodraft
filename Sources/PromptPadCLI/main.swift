@@ -158,6 +158,17 @@ Commands:
     let cfg = PromptPadConfig.load()
     let socketPath = cfg.socketPath
 
+    // Save original fixture content so we can restore it after the bench mutates it.
+    let fixtureURL = URL(fileURLWithPath: path)
+    let originalContent = try String(contentsOf: fixtureURL, encoding: .utf8)
+    defer {
+      // SIGKILL the app so its terminate flush can't overwrite our restore.
+      _ = try? posixSpawnAndWait(command: "pkill", arguments: ["-9", "-f", "promptpad-app"])
+      Thread.sleep(forTimeInterval: 0.5)
+      try? FileManager.default.removeItem(atPath: socketPath)
+      try? Data(originalContent.utf8).write(to: fixtureURL, options: [.atomic])
+    }
+
     var metrics: [String: Double] = [:]
 
     // Warm bench: ensure running.
@@ -180,8 +191,11 @@ Commands:
       Thread.sleep(forTimeInterval: 0.01)
     }
     let warmCtrlGP95 = percentile(ctrlGSamplesMs, p: 0.95)
+    let warmCtrlGMedian = percentile(ctrlGSamplesMs, p: 0.50)
     print("warm_ctrl_g_to_editable_p95_ms=\(String(format: "%.2f", warmCtrlGP95))")
+    print("warm_ctrl_g_to_editable_median_ms=\(String(format: "%.2f", warmCtrlGMedian))")
     metrics["warm_ctrl_g_to_editable_p95_ms"] = warmCtrlGP95
+    metrics["warm_ctrl_g_to_editable_median_ms"] = warmCtrlGMedian
 
     // Warm open round-trip (in-process, no extra process launch).
     var samplesMs: [Double] = []
@@ -192,14 +206,21 @@ Commands:
       samplesMs.append(Double(end - start) / 1_000_000.0)
     }
     let warmOpenP95 = percentile(samplesMs, p: 0.95)
+    let warmOpenMedian = percentile(samplesMs, p: 0.50)
     print("warm_open_roundtrip_p95_ms=\(String(format: "%.2f", warmOpenP95))")
+    print("warm_open_roundtrip_median_ms=\(String(format: "%.2f", warmOpenMedian))")
     metrics["warm_open_roundtrip_p95_ms"] = warmOpenP95
+    metrics["warm_open_roundtrip_median_ms"] = warmOpenMedian
 
     // Warm text engine microbenchmark (synthetic insertion + markdown highlight pass).
     let initialText = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
-    let warmTextKitP95 = syntheticTypingP95(initialText: initialText, samples: warmN)
+    let textKitTimings = syntheticTypingTimings(initialText: initialText, samples: warmN)
+    let warmTextKitP95 = percentile(textKitTimings, p: 0.95)
+    let warmTextKitMedian = percentile(textKitTimings, p: 0.50)
     print("warm_textkit_highlight_p95_ms=\(String(format: "%.2f", warmTextKitP95))")
+    print("warm_textkit_highlight_median_ms=\(String(format: "%.2f", warmTextKitMedian))")
     metrics["warm_textkit_highlight_p95_ms"] = warmTextKitP95
+    metrics["warm_textkit_highlight_median_ms"] = warmTextKitMedian
 
     // Warm autosave bench: measure sessionSave RPC time over a single connection.
     do {
@@ -218,8 +239,11 @@ Commands:
         saveSamplesMs.append(Double(end - start) / 1_000_000.0)
       }
       let warmSaveP95 = percentile(saveSamplesMs, p: 0.95)
+      let warmSaveMedian = percentile(saveSamplesMs, p: 0.50)
       print("warm_save_roundtrip_p95_ms=\(String(format: "%.2f", warmSaveP95))")
+      print("warm_save_roundtrip_median_ms=\(String(format: "%.2f", warmSaveMedian))")
       metrics["warm_save_roundtrip_p95_ms"] = warmSaveP95
+      metrics["warm_save_roundtrip_median_ms"] = warmSaveMedian
     }
 
     // Warm reflect bench: external disk writes should reflect back into session content quickly.
@@ -269,8 +293,11 @@ Commands:
       }
 
       let warmReflectP95 = percentile(reflectSamplesMs, p: 0.95)
+      let warmReflectMedian = percentile(reflectSamplesMs, p: 0.50)
       print("warm_agent_reflect_p95_ms=\(String(format: "%.2f", warmReflectP95))")
+      print("warm_agent_reflect_median_ms=\(String(format: "%.2f", warmReflectMedian))")
       metrics["warm_agent_reflect_p95_ms"] = warmReflectP95
+      metrics["warm_agent_reflect_median_ms"] = warmReflectMedian
     }
 
     if coldN > 0 {
@@ -291,8 +318,11 @@ Commands:
         Thread.sleep(forTimeInterval: 0.01)
       }
       let coldCtrlGP95 = percentile(coldCtrlGSamplesMs, p: 0.95)
+      let coldCtrlGMedian = percentile(coldCtrlGSamplesMs, p: 0.50)
       print("cold_ctrl_g_to_editable_p95_ms=\(String(format: "%.2f", coldCtrlGP95))")
+      print("cold_ctrl_g_to_editable_median_ms=\(String(format: "%.2f", coldCtrlGMedian))")
       metrics["cold_ctrl_g_to_editable_p95_ms"] = coldCtrlGP95
+      metrics["cold_ctrl_g_to_editable_median_ms"] = coldCtrlGMedian
     }
 
     if let outPath {
@@ -582,8 +612,8 @@ Commands:
     return sorted[max(0, min(idx, sorted.count - 1))]
   }
 
-  private func syntheticTypingP95(initialText: String, samples: Int) -> Double {
-    if samples <= 0 { return 0 }
+  private func syntheticTypingTimings(initialText: String, samples: Int) -> [Double] {
+    if samples <= 0 { return [] }
     var content = initialText
     var cursor = (content as NSString).length
     var timingsMs: [Double] = []
@@ -608,7 +638,7 @@ Commands:
       cursor += (ch as NSString).length
     }
 
-    return percentile(timingsMs, p: 0.95)
+    return timingsMs
   }
 
   private func connectOrLaunch(socketPath: String, timeoutMs: Int) throws -> Int32 {
