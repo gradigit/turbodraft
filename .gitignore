@@ -13,3 +13,13 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# Swift / Xcode / SwiftPM
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
