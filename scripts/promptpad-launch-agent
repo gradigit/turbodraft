@@ -11,6 +11,8 @@ usage() {
   cat <<'EOF'
 usage:
   promptpad-launch-agent install [--app /abs/path/to/promptpad-app]
+  promptpad-launch-agent update    # build + restart
+  promptpad-launch-agent restart   # restart without rebuilding
   promptpad-launch-agent uninstall
   promptpad-launch-agent status
 EOF
@@ -38,14 +40,25 @@ xml_escape() {
   printf '%s' "$s"
 }
 
+build_release() {
+  echo "Building release..."
+  (cd "$repo_root" && swift build -c release)
+  echo "Build complete."
+}
+
 install_agent() {
   local app_path="$app_path_default"
+  local do_build=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --app)
         [[ $# -ge 2 ]] || { echo "missing value for --app" >&2; exit 2; }
         app_path="$2"
         shift 2
+        ;;
+      --build)
+        do_build=true
+        shift
         ;;
       *)
         echo "unknown arg: $1" >&2
@@ -54,9 +67,12 @@ install_agent() {
     esac
   done
 
+  if [[ "$do_build" == true ]] || [[ ! -x "$app_path" ]]; then
+    build_release
+  fi
+
   if [[ ! -x "$app_path" ]]; then
     echo "promptpad-app not executable at: $app_path" >&2
-    echo "build first: swift build -c release" >&2
     exit 1
   fi
 
@@ -92,15 +108,34 @@ EOF
   launchctl enable "gui/${uid}/${label}" >/dev/null 2>&1 || true
   launchctl kickstart -k "gui/${uid}/${label}" >/dev/null 2>&1 || true
 
-  echo "Installed LaunchAgent:"
-  echo "$plist_path"
+  echo "Installed LaunchAgent: $plist_path"
+}
+
+update_agent() {
+  if [[ ! -f "$plist_path" ]]; then
+    echo "LaunchAgent not installed. Run 'install' first." >&2
+    exit 1
+  fi
+
+  build_release
+  restart_agent
+}
+
+restart_agent() {
+  if [[ ! -f "$plist_path" ]]; then
+    echo "LaunchAgent not installed. Run 'install' first." >&2
+    exit 1
+  fi
+
+  # kickstart -k kills the running instance and restarts it.
+  launchctl kickstart -k "gui/${uid}/${label}"
+  echo "Restarted."
 }
 
 uninstall_agent() {
   bootout_if_loaded
   rm -f "$plist_path"
-  echo "Uninstalled LaunchAgent:"
-  echo "$plist_path"
+  echo "Uninstalled LaunchAgent: $plist_path"
 }
 
 status_agent() {
@@ -108,8 +143,7 @@ status_agent() {
     echo "not installed"
     return 0
   fi
-  echo "installed plist:"
-  echo "$plist_path"
+  echo "installed: $plist_path"
   launchctl print "gui/${uid}/${label}" 2>/dev/null || true
 }
 
@@ -120,6 +154,14 @@ main() {
     install)
       shift
       install_agent "$@"
+      ;;
+    update)
+      shift
+      update_agent "$@"
+      ;;
+    restart)
+      shift
+      restart_agent "$@"
       ;;
     uninstall)
       shift

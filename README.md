@@ -2,15 +2,34 @@
 
 Native macOS prompt editor optimized for external-editor hooks (Claude Code / Codex CLI).
 
-## Build
+## Install
+
+```sh
+scripts/install
+```
+
+Builds release binaries, symlinks `promptpad`, `promptpad-app`, `promptpad-open`, and `promptpad-editor` into `~/.local/bin`, and restarts the LaunchAgent if installed.
+
+Run `scripts/install` after every code change to update the running app.
+
+### Development build
 
 ```sh
 swift build
 ```
 
-Release build (recommended for benchmarking / editor latency):
+### LaunchAgent (recommended)
+
+Keeps `promptpad-app` resident for instant editor open (~10ms warm vs ~170ms cold):
+
 ```sh
-swift build -c release
+scripts/promptpad-launch-agent install
+```
+
+Status / remove:
+```sh
+scripts/promptpad-launch-agent status
+scripts/promptpad-launch-agent uninstall
 ```
 
 ## External editor hook
@@ -20,10 +39,10 @@ Most tools expect an `$EDITOR`-style command that receives a single file path ar
 Use the included shim:
 
 ```sh
-export EDITOR="$PWD/scripts/promptpad-editor"
+export EDITOR="promptpad-editor"
 ```
 
-`scripts/promptpad-editor` uses reliable mode by default (`promptpad open` + `--wait`).
+`promptpad-editor` uses reliable mode by default (`promptpad open` + `--wait`).
 For fastest-launch experiments, opt in to fast mode (`promptpad-open` first):
 
 ```sh
@@ -31,18 +50,6 @@ export PROMPTPAD_EDITOR_MODE=fast
 ```
 
 Unset `PROMPTPAD_EDITOR_MODE` to return to reliable mode.
-
-Resident (warm) mode via LaunchAgent:
-```sh
-swift build -c release
-scripts/promptpad-launch-agent install
-scripts/promptpad-launch-agent status
-```
-
-Remove it:
-```sh
-scripts/promptpad-launch-agent uninstall
-```
 
 ## Prompt Markdown profile (v1)
 

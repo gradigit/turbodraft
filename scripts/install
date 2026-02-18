@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
+bin_dir="${PROMPTPAD_BIN_DIR:-$HOME/.local/bin}"
+
+# ── Build ────────────────────────────────────────────────────────────────────
+
+echo "Building release..."
+(cd "$repo_root" && swift build -c release)
+echo "Build complete."
+
+# ── Symlink binaries ────────────────────────────────────────────────────────
+
+mkdir -p "$bin_dir"
+
+link() {
+  local name="$1"
+  local src="$repo_root/.build/release/$name"
+  local dst="$bin_dir/$name"
+  if [[ ! -x "$src" ]]; then
+    echo "  skip $name (not built)"
+    return
+  fi
+  ln -sf "$src" "$dst"
+  echo "  $dst -> $src"
+}
+
+echo "Linking binaries to $bin_dir:"
+link promptpad
+link promptpad-app
+link promptpad-open
+
+# Link the editor shim script too.
+ln -sf "$repo_root/scripts/promptpad-editor" "$bin_dir/promptpad-editor"
+echo "  $bin_dir/promptpad-editor -> $repo_root/scripts/promptpad-editor"
+
+# ── Restart Launch Agent if installed ───────────────────────────────────────
+
+label="${PROMPTPAD_LAUNCH_AGENT_LABEL:-com.promptpad.app}"
+plist_path="${HOME}/Library/LaunchAgents/${label}.plist"
+uid="$(id -u)"
+
+if [[ -f "$plist_path" ]]; then
+  echo "Restarting LaunchAgent..."
+  launchctl kickstart -k "gui/${uid}/${label}" 2>/dev/null && echo "  Restarted." || echo "  Restart failed (may need: scripts/promptpad-launch-agent install)"
+else
+  echo ""
+  echo "LaunchAgent not installed. For warm-start mode (recommended):"
+  echo "  scripts/promptpad-launch-agent install"
+fi
+
+# ── Verify ──────────────────────────────────────────────────────────────────
+
+echo ""
+if command -v promptpad >/dev/null 2>&1; then
+  echo "Done. promptpad is on your PATH."
+else
+  echo "Done. Add $bin_dir to your PATH:"
+  echo "  fish:  fish_add_path $bin_dir"
+  echo "  bash:  echo 'export PATH=\"$bin_dir:\$PATH\"' >> ~/.bashrc"
+  echo "  zsh:   echo 'export PATH=\"$bin_dir:\$PATH\"' >> ~/.zshrc"
+fi
