@@ -1,71 +1,58 @@
-# HANDOFF — PromptPad
+# Context Handoff — 2026-02-19
 
-## Branch and commit chain
-- Branch: `main`
-- Current HEAD: `8d51c6b`
-- Prior commit sequence (unchanged this session):
-  1. `63d9020` chore: bootstrap repository and Swift package
-  2. `47b24ae` feat(core): add protocol, transport, core session, config, and cli open path
-  3. `3559c79` feat(app): add native AppKit editor with markdown behavior, autosave, and window/session flow
-  4. `8e96939` feat(agent): add codex prompt-engineering adapters and guardrails
-  5. `6b142c6` test: add unit and integration coverage
-  6. `e80fa7c` perf(bench): add benchmark scripts, fixtures, baselines, and CI workflows
-  7. `20ee4b9` docs: add benchmark methodology, research notes, and planning artifacts
-  8. `8d51c6b` docs: refresh HANDOFF for fresh Claude Code continuation
+Session summary for context continuity after clearing.
 
-## This session's work
-- Full codebase evaluation audit (no code changes — read-only analysis)
-- Produced `docs/EVALUATION_REPORT.md` with 46 findings across 4 severity levels
+## First Steps (Read in Order)
 
-## Current repo state
-- Untracked:
-  - `HANDOFF.md` (this file, pending commit)
-  - `docs/EVALUATION_REPORT.md` (new — codebase audit report)
-  - `tmp/` (local benchmark artifacts; intentionally not committed)
-- No modified tracked files.
+1. Read CLAUDE.md — project conventions, build/install rule, key files, gotchas
+2. Read README.md — updated install docs, LaunchAgent setup
+3. Read `Sources/PromptPadApp/AppDelegate.swift` — quit latency fix, NSNumber/Bool fix (from prior session)
 
-## Verified status
-- `swift build -c release`: pass
-- `swift test`: pass (58 tests, 0 failures)
+After reading these files, you'll have full context to continue.
 
-## Codebase evaluation summary (docs/EVALUATION_REPORT.md)
+## Session Summary
 
-### Critical (5)
-1. `applicationWillTerminate` async Task never completes — last edits lost on quit
-2. `application(_:openFiles:)` replies success before async open finishes
-3. `waitUntilClosed` continuation race — registered too late, permanent hang
-4. Data race on `running` Bool in `UnixDomainSocketServer`
-5. `wait_for_record()` json.loads without try/except corrupts JSONL offset
+### What Was Done
+- Ran full benchmark suite (primary, multi-fixture, e2e) — all baselines pass
+- Confirmed `EnableSecureEventInput` is NOT called by PromptPad (zero hits in codebase)
+- Investigated cold start optimizations (kqueue + early socket bind) — both reverted after benchmarks showed no improvement
+- Created `scripts/install` — one-command build + symlink + LaunchAgent restart
+- Updated `scripts/promptpad-launch-agent` with `update` and `restart` commands
+- Created `CLAUDE.md` with project instructions, architecture, commands, and gotchas
+- Updated `README.md` install section to use `scripts/install` as primary path
+- Installed LaunchAgent (`com.promptpad.app`) on user's machine
 
-### High (15)
-6-20: Sync I/O on actor, double-close fd, static lock contention, oversized-file error, thread pool blocking, continuation leak, retain cycle, partial state on throw, silent harness crash, FD exhaustion, zombie processes, timeout bypass, focus spam, concurrent agent guard, empty JSONL inflation
+### Current State
+- All benchmarks pass baselines
+- LaunchAgent is installed and running
+- `scripts/install` is the canonical update path
+- Files created: `CLAUDE.md`, `scripts/install`
+- Files modified: `README.md`, `scripts/promptpad-launch-agent`
+- Last commit: e6cc320 — chore: add install script, update launch agent, add CLAUDE.md
 
-### Medium (14)
-21-34: Missing optimistic concurrency, preamble loading in release builds, duplicate RPC IDs, thread safety gaps, overlapping highlights, TOCTOU races, orphan sessions, no protocol version enforcement, fragile CI sleeps, no subprocess timeouts, silent metric skips, XML injection, coercion duplication, hardcoded delays
+### What's Next
+1. No explicit pending work — project is in good shape
+2. Potential: add `scripts/install` step to CI pipeline
+3. Potential: calibrate benchmark baselines on CI runner (current values have dev-machine headroom)
 
-### Low (12)
-35-46: Cache performance, type safety, annotations, regex crash risk, menu state, race edge cases, gitignore gaps, dependency pinning, dead targets, accidental retention, ignored return values, double encoding
+### Failed Approaches
+- **Early socket bind** (bind+listen in main.swift before app.run) — CLI connects before accept loop starts, RPC blocks waiting for applicationDidFinishLaunching. Cold start regressed from 174ms to 220ms.
+- **kqueue in connectOrLaunch** (replace polling with directory watch) — added syscall overhead, unsigned underflow bug in timeout calculation, no latency improvement because bottleneck is process startup not socket detection.
+- Both reverted. Cold start bottleneck is fork+exec+dyld+AppKit bootstrap (~170ms). Only the LaunchAgent eliminates it.
 
-## Suggested next actions (priority order)
-1. **Fix the 5 critical issues** — data loss on quit, openFiles reply, waitUntilClosed race, data race on Bool, JSONL parse corruption
-2. **Harden E2E benchmark** — guaranteed report emission, early abort on consecutive errors, harness liveness checks, progress output (issues #5, #14, #20, #29)
-3. **Fix high-severity Swift concurrency issues** — actor I/O blocking, continuation leaks, retain cycles (issues #6, #10, #11, #12)
-4. **Add test coverage** — AppDelegate RPC dispatch, session reuse, timeout behavior, concurrent clients
+### Key Context
+- User runs Ghostty terminal — use OSC-8 hyperlinks with `tput` styling for clickable paths
+- User has LaunchAgent installed — always run `scripts/install` after code changes
+- Benchmark results are highly sensitive to machine load — check `ps -eo %cpu,command -r | head -5` before interpreting noisy numbers
+- The user challenges lazy solutions — always propose the architecturally correct fix, not quick hacks
 
-## Key files for critical fixes
-- Sources/PromptPadApp/AppDelegate.swift (issues #1, #2)
-- Sources/PromptPadCore/EditorSession.swift (issues #3, #11, #13)
-- Sources/PromptPadTransport/UnixDomainSocket.swift (issue #4)
-- scripts/bench_editor_e2e_ux.py (issues #5, #14, #20)
-- scripts/bench_editor_startup_trace.py (issue #5)
+## Reference Files
 
-## Benchmark status (unchanged from prior session)
-
-### Startup-trace benchmark (stable — primary latency gate)
-- warm `ctrlGToPromptPadActiveMs` p95: 43.643 ms
-- warm `ctrlGToEditorCommandReturnMs` p95: 51.428 ms
-- warm `phasePromptPadReadyMs` p95: 9.864 ms
-
-### E2E UX benchmark (flaky — needs hardening)
-- Intermittent zero-valid runs due to AppleScript automation fragility
-- Root cause: PromptPad process not found as frontmost in System Events
+| File | Purpose |
+|------|---------|
+| `CLAUDE.md` | Project instructions for Claude Code |
+| `scripts/install` | Build + symlink + restart LaunchAgent |
+| `scripts/promptpad-launch-agent` | LaunchAgent management (install/uninstall/update/restart/status) |
+| `Sources/PromptPadApp/AppDelegate.swift` | App lifecycle, quit handling, RPC dispatch |
+| `Sources/PromptPadCLI/main.swift` | CLI, benchmarks, connectOrLaunch |
+| `bench/editor/baseline.json` | Benchmark regression thresholds |
