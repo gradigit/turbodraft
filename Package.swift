@@ -3,108 +3,108 @@
 import Foundation
 import PackageDescription
 
-let includeCodeEditSpike = ProcessInfo.processInfo.environment["PROMPTPAD_SPIKE_CODEEDIT"] == "1"
+let includeCodeEditSpike = ProcessInfo.processInfo.environment["TURBODRAFT_SPIKE_CODEEDIT"] == "1"
 
-var promptPadAppDependencies: [Target.Dependency] = [
-  "PromptPadCore",
-  "PromptPadConfig",
-  "PromptPadMarkdown",
-  "PromptPadTransport",
-  "PromptPadProtocol",
-  "PromptPadAgent",
+var turboDraftAppDependencies: [Target.Dependency] = [
+  "TurboDraftCore",
+  "TurboDraftConfig",
+  "TurboDraftMarkdown",
+  "TurboDraftTransport",
+  "TurboDraftProtocol",
+  "TurboDraftAgent",
 ]
 
 if includeCodeEditSpike {
-  promptPadAppDependencies.append(.product(name: "CodeEditTextView", package: "CodeEditTextView"))
+  turboDraftAppDependencies.append(.product(name: "CodeEditTextView", package: "CodeEditTextView"))
 }
 
 let package = Package(
-  name: "PromptPad",
+  name: "TurboDraft",
   platforms: [
     .macOS(.v13),
   ],
   products: [
-    .library(name: "PromptPadProtocol", targets: ["PromptPadProtocol"]),
-    .library(name: "PromptPadTransport", targets: ["PromptPadTransport"]),
-    .library(name: "PromptPadConfig", targets: ["PromptPadConfig"]),
-    .library(name: "PromptPadCore", targets: ["PromptPadCore"]),
-    .library(name: "PromptPadMarkdown", targets: ["PromptPadMarkdown"]),
-    .library(name: "PromptPadAgent", targets: ["PromptPadAgent"]),
-    .executable(name: "promptpad", targets: ["PromptPadCLI"]),
-    .executable(name: "promptpad-open", targets: ["PromptPadOpen"]),
-    .executable(name: "promptpad-app", targets: ["PromptPadApp"]),
-    .executable(name: "promptpad-e2e-harness", targets: ["PromptPadE2EHarness"]),
+    .library(name: "TurboDraftProtocol", targets: ["TurboDraftProtocol"]),
+    .library(name: "TurboDraftTransport", targets: ["TurboDraftTransport"]),
+    .library(name: "TurboDraftConfig", targets: ["TurboDraftConfig"]),
+    .library(name: "TurboDraftCore", targets: ["TurboDraftCore"]),
+    .library(name: "TurboDraftMarkdown", targets: ["TurboDraftMarkdown"]),
+    .library(name: "TurboDraftAgent", targets: ["TurboDraftAgent"]),
+    .executable(name: "turbodraft", targets: ["TurboDraftCLI"]),
+    .executable(name: "turbodraft-open", targets: ["TurboDraftOpen"]),
+    .executable(name: "turbodraft-app", targets: ["TurboDraftApp"]),
+    .executable(name: "turbodraft-e2e-harness", targets: ["TurboDraftE2EHarness"]),
   ],
   dependencies: includeCodeEditSpike
     ? [
       // Spike candidate text engine for A/B benchmarking. Uses branch: "main"
-      // because this is env-gated (PROMPTPAD_SPIKE_CODEEDIT=1) and not shipped (#42).
+      // because this is env-gated (TURBODRAFT_SPIKE_CODEEDIT=1) and not shipped (#42).
       .package(url: "https://github.com/CodeEditApp/CodeEditTextView.git", branch: "main"),
     ]
     : [],
   targets: [
     .target(
-      name: "PromptPadProtocol"
+      name: "TurboDraftProtocol"
     ),
     .target(
-      name: "PromptPadTransport",
-      dependencies: ["PromptPadProtocol"]
+      name: "TurboDraftTransport",
+      dependencies: ["TurboDraftProtocol"]
     ),
     .target(
-      name: "PromptPadConfig"
+      name: "TurboDraftConfig"
     ),
     .target(
-      name: "PromptPadCore",
-      dependencies: ["PromptPadProtocol"]
+      name: "TurboDraftCore",
+      dependencies: ["TurboDraftProtocol"]
     ),
     .target(
-      name: "PromptPadMarkdown"
+      name: "TurboDraftMarkdown"
     ),
     .target(
-      name: "PromptPadAgent",
-      dependencies: ["PromptPadCore"]
+      name: "TurboDraftAgent",
+      dependencies: ["TurboDraftCore"]
     ),
     .executableTarget(
-      name: "PromptPadCLI",
-      dependencies: ["PromptPadConfig", "PromptPadTransport", "PromptPadProtocol", "PromptPadMarkdown"]
+      name: "TurboDraftCLI",
+      dependencies: ["TurboDraftConfig", "TurboDraftTransport", "TurboDraftProtocol", "TurboDraftMarkdown"]
     ),
     .executableTarget(
-      name: "PromptPadOpen"
+      name: "TurboDraftOpen"
     ),
     .executableTarget(
-      name: "PromptPadApp",
-      dependencies: promptPadAppDependencies
+      name: "TurboDraftApp",
+      dependencies: turboDraftAppDependencies
     ),
     .executableTarget(
-      name: "PromptPadE2EHarness"
+      name: "TurboDraftE2EHarness"
     ),
     .testTarget(
-      name: "PromptPadProtocolTests",
-      dependencies: ["PromptPadProtocol"]
+      name: "TurboDraftProtocolTests",
+      dependencies: ["TurboDraftProtocol"]
     ),
     .testTarget(
-      name: "PromptPadTransportTests",
-      dependencies: ["PromptPadTransport"]
+      name: "TurboDraftTransportTests",
+      dependencies: ["TurboDraftTransport"]
     ),
     .testTarget(
-      name: "PromptPadCoreTests",
-      dependencies: ["PromptPadCore"]
+      name: "TurboDraftCoreTests",
+      dependencies: ["TurboDraftCore"]
     ),
     .testTarget(
-      name: "PromptPadAgentTests",
-      dependencies: ["PromptPadAgent"]
+      name: "TurboDraftAgentTests",
+      dependencies: ["TurboDraftAgent"]
     ),
     .testTarget(
-      name: "PromptPadMarkdownTests",
-      dependencies: ["PromptPadMarkdown"]
+      name: "TurboDraftMarkdownTests",
+      dependencies: ["TurboDraftMarkdown"]
     ),
     .testTarget(
-      name: "PromptPadConfigTests",
-      dependencies: ["PromptPadConfig"]
+      name: "TurboDraftConfigTests",
+      dependencies: ["TurboDraftConfig"]
     ),
     .testTarget(
-      name: "PromptPadIntegrationTests",
-      dependencies: ["PromptPadCore", "PromptPadTransport"]
+      name: "TurboDraftIntegrationTests",
+      dependencies: ["TurboDraftCore", "TurboDraftTransport"]
     ),
   ]
 )

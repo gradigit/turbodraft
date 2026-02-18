@@ -1,4 +1,4 @@
-# PromptPad Baseline Prompt Review Checklist
+# TurboDraft Baseline Prompt Review Checklist
 
 Date: 2026-02-14
 

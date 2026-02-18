@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
-bin_dir="${PROMPTPAD_BIN_DIR:-$HOME/.local/bin}"
+bin_dir="${TURBODRAFT_BIN_DIR:-$HOME/.local/bin}"
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
@@ -28,34 +28,34 @@ link() {
 }
 
 echo "Linking binaries to $bin_dir:"
-link promptpad
-link promptpad-app
-link promptpad-open
+link turbodraft
+link turbodraft-app
+link turbodraft-open
 
 # Link the editor shim script too.
-ln -sf "$repo_root/scripts/promptpad-editor" "$bin_dir/promptpad-editor"
-echo "  $bin_dir/promptpad-editor -> $repo_root/scripts/promptpad-editor"
+ln -sf "$repo_root/scripts/turbodraft-editor" "$bin_dir/turbodraft-editor"
+echo "  $bin_dir/turbodraft-editor -> $repo_root/scripts/turbodraft-editor"
 
 # ── Restart Launch Agent if installed ───────────────────────────────────────
 
-label="${PROMPTPAD_LAUNCH_AGENT_LABEL:-com.promptpad.app}"
+label="${TURBODRAFT_LAUNCH_AGENT_LABEL:-com.turbodraft.app}"
 plist_path="${HOME}/Library/LaunchAgents/${label}.plist"
 uid="$(id -u)"
 
 if [[ -f "$plist_path" ]]; then
   echo "Restarting LaunchAgent..."
-  launchctl kickstart -k "gui/${uid}/${label}" 2>/dev/null && echo "  Restarted." || echo "  Restart failed (may need: scripts/promptpad-launch-agent install)"
+  launchctl kickstart -k "gui/${uid}/${label}" 2>/dev/null && echo "  Restarted." || echo "  Restart failed (may need: scripts/turbodraft-launch-agent install)"
 else
   echo ""
   echo "LaunchAgent not installed. For warm-start mode (recommended):"
-  echo "  scripts/promptpad-launch-agent install"
+  echo "  scripts/turbodraft-launch-agent install"
 fi
 
 # ── Verify ──────────────────────────────────────────────────────────────────
 
 echo ""
-if command -v promptpad >/dev/null 2>&1; then
-  echo "Done. promptpad is on your PATH."
+if command -v turbodraft >/dev/null 2>&1; then
+  echo "Done. turbodraft is on your PATH."
 else
   echo "Done. Add $bin_dir to your PATH:"
   echo "  fish:  fish_add_path $bin_dir"

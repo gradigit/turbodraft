@@ -11,7 +11,7 @@ Confidence: High for architecture ranking (native AppKit > WebView-based stacks 
 1. Which desktop app architecture minimizes cold-start overhead for a prompt editor?
 2. Is TextKit 2 suitable for high-performance markdown text editing on macOS?
 3. How do Electron and Tauri process models affect startup path complexity?
-4. Should PromptPad continue vs. reuse Kern from a performance standpoint?
+4. Should TurboDraft continue vs. reuse Kern from a performance standpoint?
 
 ## Detailed Findings
 
@@ -24,7 +24,7 @@ Evidence:
 - Apple MetricKit defines app launch metrics and first-draw distributions (platform-level measurement model).
 
 Implication:
-For PromptPad, fastest cold-start behavior comes from aggressively minimizing initialization before first editable text view is visible.
+For TurboDraft, fastest cold-start behavior comes from aggressively minimizing initialization before first editable text view is visible.
 
 ### 2) TextKit 2 is the right native text engine baseline for macOS editor performance
 Apple’s TextKit sessions describe TextKit 2 as having improved performance and a viewport/nonlinear layout approach that reduces unnecessary layout work, especially for large content. Apple also indicates modern text controls default to TextKit 2, and warns that falling back into compatibility mode can be expensive.
@@ -49,7 +49,7 @@ Implication:
 For this app’s strict cold-start target and minimal UI, native AppKit avoids entire web runtime/process plumbing and remains the strongest default.
 
 ### 4) "Absolute fastest" has two realistic tiers
-- Tier A (best practical for PromptPad now): AppKit + TextKit 2, no WebView.
+- Tier A (best practical for TurboDraft now): AppKit + TextKit 2, no WebView.
 - Tier B (highest theoretical ceiling): custom renderer/editor engine (Rust/Metal/CoreText class of approach), but significantly higher complexity and maintenance burden.
 
 Evidence:
@@ -57,12 +57,12 @@ Evidence:
 - Zed engineering posts indicate why custom GPU-first stacks pursue performance ceilings; however, these are product-specific and not directly transferable benchmarks.
 
 Implication:
-Unless PromptPad misses measured targets after native optimization, building/porting to a custom editor engine is likely negative ROI.
+Unless TurboDraft misses measured targets after native optimization, building/porting to a custom editor engine is likely negative ROI.
 
 ## Hypothesis Tracking
 | Hypothesis | Confidence | Supporting Evidence | Contradicting Evidence |
 |------------|------------|---------------------|------------------------|
-| H1: Native AppKit + TextKit 2 is the fastest practical stack for PromptPad cold start | High | Apple launch guidance + TextKit 2 perf claims + Electron/Tauri process-model overheads | No Apple source gives a universal stack ranking with numbers |
+| H1: Native AppKit + TextKit 2 is the fastest practical stack for TurboDraft cold start | High | Apple launch guidance + TextKit 2 perf claims + Electron/Tauri process-model overheads | No Apple source gives a universal stack ranking with numbers |
 | H2: Tauri can match native AppKit cold-start for this use case | Low-Med | Smaller binary size, system WebView reuse | Tauri still spins WebView process model and web runtime path |
 | H3: Electron can be made competitive for sub-50ms editor activation | Low | Electron can be optimized heavily | Official docs still describe multi-process Chromium model and startup work sensitivity |
 | H4: Custom Rust/GPU engine can beat AppKit at scale | Medium | Zed architecture rationale and performance focus | High implementation complexity; no direct apples-to-apples benchmark for this app |
@@ -76,7 +76,7 @@ Unless PromptPad misses measured targets after native optimization, building/por
 
 ### Unverified / Partially Verified
 - A universal claim that AppKit is always faster than all alternatives on every machine and build setup (not directly published as a single official benchmark).
-- Exact startup deltas between PromptPad and Kern (requires local A/B measurement).
+- Exact startup deltas between TurboDraft and Kern (requires local A/B measurement).
 
 ### Conflicts / Nuance
 - Tauri can be much smaller in binary size than Electron and may start faster than Electron in many projects, but this does not inherently imply faster-than-native AppKit startup for a minimal text editor.
@@ -89,14 +89,14 @@ Unless PromptPad misses measured targets after native optimization, building/por
 - Recency: Sources include current docs/pages with 2025–2026 updates where available.
 
 ## Recommendation (Actionable)
-1. Keep PromptPad on native AppKit + NSTextView (TextKit 2 path), no WebView.
+1. Keep TurboDraft on native AppKit + NSTextView (TextKit 2 path), no WebView.
 2. Keep launch path minimal: single window, no heavy startup tasks before first editable frame.
 3. Defer non-essential initialization (agent/model plumbing, optional services) until after editor is interactive.
 4. Maintain optional resident mode only as an optimization layer; keep baseline fast without daemon dependency.
 5. Run a strict A/B PoC benchmark versus Kern before any major stack change.
 
-## PromptPad vs Kern PoC Benchmark Plan
-Use identical hardware, build mode, and test corpus. Compare PromptPad and Kern in at least 100-run batches.
+## TurboDraft vs Kern PoC Benchmark Plan
+Use identical hardware, build mode, and test corpus. Compare TurboDraft and Kern in at least 100-run batches.
 
 Metrics:
 - t_launch_cold: process spawn -> first window visible
@@ -113,7 +113,7 @@ Method:
 - Use identical markdown fixtures (small/medium/large + stress file).
 
 Decision rule:
-- If PromptPad is within 5-10% of Kern on core latency metrics while preserving plain-markdown UX and lower complexity, continue PromptPad.
+- If TurboDraft is within 5-10% of Kern on core latency metrics while preserving plain-markdown UX and lower complexity, continue TurboDraft.
 - If Kern is materially faster (>15-20% on cold/editable p95) and can be constrained to non-WYSIWYG behavior without heavy compromise, consider reusing Kern core.
 
 ## Sources

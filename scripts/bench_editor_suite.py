@@ -35,10 +35,10 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     result_json = out_dir / "editor_metrics.json"
-    print(f"[editor] running promptpad bench run -> {result_json}")
+    print(f"[editor] running turbodraft bench run -> {result_json}")
     rc = run(
         [
-            str(repo / ".build/release/promptpad"),
+            str(repo / ".build/release/turbodraft"),
             "bench",
             "run",
             "--path",
@@ -59,7 +59,7 @@ def main() -> int:
     print(f"[editor] checking thresholds against {args.baseline}")
     rc = run(
         [
-            str(repo / ".build/release/promptpad"),
+            str(repo / ".build/release/turbodraft"),
             "bench",
             "check",
             "--baseline",

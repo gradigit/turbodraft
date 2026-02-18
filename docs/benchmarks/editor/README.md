@@ -1,4 +1,4 @@
-# PromptPad editor benchmarks
+# TurboDraft editor benchmarks
 
 This track measures only editor/runtime behavior and excludes model quality scoring.
 
@@ -43,11 +43,11 @@ This reports strict editor-open readiness timings without typing/saving automati
 
 E2E metrics:
 
-- `ctrlGToPromptPadActiveMs`
+- `ctrlGToTurboDraftActiveMs`
 - `ctrlGToEditorWaitReturnMs`
 - `ctrlGToHarnessReactivatedMs`
 - `ctrlGToTextFocusMs`
-- `phasePromptPadInteractionMs`
+- `phaseTurboDraftInteractionMs`
 - `phaseReturnToHarnessMs`
 - `phaseEndToEndRoundTripMs`
 

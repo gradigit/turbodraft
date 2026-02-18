@@ -1,4 +1,4 @@
-# PromptPad v1 Implementation Plan
+# TurboDraft v1 Implementation Plan
 
 ## Goal
 Build a native macOS AppKit prompt editor for Claude/Codex external-editor hooks with near-zero latency activation and optional in-app AI prompt-improvement loop.
@@ -42,8 +42,8 @@ Build a native macOS AppKit prompt editor for Claude/Codex external-editor hooks
 - Suppress self-echo: tag autosave writes with an internal revision and ignore matching watcher events to avoid autosave-reflect loops.
 
 ### External editor integration (Claude/Codex hooks)
-- Make the CLI ergonomic for external-editor callers: `promptpad open --path <file> [--line N --column N] [--wait]`.
-- Prefer a running-instance fast path: CLI connects to UDS and sends `promptpad/open` + activation request; if not reachable, launch the app via Launch Services and retry connect with a short bounded backoff.
+- Make the CLI ergonomic for external-editor callers: `turbodraft open --path <file> [--line N --column N] [--wait]`.
+- Prefer a running-instance fast path: CLI connects to UDS and sends `turbodraft/open` + activation request; if not reachable, launch the app via Launch Services and retry connect with a short bounded backoff.
 - Make `open` idempotent: opening an already-open path focuses the existing window and updates selection.
 
 ## Performance budgets & measurement methodology (deepened 2026-02-13)
@@ -54,8 +54,8 @@ Build a native macOS AppKit prompt editor for Claude/Codex external-editor hooks
 - Editable: the editor window is key + the text view is first responder + insertion point is visible + user keystrokes mutate the buffer.
 
 ### Metrics (names, start/end, target budgets)
-- `t_launch` (cold): start = CLI begins `promptpad open` with app not running; end = `Editable`.
-- `t_ctrl_g_to_editable` (warm): start = transport receives `promptpad/open`; end = `Editable`.
+- `t_launch` (cold): start = CLI begins `turbodraft open` with app not running; end = `Editable`.
+- `t_ctrl_g_to_editable` (warm): start = transport receives `turbodraft/open`; end = `Editable`.
 - `t_keystroke_p95`: start = `keyDown` (or `textDidChange`) timestamp; end = styling + text layout work complete for the edited range on the main thread.
 - `t_autosave_p95`: start = last buffer mutation in a burst; end = autosave write completes (atomic replace) and revision is advanced.
 - `t_file_reflect_p95` (a.k.a. `t_agent_reflect_p95`): start = file change event received (or agent write completion when known); end = editor buffer updated and view reflects the new revision (conflict banner if applicable).
@@ -126,22 +126,22 @@ Anti-flake measures:
 Shared envelope (internal): `jsonrpc`, `id`, `method`, `params`, `result`, `error`.
 
 Methods:
-1. `promptpad/open` → returns session metadata, current file content, and revision.
-2. `promptpad/reload` → returns latest content for active session/file.
-3. `promptpad/save` → writes content with revision guard.
-4. `promptpad/watch.subscribe` → subscribe to file-write updates.
-5. `promptpad/agent/start` → begin draft pass.
-6. `promptpad/agent/stop` → cancel active draft pass.
-7. `promptpad/agent/draft` → draft event/callback payload.
+1. `turbodraft/open` → returns session metadata, current file content, and revision.
+2. `turbodraft/reload` → returns latest content for active session/file.
+3. `turbodraft/save` → writes content with revision guard.
+4. `turbodraft/watch.subscribe` → subscribe to file-write updates.
+5. `turbodraft/agent/start` → begin draft pass.
+6. `turbodraft/agent/stop` → cancel active draft pass.
+7. `turbodraft/agent/draft` → draft event/callback payload.
 
 ### CLI contract
 Commands:
-- `promptpad open --path <file> [--line N --column N] [--wait]`
-- `promptpad --stdio`
-- `promptpad --socket --path <uds_path>`
-- `promptpad daemon --start|--stop`
-- `promptpad bench run --cold --warm --iterations N`
-- `promptpad config init`
+- `turbodraft open --path <file> [--line N --column N] [--wait]`
+- `turbodraft --stdio`
+- `turbodraft --socket --path <uds_path>`
+- `turbodraft daemon --start|--stop`
+- `turbodraft bench run --cold --warm --iterations N`
+- `turbodraft config init`
 
 Config file (JSON/TOML, lightweight):
 - `editor_bundle_path`
@@ -153,12 +153,12 @@ Config file (JSON/TOML, lightweight):
 - `agent.enabled` (bool)
 
 ## Repository layout to create
-- `Sources/PromptPad/AppKit/` — app process, window lifecycle.
-- `Sources/PromptPad/Transport/` — stdio + UDS transport, codec, validation.
-- `Sources/PromptPad/Editor/` — markdown styling + editor session state.
-- `Sources/PromptPad/Sync/` — watcher, autosave, conflict handling.
-- `Sources/PromptPad/Agent/` — agent protocol + `CodexCLIAdapter`.
-- `Sources/PromptPadCLI/` — CLI entrypoint and benchmark command.
+- `Sources/TurboDraft/AppKit/` — app process, window lifecycle.
+- `Sources/TurboDraft/Transport/` — stdio + UDS transport, codec, validation.
+- `Sources/TurboDraft/Editor/` — markdown styling + editor session state.
+- `Sources/TurboDraft/Sync/` — watcher, autosave, conflict handling.
+- `Sources/TurboDraft/Agent/` — agent protocol + `CodexCLIAdapter`.
+- `Sources/TurboDraftCLI/` — CLI entrypoint and benchmark command.
 - `Tests/Unit/` — formatting/autosave/conflict/transport tests.
 - `Tests/Integration/` — CLI open/update and watcher sync tests.
 - `Tests/Perf/` — startup and reflection benchmarks.

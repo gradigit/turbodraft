@@ -1,243 +1,160 @@
-# PromptPad
+# TurboDraft
 
-Native macOS prompt editor optimized for external-editor hooks (Claude Code / Codex CLI).
+A native macOS editor for AI CLI tool hooks. When Claude Code or Codex CLI asks for `$EDITOR`, TurboDraft opens in 10ms and gives you a Markdown editor that actually makes sense for writing prompts.
+
+## Why not vim/nano/VS Code?
+
+Terminal editors work. But they weren't designed for writing prompts. VS Code takes seconds to open. vim doesn't highlight Markdown the way you'd want while drafting prompts.
+
+TurboDraft sits in between: a resident macOS app that opens instantly via Unix socket and renders Markdown as you type.
 
 ## Install
 
 ```sh
+git clone https://github.com/gradigit/turbodraft.git
+cd turbodraft
 scripts/install
 ```
 
-Builds release binaries, symlinks `promptpad`, `promptpad-app`, `promptpad-open`, and `promptpad-editor` into `~/.local/bin`, and restarts the LaunchAgent if installed.
+This builds release binaries, symlinks `turbodraft`, `turbodraft-app`, `turbodraft-open`, and `turbodraft-editor` into `~/.local/bin`, and restarts the LaunchAgent if installed.
 
-Run `scripts/install` after every code change to update the running app.
+Make sure `~/.local/bin` is on your `PATH`.
 
-### Development build
-
-```sh
-swift build
-```
-
-### LaunchAgent (recommended)
-
-Keeps `promptpad-app` resident for instant editor open (~10ms warm vs ~170ms cold):
+## Set as your editor
 
 ```sh
-scripts/promptpad-launch-agent install
+export EDITOR="turbodraft-editor"
 ```
 
-Status / remove:
-```sh
-scripts/promptpad-launch-agent status
-scripts/promptpad-launch-agent uninstall
-```
+That's it. Claude Code's `Ctrl+G` and Codex CLI's editor hooks will now open TurboDraft.
 
-## External editor hook
+`turbodraft-editor` accepts `--line N`, `--column N`, and `+N` line jump syntax. It blocks until you close the editor tab, then returns focus to your terminal.
 
-Most tools expect an `$EDITOR`-style command that receives a single file path argument and blocks until you finish editing.
+## LaunchAgent (recommended)
 
-Use the included shim:
+Keep `turbodraft-app` resident so opens are instant (~10ms) instead of cold-starting (~170ms):
 
 ```sh
-export EDITOR="promptpad-editor"
+scripts/turbodraft-launch-agent install
 ```
 
-`promptpad-editor` uses reliable mode by default (`promptpad open` + `--wait`).
-For fastest-launch experiments, opt in to fast mode (`promptpad-open` first):
-
+Check status or remove:
 ```sh
-export PROMPTPAD_EDITOR_MODE=fast
+scripts/turbodraft-launch-agent status
+scripts/turbodraft-launch-agent uninstall
 ```
 
-Unset `PROMPTPAD_EDITOR_MODE` to return to reliable mode.
+## Performance
 
-## Prompt Markdown profile (v1)
+Measured on M1 Max, macOS 14. The LaunchAgent warm path is what matters day-to-day.
 
-PromptPad is optimized for prompt authoring, not full Markdown-spec coverage.
+| Metric | P50 | P95 |
+|--------|-----|-----|
+| Warm open (LaunchAgent resident) | ~10ms | <50ms |
+| Cold start (process launch) | ~170ms | ~200ms |
+| Typing latency (keystroke to display) | <0.1ms | <0.1ms |
+| Markdown highlight pass | <2ms | <5ms |
+| Save round-trip | <1ms | <1ms |
 
-Guaranteed/maintained behavior:
-- Headers (`#` ... `######`)
-- Lists (unordered + ordered)
+Cold start is mostly `fork+exec+dyld+AppKit` bootstrap. The LaunchAgent skips all of that.
+
+## Markdown support
+
+TurboDraft highlights the Markdown you actually use when writing prompts:
+
+- Headers (`#` through `######`)
+- Unordered and ordered lists
 - Task checkboxes (`- [ ]`, `- [x]`)
 - Blockquotes (`>`)
 - Inline code and fenced code blocks
-- Emphasis (`*`, `**`, `~~`)
-- Inline links (`[label](url)`)
-- Bare URL detection
-- Enter-key continuation for lists, tasks, ordered lists, and quotes
-- Enter-key list exit on empty items
+- Bold, italic, strikethrough
+- Inline links and bare URL detection
+- Enter-key continuation for lists, tasks, and quotes
+- Auto-exit on empty list items
 
-Out of scope in v1 (no guarantees):
-- Tables
-- Footnotes
-- Full CommonMark/GFM conformance edge cases
-- Advanced extensions beyond prompt-authoring needs
+Tables, footnotes, and full CommonMark/GFM edge cases are out of scope. This is a prompt editor, not a documentation renderer.
 
-## Run (dev)
+## How it works
 
-Terminal 1 (app):
-```sh
-swift run promptpad-app
+```
+CLI (turbodraft open)
+  → Unix domain socket (~/Library/Application Support/TurboDraft/turbodraft.sock)
+    → Resident AppKit app (turbodraft-app)
+      → Editor window with Markdown highlighting
+        → Close tab → CLI unblocks → terminal regains focus
 ```
 
-Terminal 2 (CLI):
+JSON-RPC over content-length framed streams. The CLI connects, sends `turbodraft.session.open`, and blocks on `turbodraft.session.wait` until you close the tab.
+
+`turbodraft-open` is a C binary that does the same thing without the Swift runtime. It's faster for the first-byte case but both paths converge on the same socket.
+
+## Configuration
+
+Initialize a config file:
 ```sh
-swift run promptpad --help
-swift run promptpad open --path /tmp/prompt.md --wait
-swift run promptpad bench run --path /tmp/prompt.md --warm 50 --cold 5 --out /tmp/promptpad-bench.json
-swift run promptpad bench check --baseline bench/editor/baseline.json --results /tmp/promptpad-bench.json
+turbodraft config init
 ```
 
-## Benchmark (release)
+Config lives at `~/Library/Application Support/TurboDraft/config.json`.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `autosaveDebounceMs` | `50` | Autosave debounce in milliseconds |
+| `theme` | `"system"` | `"system"`, `"light"`, or `"dark"` |
+| `editorMode` | `"reliable"` | `"reliable"` or `"ultra_fast"` |
+| `agent.enabled` | `false` | Enable prompt-engineering agent |
+| `agent.command` | `"codex"` | Path to Codex CLI |
+| `agent.model` | `"gpt-5.3-codex-spark"` | Model for prompt engineering |
+| `agent.backend` | `"exec"` | `"exec"` or `"app_server"` |
+
+Override socket or config path:
+```sh
+TURBODRAFT_SOCKET=/path/to/sock turbodraft open --path file.md --wait
+TURBODRAFT_CONFIG=/path/to/config.json turbodraft open --path file.md --wait
+```
+
+## Building from source
+
+```sh
+swift build            # debug build
+swift build -c release # release build
+swift test             # run all 58 tests
+scripts/install        # build + symlink + restart LaunchAgent
+```
+
+Requires Swift 5.10+ and macOS 13+.
+
+## Benchmarks
+
+Run the benchmark suite:
 
 ```sh
 swift build -c release
-.build/release/promptpad bench run --path /tmp/prompt.md --warm 50 --cold 5 --out /tmp/promptpad-bench.json
-.build/release/promptpad bench check --baseline bench/editor/baseline.json --results /tmp/promptpad-bench.json
+.build/release/turbodraft bench run --path /tmp/prompt.md --warm 50 --cold 5 --out /tmp/bench.json
+.build/release/turbodraft bench check --baseline bench/editor/baseline.json --results /tmp/bench.json
 ```
 
-`bench run` also emits:
-- `warm_textkit_highlight_p95_ms` (text-engine microbenchmark: single-character insert + markdown highlight pass)
-
-Text engine spike benchmark (A/B `NSTextView` vs `CodeEditTextView`):
-```sh
-scripts/bench_text_engine_spike.sh --warm 30 --cold 5 --path /tmp/prompt.md
-```
-This builds two release variants and writes side-by-side results under `tmp/bench_text_engine_spike_*`.
-Normal builds do not resolve the CodeEdit dependency. The spike variant enables it only for the `CodeEditTextView` build path.
-
-Speed target (warm/resident path):
-- `warm_ctrl_g_to_editable_p95_ms < 50`
-
-## Config
-
-```sh
-swift run promptpad config init
-# or:
-PROMPTPAD_CONFIG=/path/to/config.json swift run promptpad config init --path "$PROMPTPAD_CONFIG"
-```
-
-Config keys (JSON):
-- `autosaveDebounceMs`: integer milliseconds (default `50`; reduce for more aggressive save, raise for more write coalescing).
-- `theme`: `"system"` (default), `"light"`, `"dark"`
-- `editorMode`: `"reliable"` (default) or `"ultra_fast"` (faster open path, less strict readiness guarantees)
-- `agent.enabled`: `true|false` (default `false`). Can also be toggled from the app menu: `Agent -> Enable Prompt Engineer`.
-- `agent.command`: Codex CLI executable (default `"codex"`, must be in `PATH`).
-- `agent.model`: model id (default `"gpt-5.3-codex-spark"`).
-- `agent.timeoutMs`: request timeout (default `60000`).
-- `agent.backend`: `"exec"` (spawn per request; default) or `"app_server"` (warm resident `codex app-server`).
-- `agent.webSearch`: `"cached"` (default), `"disabled"`, `"live"`.
-- `agent.promptProfile`: `"large_opt"` (default), `"core"`, `"extended"`.
-- `agent.reasoningEffort`: `"minimal"|"low"|"medium"|"high"|"xhigh"` (default `"low"`). Note: Spark models reject `"minimal"` and will be coerced to `"low"`.
-- `agent.reasoningSummary`: `"auto"` (default), `"concise"`, `"detailed"`, `"none"`.
-- `agent.args`: array of extra Codex CLI args (advanced). For `app_server`, only `-c/--config/--enable/--disable` are forwarded.
-
-In-app controls:
-- Prompt engineering is manual-only. It runs only when you click `Improve Prompt` (button) or use `Agent -> Improve Prompt` (`Cmd+Shift+R`).
-- Theme can be switched from `View -> Theme` (`System`, `Light`, `Dark`).
-- Editor runtime mode can be switched from `View -> Editor Mode` (`Reliable`, `Ultra Fast`).
-
-Open-latency telemetry:
-- PromptPad writes JSONL records to:
-  - `/Users/<you>/Library/Application Support/PromptPad/telemetry/editor-open.jsonl`
-- Records include stage timings such as `connectMs`, `rpcOpenMs`, `totalMs`, and app-side `openMs`.
-
-## Test
-
-```sh
-swift test
-```
-
-## Editor benchmark suite (latency/perf only)
-
-Editor-only runner (no model calls, no prompt-quality scoring):
-
-```sh
-python3 scripts/bench_editor_suite.py --path bench/fixtures/dictation_flush_mode.md --warm 50 --cold 8
-```
-
-Optional launch/lifecycle matrix in same run:
-
-```sh
-python3 scripts/bench_editor_suite.py --with-launch-matrix
-```
-
-Startup trace benchmark (strict editor-open metrics, no typing/saving automation phase):
-
-```sh
-python3 scripts/bench_editor_startup_trace.py --cold 10 --warm 40 --min-valid-rate 0.98
-```
-
-True end-to-end UX benchmark (Ctrl+G trigger + focus + type/save/close + refocus):
-
+End-to-end UX benchmark (requires Accessibility permission):
 ```sh
 python3 scripts/bench_editor_e2e_ux.py --cold 5 --warm 20
 ```
 
-Notes:
-- Requires macOS Accessibility permission for your terminal app (`osascript` keystroke automation).
-- Uses `promptpad-e2e-harness` for real Ctrl+G-triggered external-editor cycles.
+Baseline thresholds are in `bench/editor/baseline.json`. P95 values have headroom for CI variance.
 
-## Prompt benchmark suite (quality/latency only)
+## Architecture
 
-Prompt-only runner (model-backed; no editor startup metrics):
+| Module | Purpose |
+|--------|---------|
+| `TurboDraftApp` | AppKit GUI, window management, socket server |
+| `TurboDraftCLI` | CLI (`turbodraft open`, `turbodraft bench`) |
+| `TurboDraftOpen` | Minimal C binary for fast-path opens |
+| `TurboDraftCore` | Editor sessions, file I/O, directory watcher |
+| `TurboDraftProtocol` | JSON-RPC message types |
+| `TurboDraftTransport` | Unix domain socket server/client |
+| `TurboDraftMarkdown` | Markdown syntax highlighting |
+| `TurboDraftAgent` | Codex prompt-engineering integration |
+| `TurboDraftConfig` | User configuration |
 
-```sh
-python3 scripts/bench_prompt_suite.py \
-  --drafts-file bench/fixtures/profiles/profile_set.txt \
-  --models gpt-5.3-codex-spark \
-  --efforts low \
-  --backend both
-```
+## License
 
-Prompt threshold checker (uses `bench/prompt/baseline.json`):
-
-```sh
-python3 scripts/check_prompt_benchmark.py --summary tmp/bench_prompt_*/matrix_summary.json --baseline bench/prompt/baseline.json
-```
-
-## Codex prompt-engineering benchmark internals (agent backend)
-
-Bench `codex exec` vs warm `codex app-server` using a real Markdown draft prompt and basic output checks:
-
-```sh
-python3 scripts/bench_codex_prompt_engineer.py -n 9
-python3 scripts/bench_codex_prompt_engineer.py --backend app-server --models gpt-5.3-codex-spark --efforts low,medium,high,xhigh -n 9
-python3 scripts/bench_codex_prompt_engineer.py --backend exec --models gpt-5.3-codex --efforts low,medium -n 9
-```
-
-Use a custom prompt-engineering system preamble:
-
-```sh
-python3 scripts/bench_codex_prompt_engineer.py \
-  --drafts "$(paste -sd, bench/fixtures/profiles/profile_set.txt)" \
-  --system-preamble-file bench/preambles/core.md \
-  --models gpt-5.3-codex-spark --efforts low \
-  --backend both -n 9 --pairwise --pairwise-model gpt-5.3-codex --pairwise-effort xhigh \
-  --pairwise-baseline-dir bench/baselines/profiles \
-  --json-out tmp/bench_custom_preamble/results.json
-```
-
-## Matrix benchmark harness (preamble x web-search)
-
-Sweep benchmark cells across preamble variants and web-search modes:
-
-```sh
-python3 scripts/bench_prompt_engineer_matrix.py \
-  --drafts-file bench/fixtures/profiles/profile_set.txt \
-  --preamble-variants "core=bench/preambles/core.md,large_opt=bench/preambles/large-optimized-v1.md,extended=bench/preambles/extended.md" \
-  --web-search-modes "disabled,cached" \
-  --models gpt-5.3-codex-spark --efforts low \
-  --backend both -n 7 \
-  --pairwise --pairwise-model gpt-5.3-codex --pairwise-effort xhigh --pairwise-n 3 \
-  --pairwise-baseline-dir bench/baselines/profiles
-```
-
-Outputs:
-- Per-cell raw benchmark JSON and generated outputs: `tmp/bench_matrix_*/<variant>__web-<mode>/`
-- Aggregate matrix summaries:
-  - `tmp/bench_matrix_*/matrix_summary.json`
-  - `tmp/bench_matrix_*/matrix_summary.tsv`
-
-Historical benchmark/research snapshot:
-- `docs/benchmarks/2026-02-16-agent-benchmark-status.md`
+MIT

@@ -1,4 +1,4 @@
-# PromptPad editor E2E UX methodology
+# TurboDraft editor E2E UX methodology
 
 This benchmark measures true user-flow latency for the external-editor loop, not just RPC microbenchmarks.
 Use this as an integration/reliability benchmark. For strict startup performance, use `startup-trace-methodology.md`.
@@ -6,18 +6,18 @@ Use this as an integration/reliability benchmark. For strict startup performance
 ## Flow under test
 
 1. Harness text view receives `Ctrl+G`
-2. Harness launches `promptpad open --wait --path <fixture>`
-3. PromptPad becomes frontmost and editable
-4. Automation types one character, saves, and closes PromptPad
+2. Harness launches `turbodraft open --wait --path <fixture>`
+3. TurboDraft becomes frontmost and editable
+4. Automation types one character, saves, and closes TurboDraft
 5. Harness regains focus and text cursor is restored
 
 ## Metrics
 
-- `ctrlGToPromptPadActiveMs`: Ctrl+G to PromptPad app activation
-- `ctrlGToEditorWaitReturnMs`: Ctrl+G to `promptpad open --wait` completion
+- `ctrlGToTurboDraftActiveMs`: Ctrl+G to TurboDraft app activation
+- `ctrlGToEditorWaitReturnMs`: Ctrl+G to `turbodraft open --wait` completion
 - `ctrlGToHarnessReactivatedMs`: Ctrl+G to harness app reactivation
 - `ctrlGToTextFocusMs`: Ctrl+G to harness text cursor restored
-- `phasePromptPadInteractionMs`: PromptPad active -> external editor loop complete
+- `phaseTurboDraftInteractionMs`: TurboDraft active -> external editor loop complete
 - `phaseReturnToHarnessMs`: editor loop complete -> harness/text focus restored
 - `phaseEndToEndRoundTripMs`: full Ctrl+G -> harness text focus
 
@@ -30,7 +30,7 @@ Use this as an integration/reliability benchmark. For strict startup performance
 
 ## Cold vs warm handling
 
-- Cold run: kill `promptpad-app` + remove socket before each sample
+- Cold run: kill `turbodraft-app` + remove socket before each sample
 - Warm run: keep resident app path for repeated samples
 
 ## Validity gates
@@ -38,7 +38,7 @@ Use this as an integration/reliability benchmark. For strict startup performance
 - A run is valid only if:
   - `returnCode == 0`
   - unique typed token is present in fixture file after close (proves edit actually happened)
-  - key metrics are present (`ctrlGToPromptPadActiveMs`, `ctrlGToTextFocusMs`)
+  - key metrics are present (`ctrlGToTurboDraftActiveMs`, `ctrlGToTextFocusMs`)
 - The suite retries until target valid samples are reached (or max attempts exceeded).
 - Gate thresholds:
   - minimum valid run count per mode (configured by `--cold` / `--warm`)

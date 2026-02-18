@@ -95,7 +95,7 @@ end tell
         raise RuntimeError(f"failed to send Ctrl+G to harness: {cp.stderr.strip()}")
 
 
-def automate_promptpad_edit(token: str, timeout_s: float = 10.0, autosave_settle_s: float = 0.20) -> None:
+def automate_turbodraft_edit(token: str, timeout_s: float = 10.0, autosave_settle_s: float = 0.20) -> None:
     safe_token = apple_escape(token)
     script = f'''
 tell application "System Events"
@@ -103,12 +103,12 @@ tell application "System Events"
   set targetProc to missing value
   set startedAt to (current date)
   repeat while ((current date) - startedAt) < {max(1.0, float(timeout_s))}
-    if exists process "PromptPad" then
-      set targetProc to process "PromptPad"
-    else if exists process "promptpad-app" then
-      set targetProc to process "promptpad-app"
-    else if exists process "promptpad-app.debug" then
-      set targetProc to process "promptpad-app.debug"
+    if exists process "TurboDraft" then
+      set targetProc to process "TurboDraft"
+    else if exists process "turbodraft-app" then
+      set targetProc to process "turbodraft-app"
+    else if exists process "turbodraft-app.debug" then
+      set targetProc to process "turbodraft-app.debug"
     else
       set targetProc to missing value
     end if
@@ -120,7 +120,7 @@ tell application "System Events"
     end if
     delay 0.01
   end repeat
-  if found is false then error "PromptPad did not become frontmost"
+  if found is false then error "TurboDraft did not become frontmost"
   delay 0.04
   -- Click near center to force text focus before typing.
   try
@@ -143,10 +143,10 @@ end tell
 '''
     cp = run_osascript(script, timeout_s=timeout_s + 3.0)
     if cp.returncode != 0:
-        raise RuntimeError(f"failed to automate PromptPad edit/close: {cp.stderr.strip()}")
+        raise RuntimeError(f"failed to automate TurboDraft edit/close: {cp.stderr.strip()}")
 
 
-def kill_promptpad(socket_path: pathlib.Path, bin_path: Optional[pathlib.Path] = None) -> None:
+def kill_turbodraft(socket_path: pathlib.Path, bin_path: Optional[pathlib.Path] = None) -> None:
     if bin_path:
         # Targeted kill: match exact binary path to avoid killing unrelated processes.
         subprocess.run(["pkill", "-9", "-f", str(bin_path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -167,7 +167,7 @@ def kill_promptpad(socket_path: pathlib.Path, bin_path: Optional[pathlib.Path] =
                 if len(parts) != 2:
                     continue
                 pid_s, cmd = parts
-                if "promptpad-app" not in cmd:
+                if "turbodraft-app" not in cmd:
                     continue
                 try:
                     os.kill(int(pid_s), 15)
@@ -261,11 +261,11 @@ def metric_values(records: List[Dict[str, Any]], key: str) -> List[float]:
 
 def summarize_mode(records_all: List[Dict[str, Any]], records_valid: List[Dict[str, Any]]) -> Dict[str, Any]:
     metric_keys = [
-        "ctrlGToPromptPadActiveMs",
+        "ctrlGToTurboDraftActiveMs",
         "ctrlGToEditorWaitReturnMs",
         "ctrlGToHarnessReactivatedMs",
         "ctrlGToTextFocusMs",
-        "phasePromptPadInteractionMs",
+        "phaseTurboDraftInteractionMs",
         "phaseReturnToHarnessMs",
         "phaseEndToEndRoundTripMs",
     ]
@@ -298,8 +298,8 @@ def is_record_valid(record: Dict[str, Any]) -> Tuple[bool, List[str]]:
         reasons.append(f"returnCode={rc}")
     if not token_applied:
         reasons.append("token_not_applied")
-    if numeric(record.get("ctrlGToPromptPadActiveMs")) is None:
-        reasons.append("missing_ctrlGToPromptPadActiveMs")
+    if numeric(record.get("ctrlGToTurboDraftActiveMs")) is None:
+        reasons.append("missing_ctrlGToTurboDraftActiveMs")
     if numeric(record.get("ctrlGToTextFocusMs")) is None:
         reasons.append("missing_ctrlGToTextFocusMs")
 
@@ -335,10 +335,10 @@ def run_mode(
 
         try:
             if mode == "cold":
-                kill_promptpad(socket_path, bin_path=bin_path)
+                kill_turbodraft(socket_path, bin_path=bin_path)
 
             trigger_ctrl_g(harness_process_name)
-            automate_promptpad_edit(token, timeout_s=max(5.0, timeout_s - 2.0), autosave_settle_s=autosave_settle_s)
+            automate_turbodraft_edit(token, timeout_s=max(5.0, timeout_s - 2.0), autosave_settle_s=autosave_settle_s)
             rec, offset = wait_for_record(log_path, offset, timeout_s=timeout_s)
             rec["mode"] = mode
             rec["attempt"] = attempts
@@ -346,13 +346,13 @@ def run_mode(
             fixture_text = fixture_path.read_text(encoding="utf-8")
             rec["tokenApplied"] = token in fixture_text
 
-            open_ms = numeric(rec.get("ctrlGToPromptPadActiveMs"))
+            open_ms = numeric(rec.get("ctrlGToTurboDraftActiveMs"))
             wait_ms = numeric(rec.get("ctrlGToEditorWaitReturnMs"))
             back_ms = numeric(rec.get("ctrlGToHarnessReactivatedMs"))
             text_focus_ms = numeric(rec.get("ctrlGToTextFocusMs"))
 
             if open_ms is not None and wait_ms is not None and wait_ms >= open_ms:
-                rec["phasePromptPadInteractionMs"] = wait_ms - open_ms
+                rec["phaseTurboDraftInteractionMs"] = wait_ms - open_ms
             if back_ms is not None and wait_ms is not None and back_ms >= wait_ms:
                 rec["phaseReturnToHarnessMs"] = back_ms - wait_ms
             elif text_focus_ms is not None and wait_ms is not None and text_focus_ms >= wait_ms:
@@ -383,24 +383,24 @@ def run_mode(
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="True E2E UX benchmark: Ctrl+G -> PromptPad edit -> save/close -> focus return.")
+    ap = argparse.ArgumentParser(description="True E2E UX benchmark: Ctrl+G -> TurboDraft edit -> save/close -> focus return.")
     ap.add_argument("--cold", type=int, default=10, help="Required count of valid cold runs")
     ap.add_argument("--warm", type=int, default=30, help="Required count of valid warm runs")
     ap.add_argument("--max-attempt-multiplier", type=int, default=4, help="Max attempts per mode = target_valid * multiplier")
     ap.add_argument("--min-valid-rate", type=float, default=0.95, help="Minimum valid/attempted rate required per mode")
     ap.add_argument("--timeout-s", type=float, default=20.0)
-    ap.add_argument("--harness-process-name", default="promptpad-e2e-harness")
+    ap.add_argument("--harness-process-name", default="turbodraft-e2e-harness")
     ap.add_argument("--fixture", default="bench/fixtures/dictation_flush_mode.md")
     ap.add_argument("--autosave-settle-s", type=float, default=0.20, help="Delay after typing before Cmd+S, must exceed autosave debounce")
     ap.add_argument("--out-dir", default="")
-    ap.add_argument("--socket-path", default=str(pathlib.Path.home() / "Library/Application Support/PromptPad/promptpad.sock"))
+    ap.add_argument("--socket-path", default=str(pathlib.Path.home() / "Library/Application Support/TurboDraft/turbodraft.sock"))
     args = ap.parse_args()
 
     repo = pathlib.Path(__file__).resolve().parents[1]
-    promptpad_bin = repo / ".build/release/promptpad"
-    harness_bin = repo / ".build/release/promptpad-e2e-harness"
-    if not promptpad_bin.exists():
-        raise SystemExit(f"missing binary: {promptpad_bin}")
+    turbodraft_bin = repo / ".build/release/turbodraft"
+    harness_bin = repo / ".build/release/turbodraft-e2e-harness"
+    if not turbodraft_bin.exists():
+        raise SystemExit(f"missing binary: {turbodraft_bin}")
     if not harness_bin.exists():
         raise SystemExit(f"missing binary: {harness_bin}")
 
@@ -418,9 +418,9 @@ def main() -> int:
     fixture_path.write_text(fixture_source.read_text(encoding="utf-8"), encoding="utf-8")
 
     env = os.environ.copy()
-    env["PROMPTPAD_BIN"] = str(promptpad_bin)
-    env["PROMPTPAD_E2E_FILE"] = str(fixture_path.resolve())
-    env["PROMPTPAD_E2E_LOG"] = str(log_path.resolve())
+    env["TURBODRAFT_BIN"] = str(turbodraft_bin)
+    env["TURBODRAFT_E2E_FILE"] = str(fixture_path.resolve())
+    env["TURBODRAFT_E2E_LOG"] = str(log_path.resolve())
 
     harness_log = open(out_dir / "harness_stdout.log", "w")
     harness_err = open(out_dir / "harness_stderr.log", "w")
@@ -464,7 +464,7 @@ def main() -> int:
             offset=offset,
             harness_proc=harness_proc,
             autosave_settle_s=float(args.autosave_settle_s),
-            bin_path=harness_bin.parent / "promptpad-app",
+            bin_path=harness_bin.parent / "turbodraft-app",
         )
 
         warm_result, offset = run_mode(
@@ -479,14 +479,14 @@ def main() -> int:
             offset=offset,
             harness_proc=harness_proc,
             autosave_settle_s=float(args.autosave_settle_s),
-            bin_path=harness_bin.parent / "promptpad-app",
+            bin_path=harness_bin.parent / "turbodraft-app",
         )
 
         # Add adjusted interaction metric (subtracting AppleScript overhead).
         for rec in warm_result.valid + warm_result.invalid:
-            interaction_ms = numeric(rec.get("phasePromptPadInteractionMs"))
+            interaction_ms = numeric(rec.get("phaseTurboDraftInteractionMs"))
             if interaction_ms is not None:
-                rec["phasePromptPadInteractionMs_adjusted"] = max(0.0, interaction_ms - overhead_median_ms)
+                rec["phaseTurboDraftInteractionMs_adjusted"] = max(0.0, interaction_ms - overhead_median_ms)
 
         cold_all = cold_result.valid + cold_result.invalid
         warm_all = warm_result.valid + warm_result.invalid
@@ -533,7 +533,7 @@ def main() -> int:
                 "reporting": "p95 is computed from valid runs only",
                 "applescript_overhead_median_ms": overhead_median_ms,
                 "applescript_overhead_p95_ms": overhead["p95_ms"],
-                "adjusted_metrics_note": "phasePromptPadInteractionMs_adjusted subtracts AppleScript overhead (approximate)",
+                "adjusted_metrics_note": "phaseTurboDraftInteractionMs_adjusted subtracts AppleScript overhead (approximate)",
             },
         }
 
@@ -541,15 +541,15 @@ def main() -> int:
         out_json.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
         print(f"e2e_report\t{out_json}")
-        cold_open = report["summary"]["cold"]["ctrlGToPromptPadActiveMs_valid"]["p95_ms"]
-        warm_open = report["summary"]["warm"]["ctrlGToPromptPadActiveMs_valid"]["p95_ms"]
+        cold_open = report["summary"]["cold"]["ctrlGToTurboDraftActiveMs_valid"]["p95_ms"]
+        warm_open = report["summary"]["warm"]["ctrlGToTurboDraftActiveMs_valid"]["p95_ms"]
         warm_focus = report["summary"]["warm"]["ctrlGToTextFocusMs_valid"]["p95_ms"]
-        print(f"cold_ctrl_g_to_promptpad_active_p95_ms\t{cold_open}")
-        print(f"warm_ctrl_g_to_promptpad_active_p95_ms\t{warm_open}")
+        print(f"cold_ctrl_g_to_turbodraft_active_p95_ms\t{cold_open}")
+        print(f"warm_ctrl_g_to_turbodraft_active_p95_ms\t{warm_open}")
         print(f"warm_ctrl_g_to_text_focus_p95_ms\t{warm_focus}")
-        warm_interaction = report["summary"]["warm"]["phasePromptPadInteractionMs_valid"]["p95_ms"]
+        warm_interaction = report["summary"]["warm"]["phaseTurboDraftInteractionMs_valid"]["p95_ms"]
         warm_return = report["summary"]["warm"]["phaseReturnToHarnessMs_valid"]["p95_ms"]
-        print(f"warm_promptpad_interaction_p95_ms\t{warm_interaction}")
+        print(f"warm_turbodraft_interaction_p95_ms\t{warm_interaction}")
         print(f"warm_return_to_harness_p95_ms\t{warm_return}")
         print(f"cold_valid_rate\t{report['summary']['cold']['valid_rate']}")
         print(f"warm_valid_rate\t{report['summary']['warm']['valid_rate']}")
@@ -564,7 +564,7 @@ def main() -> int:
             harness_proc.kill()
         harness_log.close()
         harness_err.close()
-        kill_promptpad(socket_path, bin_path=harness_bin.parent / "promptpad-app")
+        kill_turbodraft(socket_path, bin_path=harness_bin.parent / "turbodraft-app")
 
 
 if __name__ == "__main__":

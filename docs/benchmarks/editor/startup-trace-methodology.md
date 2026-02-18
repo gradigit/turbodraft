@@ -1,19 +1,19 @@
-# PromptPad editor startup trace methodology
+# TurboDraft editor startup trace methodology
 
 This benchmark is the primary editor performance signal. It avoids typing/saving automation phases and isolates open readiness.
 
 ## Flow under test
 
 1. Harness receives `Ctrl+G`.
-2. Harness launches `promptpad open --path <fixture>` (no `--wait`).
-3. PromptPad opens target file and reaches editable readiness.
-4. `promptpad open` returns to harness.
+2. Harness launches `turbodraft open --path <fixture>` (no `--wait`).
+3. TurboDraft opens target file and reaches editable readiness.
+4. `turbodraft open` returns to harness.
 
 ## Metrics
 
-- `ctrlGToPromptPadActiveMs`: Ctrl+G to PromptPad activation.
-- `ctrlGToEditorCommandReturnMs`: Ctrl+G to `promptpad open` return (editor ready path).
-- `phasePromptPadReadyMs`: `ctrlGToEditorCommandReturnMs - ctrlGToPromptPadActiveMs`.
+- `ctrlGToTurboDraftActiveMs`: Ctrl+G to TurboDraft activation.
+- `ctrlGToEditorCommandReturnMs`: Ctrl+G to `turbodraft open` return (editor ready path).
+- `phaseTurboDraftReadyMs`: `ctrlGToEditorCommandReturnMs - ctrlGToTurboDraftActiveMs`.
 
 ## Why this removes most automation jitter
 

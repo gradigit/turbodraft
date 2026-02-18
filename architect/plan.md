@@ -1,4 +1,4 @@
-# PromptPad v1 Implementation Plan
+# TurboDraft v1 Implementation Plan
 
 ## Goal
 Build a native macOS AppKit prompt editor for Claude/Codex external-editor hooks with near-zero latency activation and optional in-app AI prompt-improvement loop.
@@ -25,22 +25,22 @@ Build a native macOS AppKit prompt editor for Claude/Codex external-editor hooks
 Shared envelope (internal): `jsonrpc`, `id`, `method`, `params`, `result`, `error`.
 
 Methods:
-1. `promptpad/open` → returns session metadata, current file content, and revision.
-2. `promptpad/reload` → returns latest content for active session/file.
-3. `promptpad/save` → writes content with revision guard.
-4. `promptpad/watch.subscribe` → subscribe to file-write updates.
-5. `promptpad/agent/start` → begin draft pass.
-6. `promptpad/agent/stop` → cancel active draft pass.
-7. `promptpad/agent/draft` → draft event/callback payload.
+1. `turbodraft/open` → returns session metadata, current file content, and revision.
+2. `turbodraft/reload` → returns latest content for active session/file.
+3. `turbodraft/save` → writes content with revision guard.
+4. `turbodraft/watch.subscribe` → subscribe to file-write updates.
+5. `turbodraft/agent/start` → begin draft pass.
+6. `turbodraft/agent/stop` → cancel active draft pass.
+7. `turbodraft/agent/draft` → draft event/callback payload.
 
 ### CLI contract
 Commands:
-- `promptpad open --path <file>`
-- `promptpad --stdio`
-- `promptpad --socket --path <uds_path>`
-- `promptpad daemon --start|--stop`
-- `promptpad bench run --cold --warm --iterations N`
-- `promptpad config init`
+- `turbodraft open --path <file>`
+- `turbodraft --stdio`
+- `turbodraft --socket --path <uds_path>`
+- `turbodraft daemon --start|--stop`
+- `turbodraft bench run --cold --warm --iterations N`
+- `turbodraft config init`
 
 Config file (JSON/TOML, lightweight):
 - `editor_bundle_path`
@@ -52,12 +52,12 @@ Config file (JSON/TOML, lightweight):
 - `agent.enabled` (bool)
 
 ## Repository layout to create
-- `Sources/PromptPad/AppKit/` — app process, window lifecycle.
-- `Sources/PromptPad/Transport/` — stdio + UDS transport, codec, validation.
-- `Sources/PromptPad/Editor/` — markdown styling + editor session state.
-- `Sources/PromptPad/Sync/` — watcher, autosave, conflict handling.
-- `Sources/PromptPad/Agent/` — agent protocol + `CodexCLIAdapter`.
-- `Sources/PromptPadCLI/` — CLI entrypoint and benchmark command.
+- `Sources/TurboDraft/AppKit/` — app process, window lifecycle.
+- `Sources/TurboDraft/Transport/` — stdio + UDS transport, codec, validation.
+- `Sources/TurboDraft/Editor/` — markdown styling + editor session state.
+- `Sources/TurboDraft/Sync/` — watcher, autosave, conflict handling.
+- `Sources/TurboDraft/Agent/` — agent protocol + `CodexCLIAdapter`.
+- `Sources/TurboDraftCLI/` — CLI entrypoint and benchmark command.
 - `Tests/Unit/` — formatting/autosave/conflict/transport tests.
 - `Tests/Integration/` — CLI open/update and watcher sync tests.
 - `Tests/Perf/` — startup and reflection benchmarks.

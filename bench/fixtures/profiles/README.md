@@ -1,10 +1,10 @@
 # Prompt Engineering Benchmark Profiles
 
-Each draft here is extracted from real PromptPad-related user turns in Codex session history.
+Each draft here is extracted from real TurboDraft-related user turns in Codex session history.
 
 ## Profiles
 
-- `run_on_promptpad_vision.md`
+- `run_on_turbodraft_vision.md`
   - Category: `run_on`
   - Source: session `019c5874-4f13-72e2-a887-a15eace6a82c`, ts `1771012325`
   - Why: long dictation-style vision prompt with mixed requirements and ambiguity.

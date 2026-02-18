@@ -2,29 +2,29 @@
   "meta": {
     "timestamp": "2026-02-17T03-54-47",
     "label": "opt7-telemetry",
-    "fixture": "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+    "fixture": "/Users/aaaaa/Projects/turbodraft/bench/fixtures/dictation_flush_mode.md",
     "warm": 3,
     "cold": 1
   },
   "bench_status": {
     "command": [
-      "/Users/aaaaa/Projects/promptpad/.build/release/promptpad",
+      "/Users/aaaaa/Projects/turbodraft/.build/release/turbodraft",
       "bench",
       "run",
       "--path",
-      "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+      "/Users/aaaaa/Projects/turbodraft/bench/fixtures/dictation_flush_mode.md",
       "--warm",
       "3",
       "--cold",
       "1",
       "--out",
-      "/Users/aaaaa/Projects/promptpad/docs/benchmarks/optimization-runs/2026-02-17T03-54-47-opt7-telemetry/promptpad-bench.json"
+      "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/optimization-runs/2026-02-17T03-54-47-opt7-telemetry/turbodraft-bench.json"
     ],
     "timeout": true,
     "returncode": 124
   },
   "bench_metrics": {},
-  "warm_promptpad_open": {
+  "warm_turbodraft_open": {
     "n_ok": 3,
     "n_err": 0,
     "p50_ms": 19.237833000001814,
@@ -32,7 +32,7 @@
     "mean_ms": 20.194277666667187,
     "errors": []
   },
-  "warm_promptpad_open_cshim": {
+  "warm_turbodraft_open_cshim": {
     "n_ok": 0,
     "n_err": 3,
     "p50_ms": null,
@@ -53,13 +53,13 @@
       }
     ]
   },
-  "cold_promptpad_open": {
+  "cold_turbodraft_open": {
     "n_ok": 0,
     "n_err": 1,
     "p50_ms": null,
     "p95_ms": null
   },
-  "cold_promptpad_open_cshim": {
+  "cold_turbodraft_open_cshim": {
     "n_ok": 0,
     "n_err": 1,
     "p50_ms": null,

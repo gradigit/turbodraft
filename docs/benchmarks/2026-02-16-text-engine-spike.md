@@ -2,7 +2,7 @@
 Date: 2026-02-16
 
 ## Goal
-Run an A/B spike against the same PromptPad codebase to check whether swapping the editor surface to `CodeEditTextView` improves the latency metrics that matter for PromptPad.
+Run an A/B spike against the same TurboDraft codebase to check whether swapping the editor surface to `CodeEditTextView` improves the latency metrics that matter for TurboDraft.
 
 ## Command
 ```sh
@@ -31,5 +31,5 @@ scripts/bench_text_engine_spike.sh --warm 8 --cold 2
 - Decision for now: keep `NSTextView` as default/perf path.
 
 ## Notes
-- The CodeEdit integration remains behind compile flag `PROMPTPAD_USE_CODEEDIT_TEXTVIEW` for future experiments.
+- The CodeEdit integration remains behind compile flag `TURBODRAFT_USE_CODEEDIT_TEXTVIEW` for future experiments.
 - This is an initial spike with short sample counts (`warm=8`, `cold=2`). Re-run with larger samples before making any final architectural changes.

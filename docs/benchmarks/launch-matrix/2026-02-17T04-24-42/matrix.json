@@ -1,16 +1,16 @@
 {
   "meta": {
     "timestamp": "2026-02-17T04-24-42",
-    "fixture": "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+    "fixture": "/Users/aaaaa/Projects/turbodraft/bench/fixtures/dictation_flush_mode.md",
     "warm_n": 12,
     "cold_n": 4,
     "bench_warm_n": 6,
     "bench_cold_n": 1,
-    "launchagent_label": "com.promptpad.app.bench"
+    "launchagent_label": "com.turbodraft.app.bench"
   },
   "scenarios": {
     "no_launchagent": {
-      "warm_promptpad_open": {
+      "warm_turbodraft_open": {
         "n_ok": 12,
         "n_err": 0,
         "p50_ms": 16.47458299999994,
@@ -32,7 +32,7 @@
         ],
         "errors": []
       },
-      "cold_promptpad_open": {
+      "cold_turbodraft_open": {
         "n_ok": 4,
         "n_err": 0,
         "p50_ms": 158.79950000000008,
@@ -49,17 +49,17 @@
       "bench": {
         "status": {
           "cmd": [
-            "/Users/aaaaa/Projects/promptpad/.build/release/promptpad",
+            "/Users/aaaaa/Projects/turbodraft/.build/release/turbodraft",
             "bench",
             "run",
             "--path",
-            "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+            "/Users/aaaaa/Projects/turbodraft/bench/fixtures/dictation_flush_mode.md",
             "--warm",
             "6",
             "--cold",
             "1",
             "--out",
-            "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario1_no_launchagent.bench.json"
+            "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario1_no_launchagent.bench.json"
           ],
           "rc": 0,
           "timeout": false,
@@ -79,26 +79,26 @@
           },
           "coldN": 1
         },
-        "out_file": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario1_no_launchagent.bench.json",
-        "stdout_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario1_no_launchagent.bench.stdout.log",
-        "stderr_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario1_no_launchagent.bench.stderr.log"
+        "out_file": "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario1_no_launchagent.bench.json",
+        "stdout_log": "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario1_no_launchagent.bench.stdout.log",
+        "stderr_log": "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario1_no_launchagent.bench.stderr.log"
       }
     },
     "launchagent_resident": {
       "launchagent_install": {
         "cmd": [
-          "/Users/aaaaa/Projects/promptpad/scripts/promptpad-launch-agent",
+          "/Users/aaaaa/Projects/turbodraft/scripts/turbodraft-launch-agent",
           "install",
           "--app",
-          "/Users/aaaaa/Projects/promptpad/.build/release/promptpad-app"
+          "/Users/aaaaa/Projects/turbodraft/.build/release/turbodraft-app"
         ],
         "rc": 0,
         "timeout": false,
         "elapsed_ms": 10030.751208,
-        "stdout": "Installed LaunchAgent:\n/Users/aaaaa/Library/LaunchAgents/com.promptpad.app.bench.plist\n",
+        "stdout": "Installed LaunchAgent:\n/Users/aaaaa/Library/LaunchAgents/com.turbodraft.app.bench.plist\n",
         "stderr": ""
       },
-      "warm_promptpad_open": {
+      "warm_turbodraft_open": {
         "n_ok": 12,
         "n_err": 0,
         "p50_ms": 17.883374999999432,
@@ -120,7 +120,7 @@
         ],
         "errors": []
       },
-      "cold_promptpad_open": {
+      "cold_turbodraft_open": {
         "n_ok": 4,
         "n_err": 0,
         "p50_ms": 59.04008400000748,
@@ -137,17 +137,17 @@
       "bench": {
         "status": {
           "cmd": [
-            "/Users/aaaaa/Projects/promptpad/.build/release/promptpad",
+            "/Users/aaaaa/Projects/turbodraft/.build/release/turbodraft",
             "bench",
             "run",
             "--path",
-            "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+            "/Users/aaaaa/Projects/turbodraft/bench/fixtures/dictation_flush_mode.md",
             "--warm",
             "6",
             "--cold",
             "1",
             "--out",
-            "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario2_launchagent.bench.json"
+            "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario2_launchagent.bench.json"
           ],
           "rc": 0,
           "timeout": false,
@@ -167,13 +167,13 @@
           "osVersion": "Version 26.2 (Build 25C56)",
           "warmN": 6
         },
-        "out_file": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario2_launchagent.bench.json",
-        "stdout_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario2_launchagent.bench.stdout.log",
-        "stderr_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario2_launchagent.bench.stderr.log"
+        "out_file": "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario2_launchagent.bench.json",
+        "stdout_log": "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario2_launchagent.bench.stdout.log",
+        "stderr_log": "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario2_launchagent.bench.stderr.log"
       }
     },
     "lifecycle_compare": {
-      "stay_resident_warm_promptpad_open": {
+      "stay_resident_warm_turbodraft_open": {
         "n_ok": 12,
         "n_err": 0,
         "p50_ms": 16.713917000008223,
@@ -195,7 +195,7 @@
         ],
         "errors": []
       },
-      "stay_resident_cold_promptpad_open": {
+      "stay_resident_cold_turbodraft_open": {
         "n_ok": 4,
         "n_err": 0,
         "p50_ms": 149.124834000002,
@@ -212,17 +212,17 @@
       "stay_resident_bench": {
         "status": {
           "cmd": [
-            "/Users/aaaaa/Projects/promptpad/.build/release/promptpad",
+            "/Users/aaaaa/Projects/turbodraft/.build/release/turbodraft",
             "bench",
             "run",
             "--path",
-            "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+            "/Users/aaaaa/Projects/turbodraft/bench/fixtures/dictation_flush_mode.md",
             "--warm",
             "6",
             "--cold",
             "1",
             "--out",
-            "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario3_stay_resident.bench.json"
+            "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario3_stay_resident.bench.json"
           ],
           "rc": 0,
           "timeout": false,
@@ -242,11 +242,11 @@
             "warm_agent_reflect_p95_ms": 7.316125
           }
         },
-        "out_file": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario3_stay_resident.bench.json",
-        "stdout_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario3_stay_resident.bench.stdout.log",
-        "stderr_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario3_stay_resident.bench.stderr.log"
+        "out_file": "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario3_stay_resident.bench.json",
+        "stdout_log": "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario3_stay_resident.bench.stdout.log",
+        "stderr_log": "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario3_stay_resident.bench.stderr.log"
       },
-      "terminate_on_last_close_warm_promptpad_open": {
+      "terminate_on_last_close_warm_turbodraft_open": {
         "n_ok": 12,
         "n_err": 0,
         "p50_ms": 15.065000000002328,
@@ -268,7 +268,7 @@
         ],
         "errors": []
       },
-      "terminate_on_last_close_cold_promptpad_open": {
+      "terminate_on_last_close_cold_turbodraft_open": {
         "n_ok": 4,
         "n_err": 0,
         "p50_ms": 46.4707919999928,
@@ -285,17 +285,17 @@
       "terminate_on_last_close_bench_warm_only": {
         "status": {
           "cmd": [
-            "/Users/aaaaa/Projects/promptpad/.build/release/promptpad",
+            "/Users/aaaaa/Projects/turbodraft/.build/release/turbodraft",
             "bench",
             "run",
             "--path",
-            "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+            "/Users/aaaaa/Projects/turbodraft/bench/fixtures/dictation_flush_mode.md",
             "--warm",
             "6",
             "--cold",
             "0",
             "--out",
-            "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario3_terminate_warm_only.bench.json"
+            "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario3_terminate_warm_only.bench.json"
           ],
           "rc": 0,
           "timeout": false,
@@ -314,9 +314,9 @@
             "warm_ctrl_g_to_editable_p95_ms": 8.253292
           }
         },
-        "out_file": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario3_terminate_warm_only.bench.json",
-        "stdout_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario3_terminate_warm_only.bench.stdout.log",
-        "stderr_log": "/Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario3_terminate_warm_only.bench.stderr.log"
+        "out_file": "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/scenario3_terminate_warm_only.bench.json",
+        "stdout_log": "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario3_terminate_warm_only.bench.stdout.log",
+        "stderr_log": "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs/scenario3_terminate_warm_only.bench.stderr.log"
       }
     }
   }

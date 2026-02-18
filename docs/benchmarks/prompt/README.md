@@ -1,4 +1,4 @@
-# PromptPad prompt-quality benchmarks
+# TurboDraft prompt-quality benchmarks
 
 This track measures only prompt-engineering model output quality and model latency.
 It does not include editor open/save/render metrics.

@@ -1,4 +1,4 @@
-# Research: Light/Dark theme and “best-looking” minimal editor UI (PromptPad)
+# Research: Light/Dark theme and “best-looking” minimal editor UI (TurboDraft)
 Date: 2026-02-14
 Depth: Full
 
@@ -32,7 +32,7 @@ This points to a default theme that follows system appearance, with optional con
 ### 1) Contrast and accessibility are non-negotiable
 Apple explicitly calls out minimum contrast ratios and recommends checking contrast in both light and dark appearances, including with Increase Contrast enabled. A common failure mode is low-contrast gray-on-black in dark mode. 
 
-Practical implication for PromptPad:
+Practical implication for TurboDraft:
 - Don’t ship a low-contrast “pretty” theme as default.
 - Keep primary text high-contrast against background, and use a muted color only for non-content affordances.
 

@@ -1,4 +1,4 @@
-# Research: Fastest possible stack for PromptPad cold-start performance
+# Research: Fastest possible stack for TurboDraft cold-start performance
 Date: 2026-02-16
 Depth: Full
 
@@ -7,9 +7,9 @@ Depth: Full
 For raw cold-start speed on macOS, the strongest stack remains native Cocoa/AppKit with `NSTextView` (TextKit), minimal dependencies, and deferred initialization. Web stacks (Electron/Tauri) carry extra process/runtime overhead by architecture. Tauri is materially lighter than Electron, but neither is likely to beat a stripped native AppKit editor on first-frame latency.
 
 Practical decision:
-- Keep PromptPad on native Swift + AppKit + `NSTextView`.
+- Keep TurboDraft on native Swift + AppKit + `NSTextView`.
 - Treat this as the baseline “fastest class” for your use case.
-- Benchmark PromptPad vs Kern directly, because both are likely in the same class and differences will be implementation-level, not framework-level.
+- Benchmark TurboDraft vs Kern directly, because both are likely in the same class and differences will be implementation-level, not framework-level.
 
 ## Sub-Questions Investigated
 
@@ -17,7 +17,7 @@ Practical decision:
 2. What do official sources say about launch-time bottlenecks?
 3. How much architectural overhead do Electron and Tauri add?
 4. What text stack is best for high-performance markdown editing?
-5. If Kern is also TextKit/AppKit-based, can PromptPad be significantly faster?
+5. If Kern is also TextKit/AppKit-based, can TurboDraft be significantly faster?
 
 ## Source Quality Filter
 
@@ -86,7 +86,7 @@ Implication:
 | H1: Native AppKit TextKit is fastest for cold-start | High | Apple launch guidance + no web runtime/process wrapper overhead | No direct public benchmark head-to-head vs every stack |
 | H2: Tauri is faster/lighter than Electron | High | Tauri architecture docs + Electron multi-process docs | Exact app-level deltas vary by implementation |
 | H3: SwiftUI-first is best for minimum cold-start | Low | No strong official evidence for fastest cold-start specifically | Mixed field reports; many are anecdotal/uncontrolled |
-| H4: PromptPad vs Kern speed difference will be mostly implementation-level, not framework-level | Medium-High | If both are AppKit/TextKit, shared baseline stack costs dominate | Need direct PoC measurement |
+| H4: TurboDraft vs Kern speed difference will be mostly implementation-level, not framework-level | Medium-High | If both are AppKit/TextKit, shared baseline stack costs dominate | Need direct PoC measurement |
 
 ## Verification Status
 
@@ -100,7 +100,7 @@ Implication:
 - TextKit 2 viewport architecture is designed for high-performance text layout and is Apple’s forward direction.
 
 ### Unverified / requires local measurement
-- Exact cold-start delta between PromptPad and Kern on your target hardware.
+- Exact cold-start delta between TurboDraft and Kern on your target hardware.
 - Whether SwiftUI/AppKit hybrid meaningfully regresses launch in your concrete app.
 - Whether TextKit1 vs TextKit2 is faster for your specific markdown-styling workload.
 
@@ -120,7 +120,7 @@ Avoid for the ctrl+g critical path:
 - Large framework/plugin surfaces
 - Heavy startup scanning/indexing/preloads
 
-## PromptPad vs Kern PoC Benchmark Plan
+## TurboDraft vs Kern PoC Benchmark Plan
 
 Build a controlled apples-to-apples benchmark:
 
@@ -141,7 +141,7 @@ Build a controlled apples-to-apples benchmark:
    - no background indexing tasks
 
 Decision gate:
-- If Kern and PromptPad are within ~5-10% on `ctrl+g -> editable`, choose by UX fit (markdown-plain editor vs WYSIWYG).
+- If Kern and TurboDraft are within ~5-10% on `ctrl+g -> editable`, choose by UX fit (markdown-plain editor vs WYSIWYG).
 - If Kern is materially faster (>15-20%) and can be constrained to non-WYSIWYG behavior, evaluate reusing Kern core.
 
 ## Sources

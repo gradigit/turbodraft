@@ -229,7 +229,7 @@ class CodexAppServerClient:
         rid = self._send(
             "initialize",
             {
-                "clientInfo": {"name": "PromptPadPoC", "version": "0.0.1"},
+                "clientInfo": {"name": "TurboDraftPoC", "version": "0.0.1"},
                 "capabilities": {"experimentalApi": True},
             },
         )
@@ -363,7 +363,7 @@ class CodexAppServerClient:
                 raise RuntimeError(f"server error notification (no retry): {params}")
 
 
-SYSTEM_PROMPT = """You are PromptPad, a prompt-engineering assistant.
+SYSTEM_PROMPT = """You are TurboDraft, a prompt-engineering assistant.
 
 You will be given a draft prompt written in Markdown. That draft prompt is intended to be used as input to another AI system.
 

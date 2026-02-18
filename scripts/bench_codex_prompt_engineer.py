@@ -22,7 +22,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from bench_stats import bootstrap_ci_median, percentile_nearest_rank
 
 
-SYSTEM_PREAMBLE = """You are PromptPad, a prompt engineering assistant.
+SYSTEM_PREAMBLE = """You are TurboDraft, a prompt engineering assistant.
 
 You will be given a draft prompt in Markdown (sometimes messy, unstructured dictation). That draft prompt is intended to be used as input to another AI system.
 
@@ -453,7 +453,7 @@ def evaluate_output(draft_md: str, improved: str) -> Dict[str, Any]:
     out_c = collapse_ws(out)
     draft_prefix = draft_c[:220] if len(draft_c) >= 220 else ""
 
-    leaked_system_preamble = "you are promptpad, a prompt engineering assistant" in lc
+    leaked_system_preamble = "you are turbodraft, a prompt engineering assistant" in lc
     looks_like_prompt_rewriter = any(
         tok in lc
         for tok in (
@@ -755,7 +755,7 @@ def run_codex_exec(
     ephemeral: bool,
     verbose: bool,
 ) -> Tuple[float, str, Dict[str, int]]:
-    with tempfile.NamedTemporaryFile(prefix="promptpad-codex-exec-", suffix=".txt", delete=False) as f:
+    with tempfile.NamedTemporaryFile(prefix="turbodraft-codex-exec-", suffix=".txt", delete=False) as f:
         out_path = f.name
 
     try:
@@ -910,7 +910,7 @@ def run_codex_judge_exec(
     schema_path: str,
     verbose: bool,
 ) -> Tuple[float, Dict[str, Any]]:
-    with tempfile.NamedTemporaryFile(prefix="promptpad-codex-judge-", suffix=".json", delete=False) as f:
+    with tempfile.NamedTemporaryFile(prefix="turbodraft-codex-judge-", suffix=".json", delete=False) as f:
         out_path = f.name
 
     try:
@@ -995,7 +995,7 @@ def run_codex_pairwise_judge_exec(
     schema_path: str,
     verbose: bool,
 ) -> Tuple[float, Dict[str, Any]]:
-    with tempfile.NamedTemporaryFile(prefix="promptpad-codex-judge-pairwise-", suffix=".json", delete=False) as f:
+    with tempfile.NamedTemporaryFile(prefix="turbodraft-codex-judge-pairwise-", suffix=".json", delete=False) as f:
         out_path = f.name
 
     try:
@@ -1198,7 +1198,7 @@ class AppServerConn:
             "initialize",
             {
                 "protocolVersion": "2025-02-14",
-                "clientInfo": {"name": "promptpad-bench", "version": "0.1.0"},
+                "clientInfo": {"name": "turbodraft-bench", "version": "0.1.0"},
             },
         )
         resp = self.wait_response(rid, timeout_s=timeout_s)
@@ -1405,7 +1405,7 @@ class CaseResult:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Benchmark codex exec vs codex app-server for PromptPad prompt-engineering.")
+    ap = argparse.ArgumentParser(description="Benchmark codex exec vs codex app-server for TurboDraft prompt-engineering.")
     ap.add_argument("--draft", default="bench/fixtures/dictation_flush_mode.md", help="Path to markdown draft prompt fixture")
     ap.add_argument("--drafts", default="", help="Comma-separated list of draft fixture paths (overrides --draft)")
     ap.add_argument("--instruction", default=DEFAULT_TASK.strip(), help="Instruction given to the prompt engineer")
@@ -1438,7 +1438,7 @@ def main() -> int:
     ap.add_argument("--pairwise-baseline-effort", default="", help="Baseline effort for pairwise comparisons (optional)")
     ap.add_argument("--pairwise-baseline-file", default="", help="Baseline markdown file to compare against (single draft; overrides baseline selection)")
     ap.add_argument("--pairwise-baseline-dir", default="", help="Directory of baseline markdown files keyed by draft filename (overrides baseline selection)")
-    ap.add_argument("--pairwise-seed", default="promptpad", help="Seed for deterministic A/B order randomization")
+    ap.add_argument("--pairwise-seed", default="turbodraft", help="Seed for deterministic A/B order randomization")
     ap.add_argument("--json-out", default="", help="Write JSON results to this path")
     ap.add_argument("--verbose", action="store_true", help="Show codex stdout/stderr")
 
@@ -1520,7 +1520,7 @@ def main() -> int:
 
             init_rid = conn.send(
                 "initialize",
-                {"clientInfo": {"name": "PromptPadBench", "version": "0.0.0"}, "capabilities": {"experimentalApi": True}},
+                {"clientInfo": {"name": "TurboDraftBench", "version": "0.0.0"}, "capabilities": {"experimentalApi": True}},
             )
             init_resp = conn.wait_response(init_rid, timeout_s=10.0)
             if "error" in init_resp:

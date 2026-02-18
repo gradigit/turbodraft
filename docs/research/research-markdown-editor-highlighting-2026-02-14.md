@@ -1,4 +1,4 @@
-# Research: Markdown editor highlighting patterns (PromptPad)
+# Research: Markdown editor highlighting patterns (TurboDraft)
 Date: 2026-02-14
 Depth: Full
 
@@ -10,7 +10,7 @@ Popular Markdown editors generally do *not* WYSIWYG-render the document in-place
 - Making code blocks visually distinct (monospace + subtle background).
 - Styling links and quotes with lightweight affordances (link color/underline; quote marker dim + muted text).
 
-For PromptPad (minimal, fast, no WebView), this suggests an approach of:
+For TurboDraft (minimal, fast, no WebView), this suggests an approach of:
 
 - Line-oriented parsing in a small, allocation-light highlighter.
 - Returning spans for both markers and content (so markers can be dim without losing editability).
@@ -23,12 +23,12 @@ For PromptPad (minimal, fast, no WebView), this suggests an approach of:
 - VS Code’s markdown tokenization (TextMate scopes) supports applying `fontStyle: bold/italic` for markdown tokens in the source editor, reinforcing that “bold should look bold” is a normal expectation in source-mode editing.
 
 ### Code blocks: distinct background + clear fence
-- Ulysses describes code blocks as monospaced on a colored background, and supports syntax highlighting within code blocks. PromptPad’s v1 should do the background/fence/inline-code accents first; language-aware code highlighting can come later.
+- Ulysses describes code blocks as monospaced on a colored background, and supports syntax highlighting within code blocks. TurboDraft’s v1 should do the background/fence/inline-code accents first; language-aware code highlighting can come later.
 
 ### Links: link text emphasized, URL de-emphasized
 Most editors separate the link label from the raw URL visually: link label looks like a link; raw URL is less prominent.
 
-## Recommendations for PromptPad v1 highlighting
+## Recommendations for TurboDraft v1 highlighting
 Implement these in the editor surface (not preview):
 - `#` headings: dim the `#` marker, apply heavier weight to heading text.
 - `**strong**`, `*em*`, `~~strike~~`, `==highlight==`: dim markers; style content.

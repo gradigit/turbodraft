@@ -1,4 +1,4 @@
-# PromptPad agent benchmark status (2026-02-16)
+# TurboDraft agent benchmark status (2026-02-16)
 
 This document snapshots the benchmark/research state before Codex quota reset so we can resume quickly.
 

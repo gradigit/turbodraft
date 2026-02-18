@@ -95,15 +95,15 @@ end tell
         raise RuntimeError(f"failed to send Ctrl+G to harness: {cp.stderr.strip()}")
 
 
-def kill_promptpad(socket_path: pathlib.Path, bin_path: Optional[pathlib.Path] = None) -> None:
+def kill_turbodraft(socket_path: pathlib.Path, bin_path: Optional[pathlib.Path] = None) -> None:
     if bin_path:
         subprocess.run(["pkill", "-9", "-f", str(bin_path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
-        subprocess.run(["pkill", "-9", "-f", "promptpad-app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["pkill", "-9", "-f", "turbodraft-app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     # Wait for process to actually die
     deadline = time.time() + 2.0
     while time.time() < deadline:
-        rc = subprocess.run(["pgrep", "-f", str(bin_path or "promptpad-app")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+        rc = subprocess.run(["pgrep", "-f", str(bin_path or "turbodraft-app")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
         if rc != 0:
             break
         time.sleep(0.05)
@@ -177,8 +177,8 @@ def is_record_valid(record: Dict[str, Any]) -> Tuple[bool, List[str]]:
         reasons.append(f"returnCode={rc}")
     if mode != "startup":
         reasons.append(f"unexpected_benchmarkMode={mode}")
-    if numeric(record.get("ctrlGToPromptPadActiveMs")) is None:
-        reasons.append("missing_ctrlGToPromptPadActiveMs")
+    if numeric(record.get("ctrlGToTurboDraftActiveMs")) is None:
+        reasons.append("missing_ctrlGToTurboDraftActiveMs")
     if numeric(record.get("ctrlGToEditorCommandReturnMs")) is None:
         reasons.append("missing_ctrlGToEditorCommandReturnMs")
     if numeric(record.get("ctrlGToTextFocusMs")) is None:
@@ -198,10 +198,10 @@ def metric_values(records: List[Dict[str, Any]], key: str) -> List[float]:
 
 def summarize_mode(records_all: List[Dict[str, Any]], records_valid: List[Dict[str, Any]]) -> Dict[str, Any]:
     keys = [
-        "ctrlGToPromptPadActiveMs",
+        "ctrlGToTurboDraftActiveMs",
         "ctrlGToEditorCommandReturnMs",
         "ctrlGToTextFocusMs",
-        "phasePromptPadReadyMs",
+        "phaseTurboDraftReadyMs",
     ]
     out: Dict[str, Any] = {
         "attempted_runs": len(records_all),
@@ -238,16 +238,16 @@ def run_mode(
         attempts += 1
         try:
             if mode == "cold":
-                kill_promptpad(socket_path, bin_path=bin_path)
+                kill_turbodraft(socket_path, bin_path=bin_path)
 
             trigger_ctrl_g(harness_process_name)
             rec, offset = wait_for_record(log_path, offset, timeout_s=timeout_s)
             rec["mode"] = mode
             rec["attempt"] = attempts
-            active_ms = numeric(rec.get("ctrlGToPromptPadActiveMs"))
+            active_ms = numeric(rec.get("ctrlGToTurboDraftActiveMs"))
             ready_ms = numeric(rec.get("ctrlGToEditorCommandReturnMs"))
             if active_ms is not None and ready_ms is not None and ready_ms >= active_ms:
-                rec["phasePromptPadReadyMs"] = ready_ms - active_ms
+                rec["phaseTurboDraftReadyMs"] = ready_ms - active_ms
 
             ok, reasons = is_record_valid(rec)
             rec["valid"] = ok
@@ -269,21 +269,21 @@ def main() -> int:
     ap.add_argument("--max-attempt-multiplier", type=int, default=3, help="Max attempts per mode = target_valid * multiplier")
     ap.add_argument("--min-valid-rate", type=float, default=0.98, help="Minimum valid/attempted rate required per mode")
     ap.add_argument("--timeout-s", type=float, default=8.0)
-    ap.add_argument("--harness-process-name", default="promptpad-e2e-harness")
+    ap.add_argument("--harness-process-name", default="turbodraft-e2e-harness")
     ap.add_argument("--fixture", default="bench/fixtures/dictation_flush_mode.md")
     ap.add_argument("--out-dir", default="")
-    ap.add_argument("--socket-path", default=str(pathlib.Path.home() / "Library/Application Support/PromptPad/promptpad.sock"))
+    ap.add_argument("--socket-path", default=str(pathlib.Path.home() / "Library/Application Support/TurboDraft/turbodraft.sock"))
     args = ap.parse_args()
 
     repo = pathlib.Path(__file__).resolve().parents[1]
-    promptpad_bin = repo / ".build/release/promptpad"
-    harness_bin = repo / ".build/release/promptpad-e2e-harness"
-    if not promptpad_bin.exists():
-        raise SystemExit(f"missing binary: {promptpad_bin}")
+    turbodraft_bin = repo / ".build/release/turbodraft"
+    harness_bin = repo / ".build/release/turbodraft-e2e-harness"
+    if not turbodraft_bin.exists():
+        raise SystemExit(f"missing binary: {turbodraft_bin}")
     if not harness_bin.exists():
         raise SystemExit(f"missing binary: {harness_bin}")
 
-    app_bin_path = harness_bin.parent / "promptpad-app"
+    app_bin_path = harness_bin.parent / "turbodraft-app"
     out_dir = pathlib.Path(args.out_dir) if args.out_dir else (repo / "tmp" / f"bench_editor_startup_{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}")
     out_dir.mkdir(parents=True, exist_ok=True)
     log_path = out_dir / "harness.jsonl"
@@ -298,10 +298,10 @@ def main() -> int:
     fixture_path.write_text(fixture_source.read_text(encoding="utf-8"), encoding="utf-8")
 
     env = os.environ.copy()
-    env["PROMPTPAD_BIN"] = str(promptpad_bin)
-    env["PROMPTPAD_E2E_FILE"] = str(fixture_path.resolve())
-    env["PROMPTPAD_E2E_LOG"] = str(log_path.resolve())
-    env["PROMPTPAD_E2E_MODE"] = "startup"
+    env["TURBODRAFT_BIN"] = str(turbodraft_bin)
+    env["TURBODRAFT_E2E_FILE"] = str(fixture_path.resolve())
+    env["TURBODRAFT_E2E_LOG"] = str(log_path.resolve())
+    env["TURBODRAFT_E2E_MODE"] = "startup"
 
     harness_log = open(out_dir / "harness_stdout.log", "w")
     harness_err = open(out_dir / "harness_stderr.log", "w")
@@ -398,10 +398,10 @@ def main() -> int:
         out_json.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
         print(f"startup_report\t{out_json}")
-        print(f"cold_ctrl_g_to_promptpad_active_p95_ms\t{cold_summary['ctrlGToPromptPadActiveMs_valid']['p95_ms']}")
-        print(f"warm_ctrl_g_to_promptpad_active_p95_ms\t{warm_summary['ctrlGToPromptPadActiveMs_valid']['p95_ms']}")
+        print(f"cold_ctrl_g_to_turbodraft_active_p95_ms\t{cold_summary['ctrlGToTurboDraftActiveMs_valid']['p95_ms']}")
+        print(f"warm_ctrl_g_to_turbodraft_active_p95_ms\t{warm_summary['ctrlGToTurboDraftActiveMs_valid']['p95_ms']}")
         print(f"warm_ctrl_g_to_editor_ready_p95_ms\t{warm_summary['ctrlGToEditorCommandReturnMs_valid']['p95_ms']}")
-        print(f"warm_promptpad_ready_phase_p95_ms\t{warm_summary['phasePromptPadReadyMs_valid']['p95_ms']}")
+        print(f"warm_turbodraft_ready_phase_p95_ms\t{warm_summary['phaseTurboDraftReadyMs_valid']['p95_ms']}")
         print(f"cold_valid_rate\t{cold_summary['valid_rate']}")
         print(f"warm_valid_rate\t{warm_summary['valid_rate']}")
         print(f"gates_all_pass\t{gates['all_pass']}")
@@ -414,7 +414,7 @@ def main() -> int:
             harness_proc.kill()
         harness_log.close()
         harness_err.close()
-        kill_promptpad(socket_path, bin_path=app_bin_path)
+        kill_turbodraft(socket_path, bin_path=app_bin_path)
 
 
 if __name__ == "__main__":

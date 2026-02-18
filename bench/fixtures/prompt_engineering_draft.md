@@ -1,4 +1,4 @@
-# PromptPad Prompt Engineering Benchmark Fixture
+# TurboDraft Prompt Engineering Benchmark Fixture
 
 You are an AI assistant that will be given a draft prompt written in Markdown. That draft prompt is intended to be used as input to another AI system.
 

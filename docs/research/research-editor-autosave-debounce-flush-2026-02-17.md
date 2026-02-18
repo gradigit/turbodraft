@@ -1,10 +1,10 @@
-# Research: Editor autosave debounce/flush strategy for PromptPad
+# Research: Editor autosave debounce/flush strategy for TurboDraft
 Date: 2026-02-17
 Depth: Full
 
 ## Executive Summary
 
-For PromptPad’s low-friction editor workflow, `0ms` debounce is not the best default. It maximizes write frequency and can amplify downstream watcher/actions-on-save churn. A better design is:
+For TurboDraft’s low-friction editor workflow, `0ms` debounce is not the best default. It maximizes write frequency and can amplify downstream watcher/actions-on-save churn. A better design is:
 
 - trailing debounce in the low tens of milliseconds
 - bounded max flush interval
@@ -27,7 +27,7 @@ Confidence: High (method-level); Medium (exact millisecond sweet spot, which sho
 - Apple’s document guidance explicitly says the system does not save every change immediately, but saves often enough at correct times to keep in-memory and on-disk effectively aligned.
 - Apple also warns autosave can block UI if saving is slow, and calls out performance considerations and cancellable autosaves.
 
-Interpretation for PromptPad:
+Interpretation for TurboDraft:
 - Avoid `0ms` write-on-every-keystroke as a default.
 - Keep writes frequent enough for external-editor correctness, but coalesced.
 
@@ -36,7 +36,7 @@ Interpretation for PromptPad:
 - JetBrains docs state autosave can trigger actions-on-save and other workflows.
 - VS Code added an option to suppress autosave when errors exist specifically to avoid external tools acting on bad intermediate states.
 
-Interpretation for PromptPad:
+Interpretation for TurboDraft:
 - Frequent raw disk writes can trigger watchers/tooling churn.
 - Coalescing plus explicit boundary flush (close/quit/agent run) reduces churn without sacrificing reliability.
 
@@ -45,7 +45,7 @@ Interpretation for PromptPad:
 - Debounce reduces operation frequency during bursts.
 - Lodash documentation formalizes `maxWait` to guarantee execution isn’t delayed indefinitely during continuous input, plus `flush()` for explicit immediate commit.
 
-Interpretation for PromptPad:
+Interpretation for TurboDraft:
 - Use trailing debounce for normal typing.
 - Add max flush interval to cap unsaved window during nonstop typing.
 - Use explicit flush hooks for lifecycle boundaries.
@@ -55,7 +55,7 @@ Interpretation for PromptPad:
 - JetBrains positions Local History as a robust fallback beyond immediate undo.
 - VS Code Hot Exit restores backed-up unsaved work across exit/crash.
 
-Interpretation for PromptPad:
+Interpretation for TurboDraft:
 - Cross-reopen undo via native text undo stack is not sufficient by itself.
 - Add persistent, per-file restore checkpoints (original-on-open, pre-agent-apply, recent autosave snapshots).
 
@@ -81,10 +81,10 @@ Interpretation for PromptPad:
 
 ### Conflicts Resolved
 
-- Some ecosystems default to longer autosave delays (example 1000ms); PromptPad’s external-editor latency target justifies shorter values.
+- Some ecosystems default to longer autosave delays (example 1000ms); TurboDraft’s external-editor latency target justifies shorter values.
 - Resolution: keep short debounce but add max flush and boundary flush.
 
-## Recommended Target Policy for PromptPad (inference from sources + product goals)
+## Recommended Target Policy for TurboDraft (inference from sources + product goals)
 
 - `autosaveDebounceMs`: 40-75ms (default 50ms)
 - `autosaveMaxFlushMs`: 200-300ms (default 250ms)
@@ -102,7 +102,7 @@ Interpretation for PromptPad:
 ## Limitations & Gaps
 
 - Source material rarely provides exact debounce values for native editor autosave internals.
-- Final ms tuning should be validated against PromptPad’s own editor startup/e2e benchmark suites on target hardware.
+- Final ms tuning should be validated against TurboDraft’s own editor startup/e2e benchmark suites on target hardware.
 
 ## Sources
 

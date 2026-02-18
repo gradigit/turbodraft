@@ -1,7 +1,7 @@
 {
   "timestamp": "2026-02-17T03-40-25",
   "label": "baseline",
-  "fixture": "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+  "fixture": "/Users/aaaaa/Projects/turbodraft/bench/fixtures/dictation_flush_mode.md",
   "warm": 8,
   "cold": 2
 }

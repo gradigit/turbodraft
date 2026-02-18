@@ -130,7 +130,7 @@ def fmt_num(x: Any, nd: int = 3) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Run matrix benchmark for PromptPad prompt engineering (preamble x web_search).")
+    ap = argparse.ArgumentParser(description="Run matrix benchmark for TurboDraft prompt engineering (preamble x web_search).")
     ap.add_argument("--bench-script", default="scripts/bench_codex_prompt_engineer.py")
     ap.add_argument("--drafts-file", default="bench/fixtures/profiles/profile_set.txt")
     ap.add_argument("--drafts", default="", help="Optional comma-separated drafts override")

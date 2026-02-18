@@ -1,11 +1,11 @@
-# PromptPad Launch/Lifecycle Benchmark Matrix
+# TurboDraft Launch/Lifecycle Benchmark Matrix
 
 - Timestamp: 2026-02-17T04-05-17
-- Fixture: /Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md
+- Fixture: /Users/aaaaa/Projects/turbodraft/bench/fixtures/dictation_flush_mode.md
 - warm_n: 12
 - cold_n: 4
 
-## Strict cold/warm comparison (promptpad open)
+## Strict cold/warm comparison (turbodraft open)
 
 | Scenario | warm p50 (ms) | warm p95 (ms) | cold p50 (ms) | cold p95 (ms) | warm ok/err | cold ok/err |
 |---|---:|---:|---:|---:|---:|---:|
@@ -26,5 +26,5 @@
 ## Notes
 
 - LaunchAgent uses an isolated temporary label for this benchmark run.
-- Lifecycle terminate-vs-stay cold tests are controlled with dedicated PROMPTPAD_CONFIG files and socket paths.
+- Lifecycle terminate-vs-stay cold tests are controlled with dedicated TURBODRAFT_CONFIG files and socket paths.
 - Raw logs are in logs/*.bench.stdout.log and logs/*.bench.stderr.log.

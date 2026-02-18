@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
+label="${TURBODRAFT_LAUNCH_AGENT_LABEL:-com.turbodraft.app}"
+plist_path="${HOME}/Library/LaunchAgents/${label}.plist"
+app_path_default="$repo_root/.build/release/turbodraft-app"
+
+usage() {
+  cat <<'EOF'
+usage:
+  turbodraft-launch-agent install [--app /abs/path/to/turbodraft-app]
+  turbodraft-launch-agent update    # build + restart
+  turbodraft-launch-agent restart   # restart without rebuilding
+  turbodraft-launch-agent uninstall
+  turbodraft-launch-agent status
+EOF
+}
+
+require_macos() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "turbodraft-launch-agent is macOS-only" >&2
+    exit 2
+  fi
+}
+
+uid="$(id -u)"
+
+bootout_if_loaded() {
+  launchctl bootout "gui/${uid}" "$plist_path" >/dev/null 2>&1 || true
+}
+
+xml_escape() {
+  local s="$1"
+  s="${s//&/&amp;}"
+  s="${s//</&lt;}"
+  s="${s//>/&gt;}"
+  s="${s//\"/&quot;}"
+  printf '%s' "$s"
+}
+
+build_release() {
+  echo "Building release..."
+  (cd "$repo_root" && swift build -c release)
+  echo "Build complete."
+}
+
+install_agent() {
+  local app_path="$app_path_default"
+  local do_build=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --app)
+        [[ $# -ge 2 ]] || { echo "missing value for --app" >&2; exit 2; }
+        app_path="$2"
+        shift 2
+        ;;
+      --build)
+        do_build=true
+        shift
+        ;;
+      *)
+        echo "unknown arg: $1" >&2
+        exit 2
+        ;;
+    esac
+  done
+
+  if [[ "$do_build" == true ]] || [[ ! -x "$app_path" ]]; then
+    build_release
+  fi
+
+  if [[ ! -x "$app_path" ]]; then
+    echo "turbodraft-app not executable at: $app_path" >&2
+    exit 1
+  fi
+
+  local safe_label safe_app_path
+  safe_label="$(xml_escape "$label")"
+  safe_app_path="$(xml_escape "$app_path")"
+
+  mkdir -p "${HOME}/Library/LaunchAgents"
+  cat >"$plist_path" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${safe_label}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${safe_app_path}</string>
+    <string>--start-hidden</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+</dict>
+</plist>
+EOF
+
+  bootout_if_loaded
+  launchctl bootstrap "gui/${uid}" "$plist_path"
+  launchctl enable "gui/${uid}/${label}" >/dev/null 2>&1 || true
+  launchctl kickstart -k "gui/${uid}/${label}" >/dev/null 2>&1 || true
+
+  echo "Installed LaunchAgent: $plist_path"
+}
+
+update_agent() {
+  if [[ ! -f "$plist_path" ]]; then
+    echo "LaunchAgent not installed. Run 'install' first." >&2
+    exit 1
+  fi
+
+  build_release
+  restart_agent
+}
+
+restart_agent() {
+  if [[ ! -f "$plist_path" ]]; then
+    echo "LaunchAgent not installed. Run 'install' first." >&2
+    exit 1
+  fi
+
+  # kickstart -k kills the running instance and restarts it.
+  launchctl kickstart -k "gui/${uid}/${label}"
+  echo "Restarted."
+}
+
+uninstall_agent() {
+  bootout_if_loaded
+  rm -f "$plist_path"
+  echo "Uninstalled LaunchAgent: $plist_path"
+}
+
+status_agent() {
+  if [[ ! -f "$plist_path" ]]; then
+    echo "not installed"
+    return 0
+  fi
+  echo "installed: $plist_path"
+  launchctl print "gui/${uid}/${label}" 2>/dev/null || true
+}
+
+main() {
+  require_macos
+  [[ $# -ge 1 ]] || { usage; exit 2; }
+  case "$1" in
+    install)
+      shift
+      install_agent "$@"
+      ;;
+    update)
+      shift
+      update_agent "$@"
+      ;;
+    restart)
+      shift
+      restart_agent "$@"
+      ;;
+    uninstall)
+      shift
+      uninstall_agent "$@"
+      ;;
+    status)
+      shift
+      status_agent "$@"
+      ;;
+    -h|--help|help)
+      usage
+      ;;
+    *)
+      usage
+      exit 2
+      ;;
+  esac
+}
+
+main "$@"

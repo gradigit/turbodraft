@@ -3,7 +3,7 @@ Date: 2026-02-14
 Depth: Full
 
 ## Executive summary
-For PromptPad, the “agent add-on” should behave like a dedicated prompt engineer:
+For TurboDraft, the “agent add-on” should behave like a dedicated prompt engineer:
 
 - Input: the current Markdown prompt text.
 - Output: a rewritten prompt optimized for clarity, constraints, structure, and testability.

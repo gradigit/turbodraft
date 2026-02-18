@@ -24,7 +24,7 @@ jobs:
       - name: Run benchmark
         run: |
           mkdir -p tmp/bench-ci
-          ./.build/release/promptpad bench run \
+          ./.build/release/turbodraft bench run \
             --path bench/fixtures/dictation_flush_mode.md \
             --warm 30 \
             --cold 15 \
@@ -33,7 +33,7 @@ jobs:
 
       - name: Run multi-fixture benchmark
         run: |
-          ./.build/release/promptpad bench run \
+          ./.build/release/turbodraft bench run \
             --fixture-dir bench/fixtures/ \
             --warm 15 \
             --cold 0 \
@@ -42,7 +42,7 @@ jobs:
 
       - name: Enforce baseline thresholds
         run: |
-          ./.build/release/promptpad bench check \
+          ./.build/release/turbodraft bench check \
             --baseline bench/editor/baseline.json \
             --results tmp/bench-ci/editor-results.json
 
@@ -50,7 +50,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: promptpad-editor-benchmark-results
+          name: turbodraft-editor-benchmark-results
           path: |
             tmp/bench-ci/editor-results.json
             tmp/bench-ci/editor-multifixture-results.json

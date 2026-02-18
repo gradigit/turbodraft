@@ -1,9 +1,9 @@
-# Research: PromptPad autosave debounce/flush policy
+# Research: TurboDraft autosave debounce/flush policy
 Date: 2026-02-17
 Depth: Full
 
 ## Executive Summary
-For PromptPad’s Ctrl+G workflow, the strongest policy is: keep a short debounce for write coalescing (50ms default), add a hard max flush interval (250ms), and force flush on lifecycle boundaries (window close, app deactivate/hide/terminate, agent apply completion). This gives near-instant perceived save behavior without turning every keystroke into a disk write.
+For TurboDraft’s Ctrl+G workflow, the strongest policy is: keep a short debounce for write coalescing (50ms default), add a hard max flush interval (250ms), and force flush on lifecycle boundaries (window close, app deactivate/hide/terminate, agent apply completion). This gives near-instant perceived save behavior without turning every keystroke into a disk write.
 
 A strict 0ms debounce is technically possible but is not the best default for reliability/perf under real editor ecosystems where save events can fan out to additional work (watchers/tooling). Industry references show mainstream editors prefer delayed autosave or event-triggered save points, plus backup/recovery mechanisms.
 
@@ -21,7 +21,7 @@ Confidence: High for architecture direction, Medium for exact numeric sweet spot
 - Apple guidance for single-window apps explicitly recommends automatic saves at meaningful checkpoints (close/quit, deactivation, hide, and valid data changes).
 - VS Code and IntelliJ both expose event-driven autosave triggers (focus/window change, idle-based autosave), not only manual save.
 
-Recommendation for PromptPad:
+Recommendation for TurboDraft:
 - Keep continuous autosave on edits (debounced).
 - Add guaranteed flush points:
   - close window
@@ -33,7 +33,7 @@ Recommendation for PromptPad:
 - VS Code defaults delayed autosave to 1000ms for general coding workflows and also supports focus/window-change save triggers.
 - A prompt editor has smaller docs and stronger “never lose text” requirements, so shorter delays are justified than typical IDE defaults.
 
-Recommendation for PromptPad:
+Recommendation for TurboDraft:
 - Debounce: 50ms default (user-visible instant, write coalescing retained).
 - Max flush interval: 250ms (bounded staleness even during sustained typing).
 - Optional presets:
@@ -45,7 +45,7 @@ Recommendation for PromptPad:
 - INP guidance: good responsiveness is <=200ms at the 75th percentile for interactions.
 - Long synchronous save paths can interfere with responsiveness; Apple docs discuss asynchronous writing/snapshotting/cancellable autosaves as strategies to avoid UI blocking.
 
-Recommendation for PromptPad:
+Recommendation for TurboDraft:
 - Do writes off the typing path (already mostly true).
 - Ensure flush operations never block keystroke processing.
 - Track:
@@ -55,9 +55,9 @@ Recommendation for PromptPad:
 
 ### 4) Non-lossy UX requires recoverability beyond in-session undo
 - VS Code hot exit and IntelliJ local history both preserve recoverability beyond a single in-memory undo stack.
-- Current PromptPad behavior is session-local undo/history, so close/reopen currently loses undo chain.
+- Current TurboDraft behavior is session-local undo/history, so close/reopen currently loses undo chain.
 
-Recommendation for PromptPad:
+Recommendation for TurboDraft:
 - Add per-file persistent snapshot ring (local history lite) with TTL and size cap.
 - Expose one-click restore from banner/menu if reopened after agent rewrite.
 - Keep in-session undo unchanged; recovery store is fallback across process/window boundaries.

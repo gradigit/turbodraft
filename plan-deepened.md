@@ -1,4 +1,4 @@
-# PromptPad v1 Implementation Plan (Deepened)
+# TurboDraft v1 Implementation Plan (Deepened)
 
 This file is a deepened, research-backed enhancement of `plan.md`. The original `plan.md` is intentionally unchanged.
 
@@ -135,7 +135,7 @@ Deepened decisions (make explicit in v1 implementation):
 - Config format: JSON only.
 - Config precedence: CLI flags > env vars > config file > defaults.
 - JSON-RPC framing over streams: LSP-style `Content-Length` headers.
-- Protocol versioning: `promptpad.hello` handshake returns `protocol_version=1` and capability flags.
+- Protocol versioning: `turbodraft.hello` handshake returns `protocol_version=1` and capability flags.
 - Method naming: canonical dot-separated namespaces, with aliases for legacy names if needed.
 - Revision token: `sha256:<hex>` of on-disk content.
 - Save policy: session-bound writes only (no write-anywhere path in RPC).
@@ -185,8 +185,8 @@ Original content (preserved from `plan.md`):
 - Suppress self-echo: tag autosave writes with an internal revision and ignore matching watcher events to avoid autosave-reflect loops.
 
 ### External editor integration (Claude/Codex hooks)
-- Make the CLI ergonomic for external-editor callers: `promptpad open --path <file> [--line N --column N] [--wait]`.
-- Prefer a running-instance fast path: CLI connects to UDS and sends `promptpad/open` + activation request; if not reachable, launch the app via Launch Services and retry connect with a short bounded backoff.
+- Make the CLI ergonomic for external-editor callers: `turbodraft open --path <file> [--line N --column N] [--wait]`.
+- Prefer a running-instance fast path: CLI connects to UDS and sends `turbodraft/open` + activation request; if not reachable, launch the app via Launch Services and retry connect with a short bounded backoff.
 - Make `open` idempotent: opening an already-open path focuses the existing window and updates selection.
 
 ### Research Insights
@@ -229,7 +229,7 @@ Trust boundaries:
 - `codex` subprocess output (untrusted content)
 
 UDS hardening:
-- Socket path defaults under `~/Library/Application Support/PromptPad/` (directory perms `0700`).
+- Socket path defaults under `~/Library/Application Support/TurboDraft/` (directory perms `0700`).
 - Socket file perms `0600` and peer uid check via `getpeereid()`; reject non-matching uid.
 - Refuse to unlink a pre-existing socket path unless it is a socket owned by current uid.
 - Set `FD_CLOEXEC` on listening socket and accepted client sockets.
@@ -281,13 +281,13 @@ Guardrails:
 ### JSON-RPC protocol
 
 Original method list (preserved from `plan.md`):
-1. `promptpad/open` → returns session metadata, current file content, and revision.
-2. `promptpad/reload` → returns latest content for active session/file.
-3. `promptpad/save` → writes content with revision guard.
-4. `promptpad/watch.subscribe` → subscribe to file-write updates.
-5. `promptpad/agent/start` → begin draft pass.
-6. `promptpad/agent/stop` → cancel active draft pass.
-7. `promptpad/agent/draft` → draft event/callback payload.
+1. `turbodraft/open` → returns session metadata, current file content, and revision.
+2. `turbodraft/reload` → returns latest content for active session/file.
+3. `turbodraft/save` → writes content with revision guard.
+4. `turbodraft/watch.subscribe` → subscribe to file-write updates.
+5. `turbodraft/agent/start` → begin draft pass.
+6. `turbodraft/agent/stop` → cancel active draft pass.
+7. `turbodraft/agent/draft` → draft event/callback payload.
 
 Deepened transport framing (required):
 - JSON-RPC does not define message delimiters on byte streams. Adopt Content-Length framing:
@@ -298,37 +298,37 @@ Content-Length: <bytes>\r
 ```
 
 Deepened versioning and capabilities:
-- Add `promptpad.hello` request:
+- Add `turbodraft.hello` request:
   - returns `protocol_version`, `capabilities`, and `server_pid`.
-- Add `promptpad.capabilities` request:
+- Add `turbodraft.capabilities` request:
   - returns supported methods/notifications so clients can adapt.
 
 Agent-native parity additions (recommended):
 - Drafts as first-class resources:
-  - `promptpad.draft.create`
-  - `promptpad.draft.list`
-  - `promptpad.draft.get`
-  - `promptpad.draft.apply` (accept)
-  - `promptpad.draft.discard` (reject)
+  - `turbodraft.draft.create`
+  - `turbodraft.draft.list`
+  - `turbodraft.draft.get`
+  - `turbodraft.draft.apply` (accept)
+  - `turbodraft.draft.discard` (reject)
 - History/restore endpoints:
-  - `promptpad.history.list`
-  - `promptpad.history.restore`
+  - `turbodraft.history.list`
+  - `turbodraft.history.restore`
 - Session wait contract (for CLI `--wait`):
-  - `promptpad.session.wait`
+  - `turbodraft.session.wait`
 
 Requests vs notifications:
-- Requests are verb-shaped: `promptpad.session.open`, `promptpad.session.save`.
-- Notifications are did_* shaped: `promptpad.session.did_change`, `promptpad.agent.did_draft`, `promptpad.conflict.detected`.
+- Requests are verb-shaped: `turbodraft.session.open`, `turbodraft.session.save`.
+- Notifications are did_* shaped: `turbodraft.session.did_change`, `turbodraft.agent.did_draft`, `turbodraft.conflict.detected`.
 
 Method naming normalization (recommendation):
 - Canonicalize to dot-separated namespaces:
-  - `promptpad/open` alias -> `promptpad.session.open`
-  - `promptpad/reload` alias -> `promptpad.session.reload`
-  - `promptpad/save` alias -> `promptpad.session.save`
-  - `promptpad/watch.subscribe` -> `promptpad.session.subscribe`
-  - `promptpad/agent/start` -> `promptpad.agent.start`
-  - `promptpad/agent/stop` -> `promptpad.agent.stop`
-  - `promptpad/agent/draft` -> `promptpad.agent.did_draft` (if treated as a notification)
+  - `turbodraft/open` alias -> `turbodraft.session.open`
+  - `turbodraft/reload` alias -> `turbodraft.session.reload`
+  - `turbodraft/save` alias -> `turbodraft.session.save`
+  - `turbodraft/watch.subscribe` -> `turbodraft.session.subscribe`
+  - `turbodraft/agent/start` -> `turbodraft.agent.start`
+  - `turbodraft/agent/stop` -> `turbodraft.agent.stop`
+  - `turbodraft/agent/draft` -> `turbodraft.agent.did_draft` (if treated as a notification)
 
 Error codes (stable):
 - `E_NOT_READY`, `E_INVALID_PARAMS`, `E_NOT_FOUND`, `E_CONFLICT`, `E_IO`, `E_TIMEOUT`, `E_CANCELED`, `E_UNAUTHORIZED`
@@ -345,40 +345,40 @@ References:
 ### CLI contract
 
 Original commands (preserved from `plan.md`):
-- `promptpad open --path <file> [--line N --column N] [--wait]`
-- `promptpad --stdio`
-- `promptpad --socket --path <uds_path>`
-- `promptpad daemon --start|--stop`
-- `promptpad bench run --cold --warm --iterations N`
-- `promptpad config init`
+- `turbodraft open --path <file> [--line N --column N] [--wait]`
+- `turbodraft --stdio`
+- `turbodraft --socket --path <uds_path>`
+- `turbodraft daemon --start|--stop`
+- `turbodraft bench run --cold --warm --iterations N`
+- `turbodraft config init`
 
 Deepened CLI semantics:
 - Default `$EDITOR` behavior:
-  - `promptpad <file>` should behave like `promptpad open --path <file> --wait`.
+  - `turbodraft <file>` should behave like `turbodraft open --path <file> --wait`.
 - `--wait` contract:
   - block until the session ends (window closed) or `--timeout-ms` expires
   - return non-zero exit code on transport/protocol errors
 - Connection strategy:
   - try UDS fast path
   - if connect fails, launch app via Launch Services and retry connect with bounded backoff until timeout
-  - once connected, run `promptpad.hello` then `promptpad.session.open` then `promptpad.session.wait`
+  - once connected, run `turbodraft.hello` then `turbodraft.session.open` then `turbodraft.session.wait`
 - Exit codes:
   - map error codes to deterministic CLI exit codes (document the mapping)
 
 Suggested environment variables:
-- `PROMPTPAD_SOCKET` (override socket path)
-- `PROMPTPAD_CONFIG` (override config path)
-- `PROMPTPAD_LOG_LEVEL` (optional; default info)
+- `TURBODRAFT_SOCKET` (override socket path)
+- `TURBODRAFT_CONFIG` (override config path)
+- `TURBODRAFT_LOG_LEVEL` (optional; default info)
 
 ## Repository layout to create
 
 Original layout (preserved from `plan.md`):
-- `Sources/PromptPad/AppKit/` — app process, window lifecycle.
-- `Sources/PromptPad/Transport/` — stdio + UDS transport, codec, validation.
-- `Sources/PromptPad/Editor/` — markdown styling + editor session state.
-- `Sources/PromptPad/Sync/` — watcher, autosave, conflict handling.
-- `Sources/PromptPad/Agent/` — agent protocol + `CodexCLIAdapter`.
-- `Sources/PromptPadCLI/` — CLI entrypoint and benchmark command.
+- `Sources/TurboDraft/AppKit/` — app process, window lifecycle.
+- `Sources/TurboDraft/Transport/` — stdio + UDS transport, codec, validation.
+- `Sources/TurboDraft/Editor/` — markdown styling + editor session state.
+- `Sources/TurboDraft/Sync/` — watcher, autosave, conflict handling.
+- `Sources/TurboDraft/Agent/` — agent protocol + `CodexCLIAdapter`.
+- `Sources/TurboDraftCLI/` — CLI entrypoint and benchmark command.
 - `Tests/Unit/` — formatting/autosave/conflict/transport tests.
 - `Tests/Integration/` — CLI open/update and watcher sync tests.
 - `Tests/Perf/` — startup and reflection benchmarks.
@@ -389,16 +389,16 @@ Original layout (preserved from `plan.md`):
 Deepened OSS-ready structure (recommended):
 - SwiftPM as source of truth for core libs + CLI + tests:
   - `Package.swift`
-  - `Sources/PromptPadCore/`
-  - `Sources/PromptPadTransport/`
-  - `Sources/PromptPadProtocol/`
-  - `Sources/PromptPadAgent/`
-  - `Sources/PromptPadCLI/`
-  - `Tests/PromptPadCoreTests/`
-  - `Tests/PromptPadIntegrationTests/`
+  - `Sources/TurboDraftCore/`
+  - `Sources/TurboDraftTransport/`
+  - `Sources/TurboDraftProtocol/`
+  - `Sources/TurboDraftAgent/`
+  - `Sources/TurboDraftCLI/`
+  - `Tests/TurboDraftCoreTests/`
+  - `Tests/TurboDraftIntegrationTests/`
 - Minimal Xcode project for the `.app` bundle:
-  - `App/PromptPad.xcodeproj/`
-  - `App/PromptPad/` (Info.plist, entitlements, icons, AppKit UI sources)
+  - `App/TurboDraft.xcodeproj/`
+  - `App/TurboDraft/` (Info.plist, entitlements, icons, AppKit UI sources)
 - OSS hygiene:
   - `README.md`, `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md`
 
@@ -413,7 +413,7 @@ Deepened OSS-ready structure (recommended):
 
 ### Phase 2 — Transport + CLI hook
 1. Implement Content-Length framing (stdio + UDS).
-2. Add `promptpad.hello` handshake and stable error codes.
+2. Add `turbodraft.hello` handshake and stable error codes.
 3. Add request handlers for `open/reload/save` and `session.wait` for `--wait`.
 4. Implement UDS hardening:
   - permissions and peer identity check
@@ -487,7 +487,7 @@ Original acceptance checks (preserved from `plan.md`):
 - Perf thresholds fail CI on regression against baseline.
 
 Additional acceptance checks (deepened):
-- `promptpad open --path <file> --wait` blocks until the session ends (external editor contract).
+- `turbodraft open --path <file> --wait` blocks until the session ends (external editor contract).
 - UDS socket directory is `0700` and socket file is `0600`; non-matching uid connections are rejected.
 - `save` is session-bound; cannot write to arbitrary file paths.
 - `codex` is spawned without a shell and prompt is passed via stdin; output caps and timeout enforced.

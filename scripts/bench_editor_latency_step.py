@@ -94,9 +94,9 @@ def main():
     args = ap.parse_args()
 
     repo = pathlib.Path(__file__).resolve().parents[1]
-    release_promptpad = repo / ".build/release/promptpad"
-    release_app = repo / ".build/release/promptpad-app"
-    release_open = repo / ".build/release/promptpad-open"
+    release_turbodraft = repo / ".build/release/turbodraft"
+    release_app = repo / ".build/release/turbodraft-app"
+    release_open = repo / ".build/release/turbodraft-open"
     fixture = repo / args.fixture
 
     stamp = now_ts()
@@ -104,8 +104,8 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
-    env["EDITOR"] = str(repo / "scripts/promptpad-editor")
-    env["VISUAL"] = str(repo / "scripts/promptpad-editor")
+    env["EDITOR"] = str(repo / "scripts/turbodraft-editor")
+    env["VISUAL"] = str(repo / "scripts/turbodraft-editor")
 
     meta = {
         "timestamp": stamp,
@@ -117,11 +117,11 @@ def main():
     write_text(out_dir / "meta.json", json.dumps(meta, indent=2))
 
     # Ensure old app processes do not skew cold runs.
-    subprocess.run(["pkill", "-f", "promptpad-app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["pkill", "-f", "turbodraft-app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    bench_out = out_dir / "promptpad-bench.json"
+    bench_out = out_dir / "turbodraft-bench.json"
     bench_cmd = [
-        str(release_promptpad),
+        str(release_turbodraft),
         "bench",
         "run",
         "--path",
@@ -149,7 +149,7 @@ def main():
     # Command-level A/B-friendly startup timings.
     # Warm path: keep app running.
     app_proc = None
-    warm_cmd = [str(release_promptpad), "open", "--path", str(fixture), "--timeout-ms", "60000"]
+    warm_cmd = [str(release_turbodraft), "open", "--path", str(fixture), "--timeout-ms", "60000"]
     open_cmd = [str(release_open), "--path", str(fixture), "--timeout-ms", "60000"]
     try:
         app_proc = subprocess.Popen(
@@ -159,7 +159,7 @@ def main():
             stderr=subprocess.DEVNULL,
         )
         time.sleep(0.35)
-        warm_promptpad = command_latency_ms(warm_cmd, cwd=repo, n=args.cmd_n, timeout_s=args.cmd_timeout_s)
+        warm_turbodraft = command_latency_ms(warm_cmd, cwd=repo, n=args.cmd_n, timeout_s=args.cmd_timeout_s)
         warm_open = command_latency_ms(open_cmd, cwd=repo, n=args.cmd_n, timeout_s=args.cmd_timeout_s)
     finally:
         if app_proc and app_proc.poll() is None:
@@ -168,24 +168,24 @@ def main():
                 app_proc.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 app_proc.kill()
-        subprocess.run(["pkill", "-f", "promptpad-app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["pkill", "-f", "turbodraft-app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # Cold path: kill app each run.
-    cold_promptpad_samples = []
-    cold_promptpad_err = 0
+    cold_turbodraft_samples = []
+    cold_turbodraft_err = 0
     cold_open_samples = []
     cold_open_err = 0
     for _ in range(max(1, args.cold)):
-        subprocess.run(["pkill", "-f", "promptpad-app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["pkill", "-f", "turbodraft-app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             p, elapsed_ms = run_cmd(warm_cmd, cwd=repo, timeout_s=args.cmd_timeout_s)
             if p.returncode == 0:
-                cold_promptpad_samples.append(elapsed_ms)
+                cold_turbodraft_samples.append(elapsed_ms)
             else:
-                cold_promptpad_err += 1
+                cold_turbodraft_err += 1
         except subprocess.TimeoutExpired:
-            cold_promptpad_err += 1
-        subprocess.run(["pkill", "-f", "promptpad-app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            cold_turbodraft_err += 1
+        subprocess.run(["pkill", "-f", "turbodraft-app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             p2, elapsed_ms2 = run_cmd(open_cmd, cwd=repo, timeout_s=args.cmd_timeout_s)
             if p2.returncode == 0:
@@ -195,17 +195,17 @@ def main():
         except subprocess.TimeoutExpired:
             cold_open_err += 1
 
-    cold_promptpad_samples.sort()
+    cold_turbodraft_samples.sort()
     cold_open_samples.sort()
-    cold_promptpad_ci_low, cold_promptpad_ci_high = bootstrap_ci_median(cold_promptpad_samples)
+    cold_turbodraft_ci_low, cold_turbodraft_ci_high = bootstrap_ci_median(cold_turbodraft_samples)
     cold_open_ci_low, cold_open_ci_high = bootstrap_ci_median(cold_open_samples)
-    cold_promptpad = {
-        "n_ok": len(cold_promptpad_samples),
-        "n_err": cold_promptpad_err,
-        "p50_ms": percentile_nearest_rank(cold_promptpad_samples, 0.50),
-        "p95_ms": percentile_nearest_rank(cold_promptpad_samples, 0.95),
-        "median_ci95_low_ms": cold_promptpad_ci_low,
-        "median_ci95_high_ms": cold_promptpad_ci_high,
+    cold_turbodraft = {
+        "n_ok": len(cold_turbodraft_samples),
+        "n_err": cold_turbodraft_err,
+        "p50_ms": percentile_nearest_rank(cold_turbodraft_samples, 0.50),
+        "p95_ms": percentile_nearest_rank(cold_turbodraft_samples, 0.95),
+        "median_ci95_low_ms": cold_turbodraft_ci_low,
+        "median_ci95_high_ms": cold_turbodraft_ci_high,
     }
     cold_open = {
         "n_ok": len(cold_open_samples),
@@ -227,15 +227,15 @@ def main():
         "meta": meta,
         "bench_status": bench_status,
         "bench_metrics": bench_metrics,
-        "warm_promptpad_open": warm_promptpad,
-        "warm_promptpad_open_cshim": warm_open,
-        "cold_promptpad_open": cold_promptpad,
-        "cold_promptpad_open_cshim": cold_open,
+        "warm_turbodraft_open": warm_turbodraft,
+        "warm_turbodraft_open_cshim": warm_open,
+        "cold_turbodraft_open": cold_turbodraft,
+        "cold_turbodraft_open_cshim": cold_open,
     }
     write_text(out_dir / "summary.json", json.dumps(summary, indent=2))
 
     md = []
-    md.append(f"# PromptPad Optimization Benchmark: {args.label}")
+    md.append(f"# TurboDraft Optimization Benchmark: {args.label}")
     md.append("")
     md.append(f"- Timestamp: {stamp}")
     md.append(f"- Fixture: {fixture}")
@@ -243,17 +243,17 @@ def main():
     md.append("")
     md.append("## Command latency (ms)")
     md.append("")
-    md.append(f"- warm `promptpad open` p50: {warm_promptpad.get('p50_ms')}")
-    md.append(f"- warm `promptpad open` p95: {warm_promptpad.get('p95_ms')}")
-    md.append(f"- warm `promptpad-open` p50: {warm_open.get('p50_ms')}")
-    md.append(f"- warm `promptpad-open` p95: {warm_open.get('p95_ms')}")
-    md.append(f"- cold `promptpad open` p50: {cold_promptpad.get('p50_ms')}")
-    md.append(f"- cold `promptpad open` p95: {cold_promptpad.get('p95_ms')}")
-    md.append(f"- cold `promptpad-open` p50: {cold_open.get('p50_ms')}")
-    md.append(f"- cold `promptpad-open` p95: {cold_open.get('p95_ms')}")
+    md.append(f"- warm `turbodraft open` p50: {warm_turbodraft.get('p50_ms')}")
+    md.append(f"- warm `turbodraft open` p95: {warm_turbodraft.get('p95_ms')}")
+    md.append(f"- warm `turbodraft-open` p50: {warm_open.get('p50_ms')}")
+    md.append(f"- warm `turbodraft-open` p95: {warm_open.get('p95_ms')}")
+    md.append(f"- cold `turbodraft open` p50: {cold_turbodraft.get('p50_ms')}")
+    md.append(f"- cold `turbodraft open` p95: {cold_turbodraft.get('p95_ms')}")
+    md.append(f"- cold `turbodraft-open` p50: {cold_open.get('p50_ms')}")
+    md.append(f"- cold `turbodraft-open` p95: {cold_open.get('p95_ms')}")
     md.append("")
     if isinstance(bench_metrics, dict) and bench_metrics.get("metrics"):
-        md.append("## promptpad bench run metrics")
+        md.append("## turbodraft bench run metrics")
         md.append("")
         for k, v in sorted(bench_metrics["metrics"].items()):
             md.append(f"- {k}: {v}")

@@ -1,16 +1,16 @@
-# Research: Giant preamble sizing for PromptPad prompt-engineering agent
+# Research: Giant preamble sizing for TurboDraft prompt-engineering agent
 Date: 2026-02-15
 Depth: Full
 
 ## Executive Summary
-A very large preamble (for example ~60K tokens) is unlikely to be optimal for PromptPad's default flow. The current evidence suggests a better quality/latency tradeoff is a **large but bounded preamble** in the **~3K-8K token range** for Codex-Spark usage, with a hard cap around **~10K-12K** unless benchmark evidence proves otherwise.
+A very large preamble (for example ~60K tokens) is unlikely to be optimal for TurboDraft's default flow. The current evidence suggests a better quality/latency tradeoff is a **large but bounded preamble** in the **~3K-8K token range** for Codex-Spark usage, with a hard cap around **~10K-12K** unless benchmark evidence proves otherwise.
 
 Why:
 - Codex-Spark has a 128K context window, but long-context papers consistently show quality degradation as input length rises, even when retrieval is perfect.
 - OpenAI latency guidance indicates input-token cuts are often small latency wins for normal prompts, but large contexts are explicitly the exception.
 - Prompt caching can materially reduce repeated-prefix latency when cache conditions are met, but cache hit behavior is not guaranteed under all routing/load patterns.
 
-Recommended default for PromptPad:
+Recommended default for TurboDraft:
 - Keep current core preamble for default interactive path.
 - Add a "large" profile at **~4K-6K tokens**.
 - Avoid 60K by default.
@@ -95,7 +95,7 @@ Implication:
 | Hypothesis | Confidence | Supporting evidence | Contradicting evidence |
 |---|---|---|---|
 | H1: A giant (~60K) preamble will generally produce best rewrite quality | Low | More instruction capacity can improve steerability in some cases | Long-context degradation literature; no direct evidence giant is better for rewrite tasks |
-| H2: A bounded "large" preamble (~3K-8K) is a better default tradeoff | High | OpenAI latency + prompting guidance; long-context papers; observed PromptPad benchmark behavior | Could be suboptimal on some rare edge prompts requiring domain-heavy policy detail |
+| H2: A bounded "large" preamble (~3K-8K) is a better default tradeoff | High | OpenAI latency + prompting guidance; long-context papers; observed TurboDraft benchmark behavior | Could be suboptimal on some rare edge prompts requiring domain-heavy policy detail |
 | H3: Caching can make large prefixes practical when prefix reuse is high | Medium-High | OpenAI/Anthropic caching docs | Cache hit is workload-dependent and not guaranteed |
 | H4: Web search in default rewrite path hurts latency more than it helps | Medium | Added external retrieval introduces network/tool overhead; rewrite task is usually transformation, not retrieval | Some prompts truly require external facts; research mode could improve quality there |
 
@@ -110,7 +110,7 @@ For models near 128K context (including current Spark usage), for draft size D a
     - `O` = expected completion tokens
     - `S` = safety reserve (1000-2000)
 
-For PromptPad typical rewrite case (`C=128000`, `D~500-1200`, `O~1200-3000`, `S~1500`):
+For TurboDraft typical rewrite case (`C=128000`, `D~500-1200`, `O~1200-3000`, `S~1500`):
 - practical max lands around high single-digit thousands.
 - recommended **large profile target: 4K-6K** tokens.
 - recommended **hard cap: 10K-12K** unless benchmarks beat baseline.

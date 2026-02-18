@@ -72,7 +72,7 @@ build_and_bench() {
   local variant_dir="$OUT_DIR/$variant"
   local bin_dir="$variant_dir/bin"
   local config_path="$variant_dir/config.json"
-  local socket_path="/tmp/promptpad-${STAMP}-${variant}.sock"
+  local socket_path="/tmp/turbodraft-${STAMP}-${variant}.sock"
 
   mkdir -p "$bin_dir"
   rm -f "$socket_path"
@@ -80,17 +80,17 @@ build_and_bench() {
 
   echo "==> Building variant: $variant"
   if [[ -n "$swiftc_flag" ]]; then
-    PROMPTPAD_SPIKE_CODEEDIT=1 swift build -c release --product promptpad --product promptpad-open --product promptpad-app -Xswiftc "$swiftc_flag"
+    TURBODRAFT_SPIKE_CODEEDIT=1 swift build -c release --product turbodraft --product turbodraft-open --product turbodraft-app -Xswiftc "$swiftc_flag"
   else
-    swift build -c release --product promptpad --product promptpad-open --product promptpad-app
+    swift build -c release --product turbodraft --product turbodraft-open --product turbodraft-app
   fi
 
-  cp .build/release/promptpad "$bin_dir/"
-  cp .build/release/promptpad-open "$bin_dir/"
-  cp .build/release/promptpad-app "$bin_dir/"
+  cp .build/release/turbodraft "$bin_dir/"
+  cp .build/release/turbodraft-open "$bin_dir/"
+  cp .build/release/turbodraft-app "$bin_dir/"
 
   echo "==> Benchmarking variant: $variant"
-  PROMPTPAD_CONFIG="$config_path" "$bin_dir/promptpad" bench run \
+  TURBODRAFT_CONFIG="$config_path" "$bin_dir/turbodraft" bench run \
     --path "$PROMPT_FILE" \
     --warm "$WARM" \
     --cold "$COLD" \
@@ -98,7 +98,7 @@ build_and_bench() {
 }
 
 build_and_bench "nstextview" ""
-build_and_bench "codeedit_textview" "-DPROMPTPAD_USE_CODEEDIT_TEXTVIEW"
+build_and_bench "codeedit_textview" "-DTURBODRAFT_USE_CODEEDIT_TEXTVIEW"
 
 python3 - "$OUT_DIR" <<'PY'
 import json

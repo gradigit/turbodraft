@@ -67,7 +67,7 @@ def summarize(samples, errors):
 
 
 def kill_apps():
-  subprocess.run(["pkill", "-f", "promptpad-app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+  subprocess.run(["pkill", "-f", "turbodraft-app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
   time.sleep(0.12)
 
 
@@ -79,7 +79,7 @@ def remove_socket(path: str):
 
 
 def default_socket_path() -> str:
-  return str(pathlib.Path.home() / "Library" / "Application Support" / "PromptPad" / "promptpad.sock")
+  return str(pathlib.Path.home() / "Library" / "Application Support" / "TurboDraft" / "turbodraft.sock")
 
 
 def start_app(app_bin: pathlib.Path, *, cwd: pathlib.Path, env: Optional[dict], args):
@@ -111,7 +111,7 @@ def stop_app(p):
 
 
 def sample_open(
-  promptpad_bin: pathlib.Path,
+  turbodraft_bin: pathlib.Path,
   fixture: pathlib.Path,
   *,
   cwd: pathlib.Path,
@@ -122,7 +122,7 @@ def sample_open(
   before_each: Optional[Callable[[], None]] = None,
   after_each: Optional[Callable[[], None]] = None,
 ):
-  cmd = [promptpad_bin, "open", "--path", fixture, "--timeout-ms", str(open_timeout_ms)]
+  cmd = [turbodraft_bin, "open", "--path", fixture, "--timeout-ms", str(open_timeout_ms)]
   samples = []
   errors = []
   for _ in range(n):
@@ -143,7 +143,7 @@ def sample_open(
 
 
 def run_bench(
-  promptpad_bin: pathlib.Path,
+  turbodraft_bin: pathlib.Path,
   fixture: pathlib.Path,
   *,
   cwd: pathlib.Path,
@@ -156,7 +156,7 @@ def run_bench(
   stderr_log: pathlib.Path,
 ):
   cmd = [
-    promptpad_bin,
+    turbodraft_bin,
     "bench",
     "run",
     "--path",
@@ -223,7 +223,7 @@ def write_mode_config(path: pathlib.Path, socket_path: str):
 
 
 def main():
-  ap = argparse.ArgumentParser(description="Benchmark PromptPad launch/lifecycle modes with strict cold/warm comparison.")
+  ap = argparse.ArgumentParser(description="Benchmark TurboDraft launch/lifecycle modes with strict cold/warm comparison.")
   ap.add_argument("--fixture", default="bench/fixtures/dictation_flush_mode.md")
   ap.add_argument("--warm", type=int, default=12)
   ap.add_argument("--cold", type=int, default=4)
@@ -232,13 +232,13 @@ def main():
   ap.add_argument("--open-timeout-ms", type=int, default=60_000)
   ap.add_argument("--cmd-timeout-s", type=int, default=12)
   ap.add_argument("--bench-timeout-s", type=int, default=240)
-  ap.add_argument("--launchagent-label", default="com.promptpad.app.bench")
+  ap.add_argument("--launchagent-label", default="com.turbodraft.app.bench")
   args = ap.parse_args()
 
   repo = pathlib.Path(__file__).resolve().parents[1]
-  promptpad_bin = repo / ".build/release/promptpad"
-  app_bin = repo / ".build/release/promptpad-app"
-  launch_script = repo / "scripts/promptpad-launch-agent"
+  turbodraft_bin = repo / ".build/release/turbodraft"
+  app_bin = repo / ".build/release/turbodraft-app"
+  launch_script = repo / "scripts/turbodraft-launch-agent"
   fixture = repo / args.fixture
 
   stamp = dt.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
@@ -249,7 +249,7 @@ def main():
 
   uid = os.getuid()
   launch_env = os.environ.copy()
-  launch_env["PROMPTPAD_LAUNCH_AGENT_LABEL"] = args.launchagent_label
+  launch_env["TURBODRAFT_LAUNCH_AGENT_LABEL"] = args.launchagent_label
 
   results = {
     "meta": {
@@ -274,8 +274,8 @@ def main():
     kill_apps()
     p = start_app(app_bin, cwd=repo, env=None, args=["--start-hidden"])
     try:
-      s1["warm_promptpad_open"] = sample_open(
-        promptpad_bin,
+      s1["warm_turbodraft_open"] = sample_open(
+        turbodraft_bin,
         fixture,
         cwd=repo,
         env=None,
@@ -287,8 +287,8 @@ def main():
       stop_app(p)
       kill_apps()
 
-    s1["cold_promptpad_open"] = sample_open(
-      promptpad_bin,
+    s1["cold_turbodraft_open"] = sample_open(
+      turbodraft_bin,
       fixture,
       cwd=repo,
       env=None,
@@ -299,7 +299,7 @@ def main():
     )
 
     s1["bench"] = run_bench(
-      promptpad_bin,
+      turbodraft_bin,
       fixture,
       cwd=repo,
       env=None,
@@ -323,8 +323,8 @@ def main():
     )
     time.sleep(0.8)
 
-    s2["warm_promptpad_open"] = sample_open(
-      promptpad_bin,
+    s2["warm_turbodraft_open"] = sample_open(
+      turbodraft_bin,
       fixture,
       cwd=repo,
       env=None,
@@ -337,8 +337,8 @@ def main():
       run(["launchctl", "kickstart", "-k", f"gui/{uid}/{args.launchagent_label}"], cwd=repo, env=None, timeout_s=30)
       time.sleep(0.35)
 
-    s2["cold_promptpad_open"] = sample_open(
-      promptpad_bin,
+    s2["cold_turbodraft_open"] = sample_open(
+      turbodraft_bin,
       fixture,
       cwd=repo,
       env=None,
@@ -349,7 +349,7 @@ def main():
     )
 
     s2["bench"] = run_bench(
-      promptpad_bin,
+      turbodraft_bin,
       fixture,
       cwd=repo,
       env=None,
@@ -364,25 +364,25 @@ def main():
 
     print("scenario: lifecycle_compare", flush=True)
     s3 = {}
-    tmp = pathlib.Path("/tmp/promptpad-bench-lifecycle")
+    tmp = pathlib.Path("/tmp/turbodraft-bench-lifecycle")
     stay_cfg = tmp / "stay" / "config.json"
-    stay_socket = str(tmp / "stay" / "promptpad.sock")
+    stay_socket = str(tmp / "stay" / "turbodraft.sock")
     term_cfg = tmp / "terminate" / "config.json"
-    term_socket = str(tmp / "terminate" / "promptpad.sock")
+    term_socket = str(tmp / "terminate" / "turbodraft.sock")
     write_mode_config(stay_cfg, stay_socket)
     write_mode_config(term_cfg, term_socket)
 
     env_stay = os.environ.copy()
-    env_stay["PROMPTPAD_CONFIG"] = str(stay_cfg)
+    env_stay["TURBODRAFT_CONFIG"] = str(stay_cfg)
     env_term = os.environ.copy()
-    env_term["PROMPTPAD_CONFIG"] = str(term_cfg)
+    env_term["TURBODRAFT_CONFIG"] = str(term_cfg)
 
     # Stay-resident variant
     kill_apps()
     p_stay = start_app(app_bin, cwd=repo, env=env_stay, args=["--start-hidden"])
     try:
-      s3["stay_resident_warm_promptpad_open"] = sample_open(
-        promptpad_bin,
+      s3["stay_resident_warm_turbodraft_open"] = sample_open(
+        turbodraft_bin,
         fixture,
         cwd=repo,
         env=env_stay,
@@ -394,8 +394,8 @@ def main():
       stop_app(p_stay)
       kill_apps()
 
-    s3["stay_resident_cold_promptpad_open"] = sample_open(
-      promptpad_bin,
+    s3["stay_resident_cold_turbodraft_open"] = sample_open(
+      turbodraft_bin,
       fixture,
       cwd=repo,
       env=env_stay,
@@ -406,7 +406,7 @@ def main():
     )
 
     s3["stay_resident_bench"] = run_bench(
-      promptpad_bin,
+      turbodraft_bin,
       fixture,
       cwd=repo,
       env=env_stay,
@@ -422,8 +422,8 @@ def main():
     kill_apps()
     p_term = start_app(app_bin, cwd=repo, env=env_term, args=["--start-hidden", "--terminate-on-last-close"])
     try:
-      s3["terminate_on_last_close_warm_promptpad_open"] = sample_open(
-        promptpad_bin,
+      s3["terminate_on_last_close_warm_turbodraft_open"] = sample_open(
+        turbodraft_bin,
         fixture,
         cwd=repo,
         env=env_term,
@@ -446,8 +446,8 @@ def main():
         stop_app(live_proc.pop())
       kill_apps()
 
-    s3["terminate_on_last_close_cold_promptpad_open"] = sample_open(
-      promptpad_bin,
+    s3["terminate_on_last_close_cold_turbodraft_open"] = sample_open(
+      turbodraft_bin,
       fixture,
       cwd=repo,
       env=env_term,
@@ -462,7 +462,7 @@ def main():
     p_term2 = start_app(app_bin, cwd=repo, env=env_term, args=["--start-hidden", "--terminate-on-last-close"])
     try:
       s3["terminate_on_last_close_bench_warm_only"] = run_bench(
-        promptpad_bin,
+        turbodraft_bin,
         fixture,
         cwd=repo,
         env=env_term,
@@ -492,14 +492,14 @@ def main():
   s3 = results["scenarios"].get("lifecycle_compare", {})
 
   lines = []
-  lines.append("# PromptPad Launch/Lifecycle Benchmark Matrix")
+  lines.append("# TurboDraft Launch/Lifecycle Benchmark Matrix")
   lines.append("")
   lines.append(f"- Timestamp: {stamp}")
   lines.append(f"- Fixture: {fixture}")
   lines.append(f"- warm_n: {args.warm}")
   lines.append(f"- cold_n: {args.cold}")
   lines.append("")
-  lines.append("## Strict cold/warm comparison (`promptpad open`)")
+  lines.append("## Strict cold/warm comparison (`turbodraft open`)")
   lines.append("")
   lines.append("| Scenario | warm p50 (ms) | warm p95 (ms) | cold p50 (ms) | cold p95 (ms) | warm ok/err | cold ok/err |")
   lines.append("|---|---:|---:|---:|---:|---:|---:|")
@@ -512,13 +512,13 @@ def main():
       f"{m(w.get('n_ok'))}/{m(w.get('n_err'))} | {m(c.get('n_ok'))}/{m(c.get('n_err'))} |"
     )
 
-  row("No LaunchAgent", s1, "warm_promptpad_open", "cold_promptpad_open")
-  row("LaunchAgent resident", s2, "warm_promptpad_open", "cold_promptpad_open")
-  row("Lifecycle: stay-resident", s3, "stay_resident_warm_promptpad_open", "stay_resident_cold_promptpad_open")
-  row("Lifecycle: terminate-on-last-close", s3, "terminate_on_last_close_warm_promptpad_open", "terminate_on_last_close_cold_promptpad_open")
+  row("No LaunchAgent", s1, "warm_turbodraft_open", "cold_turbodraft_open")
+  row("LaunchAgent resident", s2, "warm_turbodraft_open", "cold_turbodraft_open")
+  row("Lifecycle: stay-resident", s3, "stay_resident_warm_turbodraft_open", "stay_resident_cold_turbodraft_open")
+  row("Lifecycle: terminate-on-last-close", s3, "terminate_on_last_close_warm_turbodraft_open", "terminate_on_last_close_cold_turbodraft_open")
 
   lines.append("")
-  lines.append("## Built-in `promptpad bench run` status")
+  lines.append("## Built-in `turbodraft bench run` status")
   lines.append("")
   lines.append("| Scenario | rc | timeout | elapsed (ms) |")
   lines.append("|---|---:|---|---:|")
@@ -541,7 +541,7 @@ def main():
   lines.append("## Notes")
   lines.append("")
   lines.append("- LaunchAgent benchmark uses isolated label from --launchagent-label.")
-  lines.append("- Lifecycle terminate-vs-stay uses dedicated PROMPTPAD_CONFIG paths under /tmp.")
+  lines.append("- Lifecycle terminate-vs-stay uses dedicated TURBODRAFT_CONFIG paths under /tmp.")
   lines.append("- Terminate-mode built-in bench is warm-only because cold bench spawns without terminate flag.")
 
   report_md = out_dir / "REPORT.md"

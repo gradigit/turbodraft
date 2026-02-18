@@ -15,7 +15,7 @@ Confidence: High on evaluation/iteration principles; Medium on “optimal” pro
 ## Topics Studied
 1. Is our baseline prompt review checklist trustworthy and objective?
 2. Is the baseline engineered prompt format close to optimal for prompt-engineering outputs?
-3. Is the “iterative refinement with questions” workflow a good fit for PromptPad?
+3. Is the “iterative refinement with questions” workflow a good fit for TurboDraft?
 
 ## 1) Baseline Review Checklist: Trustworthiness & Objectivity
 
@@ -74,7 +74,7 @@ What makes checklists feel subjective is ambiguous scoring. You can tighten this
 
 #### 2.3 There is no universally best format; template choice can dominate performance
 - Research on prompt templates shows that small format differences can drastically change performance, and the best template may not transfer across models or setups.
-- Net: the right way to decide “optimal format” for PromptPad is: keep one default, but run empirical evaluation on multiple formats against your target models and tasks (your benchmark harness is exactly the right direction).
+- Net: the right way to decide “optimal format” for TurboDraft is: keep one default, but run empirical evaluation on multiple formats against your target models and tasks (your benchmark harness is exactly the right direction).
 
 ### Recommendations (concrete)
 1. Treat the current baseline format as a strong default for agentic coding prompts.
@@ -84,12 +84,12 @@ What makes checklists feel subjective is ambiguous scoring. You can tighten this
    - “Decision-first” (forces decisions early, then requirements).
 3. Make the prompt engineer choose a style based on draft classification (e.g., “dictation/uncertain” vs “already structured”).
 
-## 3) Workflow: Iterative Refinement + Clarifying Questions in PromptPad
+## 3) Workflow: Iterative Refinement + Clarifying Questions in TurboDraft
 
 ### Sub-questions investigated
 1. Does iteration improve outputs in practice?
 2. Do interactive tools exist that embody this workflow?
-3. What does this imply for PromptPad’s design?
+3. What does this imply for TurboDraft’s design?
 
 ### Findings
 
@@ -101,7 +101,7 @@ What makes checklists feel subjective is ambiguous scoring. You can tighten this
 - PromptAid (visual analytics) is explicitly about helping users iterate via exploration/perturbation/testing with reduced overhead.
 - Anthropic’s “prompt improver” product flow is: generate improved prompt, then accept feedback, then improve again.
 
-#### 3.3 Implication for PromptPad: split “saved artifact” from “interactive loop”
+#### 3.3 Implication for TurboDraft: split “saved artifact” from “interactive loop”
 To keep the saved prompt clean (engineered prompt only) while still enabling iteration:
 - Keep the engineered prompt in the file as the single artifact injected back to CLI.
 - Run the iterative loop in a side panel:
@@ -140,7 +140,7 @@ To keep the saved prompt clean (engineered prompt only) while still enabling ite
 
 ## Limitations & Gaps
 - Most research focuses on evaluating model outputs or prompt templates for task accuracy; there is less direct literature on “prompt rewrite quality” for downstream coding agents specifically.
-- The best choice for PromptPad still needs empirical confirmation using your actual benchmark harness and your target downstream agents/models.
+- The best choice for TurboDraft still needs empirical confirmation using your actual benchmark harness and your target downstream agents/models.
 
 ## Sources (quality filtered)
 | Source | URL | Quality | Accessed |

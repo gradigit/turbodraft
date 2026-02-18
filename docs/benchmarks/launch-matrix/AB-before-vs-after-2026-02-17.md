@@ -1,9 +1,9 @@
-# PromptPad A/B: Before vs After (all recent changes)
+# TurboDraft A/B: Before vs After (all recent changes)
 
 - Before: docs/benchmarks/launch-matrix/2026-02-17T04-17-33/matrix.json
 - After: docs/benchmarks/launch-matrix/2026-02-17T04-24-42/matrix.json
 
-## `promptpad open` cold/warm command latency
+## `turbodraft open` cold/warm command latency
 
 | Scenario | warm p50 before | warm p50 after | delta | cold p50 before | cold p50 after | delta |
 |---|---:|---:|---:|---:|---:|---:|
@@ -12,7 +12,7 @@
 | Lifecycle stay-resident | 15.40 | 16.71 | +1.32 | NA | 149.12 | NA |
 | Lifecycle terminate-on-last-close | 16.10 | 15.07 | -1.03 | 40.62 | 46.47 | +5.86 |
 
-## Built-in `promptpad bench run` duration
+## Built-in `turbodraft bench run` duration
 
 | Scenario | before elapsed ms | after elapsed ms | delta | before rc | after rc |
 |---|---:|---:|---:|---:|---:|

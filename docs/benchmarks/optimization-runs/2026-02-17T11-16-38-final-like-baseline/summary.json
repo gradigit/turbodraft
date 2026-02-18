@@ -2,23 +2,23 @@
   "meta": {
     "timestamp": "2026-02-17T11-16-38",
     "label": "final-like-baseline",
-    "fixture": "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+    "fixture": "/Users/aaaaa/Projects/turbodraft/bench/fixtures/dictation_flush_mode.md",
     "warm": 3,
     "cold": 1
   },
   "bench_status": {
     "command": [
-      "/Users/aaaaa/Projects/promptpad/.build/release/promptpad",
+      "/Users/aaaaa/Projects/turbodraft/.build/release/turbodraft",
       "bench",
       "run",
       "--path",
-      "/Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md",
+      "/Users/aaaaa/Projects/turbodraft/bench/fixtures/dictation_flush_mode.md",
       "--warm",
       "3",
       "--cold",
       "1",
       "--out",
-      "/Users/aaaaa/Projects/promptpad/docs/benchmarks/optimization-runs/2026-02-17T11-16-38-final-like-baseline/promptpad-bench.json"
+      "/Users/aaaaa/Projects/turbodraft/docs/benchmarks/optimization-runs/2026-02-17T11-16-38-final-like-baseline/turbodraft-bench.json"
     ],
     "elapsed_ms": 794.44625,
     "returncode": 0
@@ -37,7 +37,7 @@
     "coldN": 1,
     "warmN": 3
   },
-  "warm_promptpad_open": {
+  "warm_turbodraft_open": {
     "n_ok": 3,
     "n_err": 0,
     "p50_ms": 18.64170800000009,
@@ -45,7 +45,7 @@
     "mean_ms": 20.40258300000001,
     "errors": []
   },
-  "warm_promptpad_open_cshim": {
+  "warm_turbodraft_open_cshim": {
     "n_ok": 3,
     "n_err": 0,
     "p50_ms": 12.158957999999886,
@@ -53,13 +53,13 @@
     "mean_ms": 10.422027666666667,
     "errors": []
   },
-  "cold_promptpad_open": {
+  "cold_turbodraft_open": {
     "n_ok": 1,
     "n_err": 0,
     "p50_ms": 185.48579199999992,
     "p95_ms": 185.48579199999992
   },
-  "cold_promptpad_open_cshim": {
+  "cold_turbodraft_open_cshim": {
     "n_ok": 0,
     "n_err": 1,
     "p50_ms": null,

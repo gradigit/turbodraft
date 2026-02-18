@@ -17,14 +17,14 @@ This makes evaluation robust to superficial formatting differences while still m
 2. How should LLM-as-a-judge be designed, calibrated, and de-biased?
 3. When should we use pairwise comparison vs. scalar scoring?
 4. What tools/frameworks exist for prompt evaluation in CI?
-5. How does this apply to PromptPad’s “prompt rewrite” agent?
+5. How does this apply to TurboDraft’s “prompt rewrite” agent?
 
 ## Detailed Findings
 
 ### 1) Treat prompt evaluation like software testing (datasets + continuous eval)
 Modern guidance emphasizes “eval-driven development”: build a dataset of representative inputs (including edge/adversarial cases), define evaluators, and run them continuously as prompts/models change. Prefer using real production traces/logs when possible.
 
-Key implications for PromptPad:
+Key implications for TurboDraft:
 - Maintain a **versioned fixture set** (dictation-like drafts, structured drafts, adversarial drafts).
 - Add **regression thresholds** (quality + latency + refusal/leakage rates).
 - Log prompt engineer inputs/outputs so you can expand the dataset with real failures.
@@ -59,8 +59,8 @@ Common tools/frameworks:
 - **Ragas**: guidance and tooling for aligning LLM-as-judge to your criteria (especially useful when your rubric is domain-specific).
 - **DeepEval**: rubric-style judge metrics and evaluation harnesses (useful, but judge design still matters).
 
-### 6) Applying this to PromptPad’s prompt-rewrite agent
-PromptPad is a “prompt transformer”. A strong eval design has two layers:
+### 6) Applying this to TurboDraft’s prompt-rewrite agent
+TurboDraft is a “prompt transformer”. A strong eval design has two layers:
 
 #### A) Rewrite-quality eval (prompt artifact quality)
 Given (draft prompt) -> (engineered prompt), score:
@@ -83,7 +83,7 @@ Use the engineered prompt as the “developer prompt” for a target agent and m
 | H2: Pairwise judge comparisons are more reliable for subjective prompt quality | High | OpenAI eval guidance + LangSmith docs emphasize pairwise/comparison strengths | Pairwise requires more comparisons and careful aggregation |
 | H3: Best practice is layered (hard checks + pairwise + scalar + downstream) | High | Matches major tool ecosystems and eval guidance; mitigates biases and format variation | More engineering complexity |
 
-## Recommendations for PromptPad (Concrete)
+## Recommendations for TurboDraft (Concrete)
 1. Keep your existing **hard checks** (no draft echo, no rewrite boilerplate, no code fences).
 2. Add a **pairwise judge mode** (A/B) for comparing two engineered prompts for the same draft.
 3. Randomize A/B order and allow **tie**.

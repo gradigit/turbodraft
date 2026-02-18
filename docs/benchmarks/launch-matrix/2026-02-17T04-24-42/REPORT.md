@@ -1,11 +1,11 @@
-# PromptPad Launch/Lifecycle Benchmark Matrix
+# TurboDraft Launch/Lifecycle Benchmark Matrix
 
 - Timestamp: 2026-02-17T04-24-42
-- Fixture: /Users/aaaaa/Projects/promptpad/bench/fixtures/dictation_flush_mode.md
+- Fixture: /Users/aaaaa/Projects/turbodraft/bench/fixtures/dictation_flush_mode.md
 - warm_n: 12
 - cold_n: 4
 
-## Strict cold/warm comparison (`promptpad open`)
+## Strict cold/warm comparison (`turbodraft open`)
 
 | Scenario | warm p50 (ms) | warm p95 (ms) | cold p50 (ms) | cold p95 (ms) | warm ok/err | cold ok/err |
 |---|---:|---:|---:|---:|---:|---:|
@@ -14,7 +14,7 @@
 | Lifecycle: stay-resident | 16.71 | 46.42 | 149.12 | 160.97 | 12/0 | 4/0 |
 | Lifecycle: terminate-on-last-close | 15.07 | 30.78 | 46.47 | 53.24 | 12/0 | 4/0 |
 
-## Built-in `promptpad bench run` status
+## Built-in `turbodraft bench run` status
 
 | Scenario | rc | timeout | elapsed (ms) |
 |---|---:|---|---:|
@@ -25,11 +25,11 @@
 
 ## Raw artifacts
 
-- matrix.json: /Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/matrix.json
-- logs/: /Users/aaaaa/Projects/promptpad/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs
+- matrix.json: /Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/matrix.json
+- logs/: /Users/aaaaa/Projects/turbodraft/docs/benchmarks/launch-matrix/2026-02-17T04-24-42/logs
 
 ## Notes
 
 - LaunchAgent benchmark uses isolated label from --launchagent-label.
-- Lifecycle terminate-vs-stay uses dedicated PROMPTPAD_CONFIG paths under /tmp.
+- Lifecycle terminate-vs-stay uses dedicated TURBODRAFT_CONFIG paths under /tmp.
 - Terminate-mode built-in bench is warm-only because cold bench spawns without terminate flag.
