@@ -264,7 +264,15 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
       for p in cArgs where p != nil { free(p) }
     }
 
-    let rc = posix_spawn(&pid, executablePath, &actions, nil, &cArgs, environ)
+    // Prepend the executable's own directory to PATH so that shebang interpreters
+    // (e.g. `#!/usr/bin/env node`) resolve when running under a LaunchAgent whose
+    // PATH omits nvm/fnm-managed bin directories.
+    let execDir = URL(fileURLWithPath: executablePath).deletingLastPathComponent().path
+    var cEnv: [UnsafeMutablePointer<CChar>?] = CodexPromptEngineerAdapter.buildEnv(prependingToPath: execDir).map { strdup($0) }
+    cEnv.append(nil)
+    defer { for p in cEnv where p != nil { free(p) } }
+
+    let rc = posix_spawn(&pid, executablePath, &actions, nil, &cArgs, &cEnv)
     if rc != 0 {
       close(inFds[0]); close(inFds[1]); close(outFds[0]); close(outFds[1])
       throw CodexPromptEngineerError.spawnFailed(errno: Int32(rc))
@@ -368,6 +376,24 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     }
 
     return SpawnResult(exitCode: exitCode, output: output, didTimeout: didTimeout)
+  }
+
+  private static func buildEnv(prependingToPath dir: String) -> [String] {
+    var result: [String] = []
+    var pathUpdated = false
+    var i = 0
+    while let entry = environ[i] {
+      let s = String(cString: entry)
+      if s.hasPrefix("PATH=") {
+        result.append("PATH=\(dir):\(s.dropFirst("PATH=".count))")
+        pathUpdated = true
+      } else {
+        result.append(s)
+      }
+      i += 1
+    }
+    if !pathUpdated { result.append("PATH=\(dir)") }
+    return result
   }
 
   private func setCloExec(_ fd: Int32) {
