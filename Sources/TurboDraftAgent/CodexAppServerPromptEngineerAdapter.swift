@@ -371,7 +371,12 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
         for p in cArgs where p != nil { free(p) }
       }
 
-      let rc = posix_spawn(&pid, executablePath, &actions, nil, &cArgs, environ)
+      let execDir = URL(fileURLWithPath: executablePath).deletingLastPathComponent().path
+      var cEnv: [UnsafeMutablePointer<CChar>?] = buildEnv(prependingToPath: execDir).map { strdup($0) }
+      cEnv.append(nil)
+      defer { for p in cEnv where p != nil { free(p) } }
+
+      let rc = posix_spawn(&pid, executablePath, &actions, nil, &cArgs, &cEnv)
       if rc != 0 {
         close(inFds[0]); close(inFds[1]); close(outFds[0]); close(outFds[1]); close(errFds[0]); close(errFds[1])
         throw CodexAppServerPromptEngineerError.spawnFailed(errno: Int32(rc))
@@ -496,6 +501,24 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
         return String(decoding: lineData, as: UTF8.self)
       }
       return nil
+    }
+
+    private static func buildEnv(prependingToPath dir: String) -> [String] {
+      var result: [String] = []
+      var pathUpdated = false
+      var i = 0
+      while let entry = environ[i] {
+        let s = String(cString: entry)
+        if s.hasPrefix("PATH=") {
+          result.append("PATH=\(dir):\(s.dropFirst("PATH=".count))")
+          pathUpdated = true
+        } else {
+          result.append(s)
+        }
+        i += 1
+      }
+      if !pathUpdated { result.append("PATH=\(dir)") }
+      return result
     }
 
     private static func setCloExec(_ fd: Int32) {
