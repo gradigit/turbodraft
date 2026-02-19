@@ -852,12 +852,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func cleanUpStaleTempFiles() {
-    let tmpDir = NSTemporaryDirectory()
     let fm = FileManager.default
-    guard let contents = try? fm.contentsOfDirectory(atPath: tmpDir) else { return }
-    let prefixes = ["turbodraft-img-", "turbodraft-codex-"]
-    for name in contents where prefixes.contains(where: { name.hasPrefix($0) }) {
-      try? fm.removeItem(atPath: tmpDir + "/" + name)
+
+    // Clean legacy temp files unconditionally.
+    let tmpDir = NSTemporaryDirectory()
+    if let contents = try? fm.contentsOfDirectory(atPath: tmpDir) {
+      let prefixes = ["turbodraft-img-", "turbodraft-codex-"]
+      for name in contents where prefixes.contains(where: { name.hasPrefix($0) }) {
+        try? fm.removeItem(atPath: tmpDir + "/" + name)
+      }
+    }
+
+    // Clean stable image dir — only files older than 1 hour (active sessions may need recent ones).
+    let imagesDir = fm.homeDirectoryForCurrentUser
+      .appendingPathComponent("Library/Application Support/TurboDraft/images", isDirectory: true)
+    if let contents = try? fm.contentsOfDirectory(atPath: imagesDir.path) {
+      let cutoff = Date().addingTimeInterval(-3600)
+      for name in contents where name.hasPrefix("turbodraft-img-") {
+        let path = imagesDir.appendingPathComponent(name).path
+        if let attrs = try? fm.attributesOfItem(atPath: path),
+           let modified = attrs[.modificationDate] as? Date,
+           modified < cutoff {
+          try? fm.removeItem(atPath: path)
+        }
+      }
     }
   }
 

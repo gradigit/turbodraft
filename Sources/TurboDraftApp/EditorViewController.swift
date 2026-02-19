@@ -11,7 +11,7 @@ import CodeEditTextView
 #if TURBODRAFT_USE_CODEEDIT_TEXTVIEW
 private typealias TurboDraftEditorTextView = TextView
 #else
-private typealias TurboDraftEditorTextView = NSTextView
+private typealias TurboDraftEditorTextView = EditorTextView
 #endif
 
 @MainActor
@@ -74,7 +74,7 @@ final class EditorViewController: NSViewController {
       delegate: nil
     )
     #else
-    self.textView = NSTextView(frame: .zero)
+    self.textView = EditorTextView(frame: .zero)
     #endif
     super.init(nibName: nil, bundle: nil)
   }
@@ -141,6 +141,9 @@ final class EditorViewController: NSViewController {
     textView.smartInsertDeleteEnabled = false
     textView.importsGraphics = false
     textView.delegate = self
+    textView.onImageDrop = { [weak self] images in
+      self?.insertImages(images)
+    }
     textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     textView.drawsBackground = true
     textView.isVerticallyResizable = true
@@ -228,10 +231,35 @@ final class EditorViewController: NSViewController {
     autosaveMaxFlushTask?.cancel()
     autosaveMaxFlushTask = nil
 
+    // On window/app close, wait for any pending image conversion, then copy
+    // images to the clipboard so the user can Ctrl+V in the invoking CLI.
+    if reason == "window_close" || reason == "app_terminate" {
+      if let pending = imageConversionTask {
+        await pending.value
+        imageConversionTask = nil
+      }
+      appendImageReferencesForClose()
+    }
+
     if !autosavePending, let info = await session.currentInfo(), info.isDirty {
       autosavePending = true
     }
     await runAutosave(reason: reason)
+  }
+
+  /// Appends `@/path/to/image.png` references to the editor text for each
+  /// attached image. Called on window/app close so the invoking CLI model can
+  /// read the images via its Read tool.
+  private func appendImageReferencesForClose() {
+    guard !attachedImages.isEmpty else { return }
+
+    let suffix = "\n" + attachedImages.map { "@\($0.path)" }.joined(separator: "\n")
+    textView.insertText(suffix, replacementRange: NSRange(location: textView.string.utf16.count, length: 0))
+    Task { await session.updateBufferContent(textView.string) }
+    autosavePending = true
+
+    // Clear so deinit doesn't delete the files — the CLI model needs them.
+    attachedImages.removeAll()
   }
 
   private func applyTheme() {
@@ -724,28 +752,16 @@ extension EditorViewController: NSTextViewDelegate {
       return true
     }
 
-    if commandSelector == NSSelectorFromString("paste:") {
-      return handleImagePaste()
-    }
-
     return false
   }
 
-  /// Returns true if an image was found on the pasteboard and handled (inserted placeholder + stored URL).
-  /// Returns false to let NSTextView perform its default paste.
-  private func handleImagePaste() -> Bool {
-    let pb = NSPasteboard.general
-    guard let images = pb.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
-          !images.isEmpty
-    else { return false }
-
-    // Insert placeholder text immediately for responsive UI.
+  /// Shared image insertion logic for paste and drag-and-drop.
+  /// Inserts `[image N]` placeholders immediately, converts TIFF→PNG in background.
+  private func insertImages(_ images: [NSImage]) {
     for i in 0..<images.count {
       let index = attachedImages.count + i + 1
       textView.insertText("[image \(index)]", replacementRange: textView.selectedRange())
     }
-
-    // Convert TIFF→PNG in background.
     let imagesToConvert = images
     imageConversionTask = Task.detached { [weak self] in
       var urls: [URL] = []
@@ -759,7 +775,6 @@ extension EditorViewController: NSTextViewDelegate {
         self.attachedImages.append(contentsOf: urls)
       }
     }
-    return true
   }
 
   private nonisolated static func saveTempImageBackground(_ image: NSImage) -> URL? {
@@ -767,14 +782,118 @@ extension EditorViewController: NSTextViewDelegate {
           let bitmap = NSBitmapImageRep(data: tiff),
           let png = bitmap.representation(using: .png, properties: [:])
     else { return nil }
-    let url = URL(fileURLWithPath: NSTemporaryDirectory())
-      .appendingPathComponent("turbodraft-img-\(UUID().uuidString).png")
+    let imagesDir = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent("Library/Application Support/TurboDraft/images", isDirectory: true)
+    try? FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+    let url = imagesDir.appendingPathComponent("turbodraft-img-\(UUID().uuidString).png")
     do {
       try png.write(to: url)
     } catch {
       return nil
     }
     return url
+  }
+}
+#endif
+
+#if !TURBODRAFT_USE_CODEEDIT_TEXTVIEW
+/// Thin NSTextView subclass that adds drag-and-drop and paste support for images.
+/// Non-image drags/pastes fall through to NSTextView's default behavior.
+final class EditorTextView: NSTextView {
+  var onImageDrop: (([NSImage]) -> Void)?
+
+  private static let imageExtensions: Set<String> = [
+    "png", "jpg", "jpeg", "gif", "tiff", "tif", "bmp", "webp", "heic",
+  ]
+
+  override init(frame: NSRect, textContainer: NSTextContainer?) {
+    super.init(frame: frame, textContainer: textContainer)
+    registerForDraggedTypes([.fileURL])
+  }
+
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    registerForDraggedTypes([.fileURL])
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    registerForDraggedTypes([.fileURL])
+  }
+
+  // MARK: - Paste (Cmd+V)
+
+  /// Intercept Cmd+V before the menu system to check for image content.
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+       event.charactersIgnoringModifiers == "v" {
+      if handleImagePaste() { return true }
+    }
+    return super.performKeyEquivalent(with: event)
+  }
+
+  /// Also override paste: for programmatic paste calls and Edit menu.
+  override func paste(_ sender: Any?) {
+    if handleImagePaste() { return }
+    super.paste(sender)
+  }
+
+  private func handleImagePaste() -> Bool {
+    let pb = NSPasteboard.general
+
+    // 1. Try raw TIFF/PNG data from clipboard (screenshots, copied image data).
+    for type in [NSPasteboard.PasteboardType.tiff, .png] {
+      if let data = pb.data(forType: type), let image = NSImage(data: data) {
+        onImageDrop?([image])
+        return true
+      }
+    }
+
+    // 2. Try file URLs from clipboard (Cmd+C on files in Finder).
+    if let urls = pb.readObjects(
+         forClasses: [NSURL.self],
+         options: [.urlReadingFileURLsOnly: true]
+       ) as? [URL] {
+      let imageURLs = urls.filter { Self.imageExtensions.contains($0.pathExtension.lowercased()) }
+      if !imageURLs.isEmpty {
+        let images = imageURLs.compactMap { NSImage(contentsOf: $0) }
+        if !images.isEmpty {
+          onImageDrop?(images)
+          return true
+        }
+      }
+    }
+
+    return false
+  }
+
+  // MARK: - Drag and Drop
+
+  private func imageURLs(from sender: NSDraggingInfo) -> [URL] {
+    guard let urls = sender.draggingPasteboard.readObjects(
+      forClasses: [NSURL.self],
+      options: [.urlReadingFileURLsOnly: true]
+    ) as? [URL] else { return [] }
+    return urls.filter { Self.imageExtensions.contains($0.pathExtension.lowercased()) }
+  }
+
+  override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+    if !imageURLs(from: sender).isEmpty { return .copy }
+    return super.draggingEntered(sender)
+  }
+
+  override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+    if !imageURLs(from: sender).isEmpty { return .copy }
+    return super.draggingUpdated(sender)
+  }
+
+  override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    let urls = imageURLs(from: sender)
+    guard !urls.isEmpty else { return super.performDragOperation(sender) }
+    let images = urls.compactMap { NSImage(contentsOf: $0) }
+    guard !images.isEmpty else { return super.performDragOperation(sender) }
+    onImageDrop?(images)
+    return true
   }
 }
 #endif
