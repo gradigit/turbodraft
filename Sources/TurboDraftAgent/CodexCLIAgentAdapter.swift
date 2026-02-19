@@ -33,7 +33,7 @@ public final class CodexCLIAgentAdapter: AgentAdapting, @unchecked Sendable {
     self.maxOutputBytes = maxOutputBytes
   }
 
-  public func draft(prompt: String, instruction: String) async throws -> String {
+  public func draft(prompt: String, instruction: String, images: [URL] = []) async throws -> String {
     let input = """
 PROMPT:
 \(prompt)

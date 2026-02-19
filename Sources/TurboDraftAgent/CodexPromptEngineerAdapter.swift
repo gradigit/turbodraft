@@ -73,7 +73,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     self.maxOutputBytes = maxOutputBytes
   }
 
-  public func draft(prompt: String, instruction: String) async throws -> String {
+  public func draft(prompt: String, instruction: String, images: [URL] = []) async throws -> String {
     guard let resolved = CommandResolver.resolveInPATH(command) else {
       throw CodexPromptEngineerError.commandNotFound
     }
@@ -85,7 +85,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     var out1: String
     do {
       let stdinText = PromptEngineerPrompts.compose(prompt: prompt, instruction: instruction, profile: profile)
-      out1 = try runCodex(resolved: resolved, stdin: Data(stdinText.utf8), modelOverride: modelOverride)
+      out1 = try runCodex(resolved: resolved, stdin: Data(stdinText.utf8), modelOverride: modelOverride, images: images)
     } catch let e as CodexPromptEngineerError {
       if case let .nonZeroExit(_, msg) = e,
         msg.contains("model is not supported when using Codex with a ChatGPT account")
@@ -94,7 +94,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
         await state.disableOverride()
         modelOverride = nil
         let stdinText = PromptEngineerPrompts.compose(prompt: prompt, instruction: instruction, profile: profile)
-        out1 = try runCodex(resolved: resolved, stdin: Data(stdinText.utf8), modelOverride: modelOverride)
+        out1 = try runCodex(resolved: resolved, stdin: Data(stdinText.utf8), modelOverride: modelOverride, images: images)
       } else {
         throw e
       }
@@ -119,7 +119,8 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
       resolved: resolved,
       stdin: Data(stdinRepairText.utf8),
       modelOverride: modelOverride,
-      reasoningEffortOverride: repairEffort.isEmpty ? nil : repairEffort
+      reasoningEffortOverride: repairEffort.isEmpty ? nil : repairEffort,
+      images: images
     )
     let out2 = PromptEngineerOutputGuard.normalize(output: out2Raw).trimmingCharacters(in: .whitespacesAndNewlines)
     let check2 = PromptEngineerOutputGuard.check(draft: prompt, output: out2)
@@ -144,7 +145,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     return e
   }
 
-  private func runCodex(resolved: String, stdin: Data, modelOverride: String?, reasoningEffortOverride: String? = nil) throws -> String {
+  private func runCodex(resolved: String, stdin: Data, modelOverride: String?, reasoningEffortOverride: String? = nil, images: [URL] = []) throws -> String {
     let outURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
       .appendingPathComponent("turbodraft-codex-\(UUID().uuidString).txt")
     defer { try? FileManager.default.removeItem(at: outURL) }
@@ -173,6 +174,10 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     let reqEff = reasoningEffortOverride ?? reasoningEffort
     args.append(contentsOf: ["-c", "model_reasoning_effort=\(effectiveReasoningEffort(model: usedModel, requested: reqEff))"])
     args.append(contentsOf: ["-c", "model_reasoning_summary=\(reasoningSummary)"])
+
+    for img in images {
+      args.append(contentsOf: ["-i", img.path])
+    }
 
     args.append(contentsOf: extraArgs)
     args.append("-")

@@ -42,6 +42,7 @@ final class EditorViewController: NSViewController {
   private let saveStatus = NSTextField(labelWithString: "Saved")
   private var agentAdapter: AgentAdapting?
   private var agentRunning = false
+  private var attachedImages: [URL] = []
   private var _typingLatencies: [Double] = []
 
   var typingLatencySamples: [Double] { _typingLatencies }
@@ -582,6 +583,8 @@ final class EditorViewController: NSViewController {
 
     let instruction = "" // adapter applies a default instruction when empty
     let basePrompt = textView.string
+    let imagesToPass = attachedImages
+    attachedImages = []
 
     let oldTitle = agentButton.title
     agentButton.title = "Improving..."
@@ -591,9 +594,12 @@ final class EditorViewController: NSViewController {
     banner.isHidden = false
 
     Task {
+      defer {
+        for url in imagesToPass { try? FileManager.default.removeItem(at: url) }
+      }
       do {
         await flushAutosaveNow(reason: "agent_preflight")
-        let draft = try await adapter.draft(prompt: basePrompt, instruction: instruction)
+        let draft = try await adapter.draft(prompt: basePrompt, instruction: instruction, images: imagesToPass)
 
         let currentText = await MainActor.run { self.textView.string }
         await session.updateBufferContent(currentText)
@@ -690,17 +696,51 @@ final class EditorViewController: NSViewController {
 #if !TURBODRAFT_USE_CODEEDIT_TEXTVIEW
 extension EditorViewController: NSTextViewDelegate {
   func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-    guard commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
     guard textView === self.textView else { return false }
-    let selected = textView.selectedRange()
-    guard let edit = MarkdownEnterBehavior.editForEnter(in: textView.string, selection: selected) else {
-      return false
+
+    if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+      let selected = textView.selectedRange()
+      guard let edit = MarkdownEnterBehavior.editForEnter(in: textView.string, selection: selected) else {
+        return false
+      }
+      textView.insertText(edit.replacement, replacementRange: edit.replaceRange)
+      textView.setSelectedRange(NSRange(location: edit.selectedLocation, length: 0))
+      return true
     }
 
-    textView.insertText(edit.replacement, replacementRange: edit.replaceRange)
-    textView.setSelectedRange(NSRange(location: edit.selectedLocation, length: 0))
+    if commandSelector == NSSelectorFromString("paste:") {
+      return handleImagePaste()
+    }
 
+    return false
+  }
+
+  /// Returns true if an image was found on the pasteboard and handled (inserted placeholder + stored URL).
+  /// Returns false to let NSTextView perform its default paste.
+  private func handleImagePaste() -> Bool {
+    let pb = NSPasteboard.general
+    guard let images = pb.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
+          !images.isEmpty
+    else { return false }
+
+    for image in images {
+      guard let url = saveTempImage(image) else { continue }
+      attachedImages.append(url)
+      let index = attachedImages.count
+      textView.insertText("[image \(index)]", replacementRange: textView.selectedRange())
+    }
     return true
+  }
+
+  private func saveTempImage(_ image: NSImage) -> URL? {
+    guard let tiff = image.tiffRepresentation,
+          let bitmap = NSBitmapImageRep(data: tiff),
+          let png = bitmap.representation(using: .png, properties: [:])
+    else { return nil }
+    let url = URL(fileURLWithPath: NSTemporaryDirectory())
+      .appendingPathComponent("turbodraft-img-\(UUID().uuidString).png")
+    try? png.write(to: url)
+    return url
   }
 }
 #endif

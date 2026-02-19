@@ -75,11 +75,11 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     }
   }
 
-  public func draft(prompt: String, instruction: String) async throws -> String {
+  public func draft(prompt: String, instruction: String, images: [URL] = []) async throws -> String {
     try await withCheckedThrowingContinuation { cont in
       queue.async {
         do {
-          cont.resume(returning: try self.draftSync(prompt: prompt, instruction: instruction))
+          cont.resume(returning: try self.draftSync(prompt: prompt, instruction: instruction, images: images))
         } catch {
           cont.resume(throwing: error)
         }
@@ -105,14 +105,22 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     threadId: String,
     prompt: String,
     instruction: String,
-    effortOverride: String?
+    effortOverride: String?,
+    images: [URL] = []
   ) throws -> String {
     let userText = PromptEngineerPrompts.userTurnText(prompt: prompt, instruction: instruction)
+    var inputItems: [[String: Any]] = [["type": "text", "text": userText]]
+    for imgURL in images {
+      if let data = try? Data(contentsOf: imgURL) {
+        inputItems.append([
+          "type": "image_url",
+          "image_url": ["url": "data:image/png;base64,\(data.base64EncodedString())"],
+        ])
+      }
+    }
     var turnParams: [String: Any] = [
       "threadId": threadId,
-      "input": [
-        ["type": "text", "text": userText],
-      ],
+      "input": inputItems,
     ]
     if let eff = effortOverride?.trimmingCharacters(in: .whitespacesAndNewlines), !eff.isEmpty {
       turnParams["effort"] = eff
@@ -203,7 +211,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     throw CodexAppServerPromptEngineerError.timedOut
   }
 
-  private func draftSync(prompt: String, instruction: String) throws -> String {
+  private func draftSync(prompt: String, instruction: String, images: [URL] = []) throws -> String {
     let s = try ensureServer()
     try s.ensureInitialized(timeoutMs: 10_000)
     let profile = PromptEngineerPrompts.Profile(rawValue: promptProfile) ?? .largeOpt
@@ -230,7 +238,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     }
 
     let baseEff = effectiveReasoningEffort(model: model)
-    let out1Raw = try runTurn(s: s, threadId: threadId, prompt: prompt, instruction: instruction, effortOverride: baseEff)
+    let out1Raw = try runTurn(s: s, threadId: threadId, prompt: prompt, instruction: instruction, effortOverride: baseEff, images: images)
     let out1 = PromptEngineerOutputGuard.normalize(output: out1Raw).trimmingCharacters(in: .whitespacesAndNewlines)
     let check = PromptEngineerOutputGuard.check(draft: prompt, output: out1)
     if !check.needsRepair {
@@ -243,7 +251,8 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
       threadId: threadId,
       prompt: prompt,
       instruction: PromptEngineerPrompts.repairInstruction,
-      effortOverride: repairEff.isEmpty ? baseEff : repairEff
+      effortOverride: repairEff.isEmpty ? baseEff : repairEff,
+      images: images
     )
     let out2 = PromptEngineerOutputGuard.normalize(output: out2Raw).trimmingCharacters(in: .whitespacesAndNewlines)
     let check2 = PromptEngineerOutputGuard.check(draft: prompt, output: out2)
