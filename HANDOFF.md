@@ -4,55 +4,70 @@ Session summary for context continuity after clearing.
 
 ## First Steps (Read in Order)
 
-1. Read CLAUDE.md — project conventions, build/install rule, key files, gotchas
-2. Read README.md — updated install docs, LaunchAgent setup
-3. Read `Sources/TurboDraftApp/AppDelegate.swift` — quit latency fix, NSNumber/Bool fix (from prior session)
+1. Read CLAUDE.md — project conventions, build/install rule, architecture, gotchas
+2. Read README.md — open-source README with install, usage, performance, architecture
+3. Read this file's "Deferred Work" section — known issues not addressed this session
 
 After reading these files, you'll have full context to continue.
 
 ## Session Summary
 
 ### What Was Done
-- Ran full benchmark suite (primary, multi-fixture, e2e) — all baselines pass
-- Confirmed `EnableSecureEventInput` is NOT called by TurboDraft (zero hits in codebase)
-- Investigated cold start optimizations (kqueue + early socket bind) — both reverted after benchmarks showed no improvement
-- Created `scripts/install` — one-command build + symlink + LaunchAgent restart
-- Updated `scripts/turbodraft-launch-agent` with `update` and `restart` commands
-- Created `CLAUDE.md` with project instructions, architecture, commands, and gotchas
-- Updated `README.md` install section to use `scripts/install` as primary path
-- Installed LaunchAgent (`com.turbodraft.app`) on user's machine
+
+**Fixed bugs and code quality issues from PRs #2, #4, #5, #6** (4 merged PRs from contributor `guzus`, +185/-34 LOC, zero tests)
+
+Fixes implemented:
+
+1. **Extracted `buildEnv` to `CommandResolver`** — deduplicated from two adapters, now a single `CommandResolver.buildEnv(prependingToPath:)` using `ProcessInfo.processInfo.environment` (thread-safe) instead of raw C `environ`
+2. **Applied `buildEnv` to `CodexCLIAgentAdapter`** — was missing entirely, causing spawn failures under LaunchAgent
+3. **Added warning when CLI adapter receives images** — `CodexCLIAgentAdapter` has no mechanism to forward images but silently accepted them
+4. **Fixed repair turns re-sending images** — both `CodexPromptEngineerAdapter` and `CodexAppServerPromptEngineerAdapter` now pass `images: []` on repair
+5. **Fixed session switch image bleed** — `applySessionInfo` now cleans up stale temp files and clears `attachedImages`
+6. **Fixed temp file leak in deinit** — `EditorViewController.deinit` now removes orphaned image temp files
+7. **Removed dead nvm alias resolution** — `~/.nvm/alias/default` contains alias strings (e.g. "22"), not directory names; the version-scan fallback already handles this
+8. **Fixed fnm base directory** — now checks all 3 known locations (`~/.local/share/fnm`, `~/.fnm`, `~/Library/Application Support/fnm`)
+9. **Cached `supplementalPaths`** — changed from computed `var` (filesystem I/O every call) to `static let`
+10. **Fixed `saveTempImage` silent failure** — write errors now return `nil` instead of a URL to a nonexistent file
+11. **Removed broken MCP disable flags from Python scripts** — `bench_codex_prompt_engineer.py` (4 occurrences) and `codex_app_server_poc.py`
+12. **Added 9 new tests** — `CommandResolverTests` (8 tests for `resolveInPATH` + `buildEnv`) and `CodexAdapterTests.testAdapterIgnoresImagesGracefully`
+13. **Updated CLAUDE.md** — test count 58→67, module count 8→10, added `CommandResolver.swift` to key files, added gotchas
 
 ### Current State
-- All benchmarks pass baselines
-- LaunchAgent is installed and running
-- `scripts/install` is the canonical update path
-- Files created: `CLAUDE.md`, `scripts/install`
-- Files modified: `README.md`, `scripts/turbodraft-launch-agent`
-- Last commit: e6cc320 — chore: add install script, update launch agent, add CLAUDE.md
+- All 67 tests pass on main
+- Release build clean, LaunchAgent restarted via `scripts/install`
+- Changes are uncommitted (ready to commit)
 
-### What's Next
-1. No explicit pending work — project is in good shape
-2. Potential: add `scripts/install` step to CI pipeline
-3. Potential: calibrate benchmark baselines on CI runner (current values have dev-machine headroom)
+### What's Next (Deferred Work)
 
-### Failed Approaches
-- **Early socket bind** (bind+listen in main.swift before app.run) — CLI connects before accept loop starts, RPC blocks waiting for applicationDidFinishLaunching. Cold start regressed from 174ms to 220ms.
-- **kqueue in connectOrLaunch** (replace polling with directory watch) — added syscall overhead, unsigned underflow bug in timeout calculation, no latency improvement because bottleneck is process startup not socket detection.
-- Both reverted. Cold start bottleneck is fork+exec+dyld+AppKit bootstrap (~170ms). Only the LaunchAgent eliminates it.
+| Issue | Reason deferred |
+|-------|----------------|
+| Extract `setCloExec`/`setNonBlocking`/`writeAll` triplicate | Refactor — no behavior change |
+| Image size limits (50MB retina screenshots) | Needs UX design for user feedback |
+| Paste interception robustness (NSTextView subclass) | Architecture change — careful AppKit work |
+| Undo/image index desync | Complex state management — needs design |
+| Add `os.Logger` throughout | Enhancement — no correctness impact |
+| Error type unification across adapters | Refactor — no behavior change |
+| Hardcoded PNG MIME type | Optimization — functional as-is |
+| App-server stderr silently drained | Needs logging story first |
+| fnm fallback scan (like nvm's version scan) | Low priority — symlink approach works |
+| No UI feedback about queued images | UX enhancement |
 
 ### Key Context
-- User runs Ghostty terminal — use OSC-8 hyperlinks with `tput` styling for clickable paths
+- User runs fish shell and Ghostty terminal — use OSC-8 hyperlinks with `tput` styling
 - User has LaunchAgent installed — always run `scripts/install` after code changes
-- Benchmark results are highly sensitive to machine load — check `ps -eo %cpu,command -r | head -5` before interpreting noisy numbers
-- The user challenges lazy solutions — always propose the architecturally correct fix, not quick hacks
+- 4 binaries: `turbodraft` (Swift CLI), `turbodraft-app` (AppKit GUI), `turbodraft-open` (C fast-path), `turbodraft-editor` (bash $EDITOR shim)
 
 ## Reference Files
 
 | File | Purpose |
 |------|---------|
 | `CLAUDE.md` | Project instructions for Claude Code |
-| `scripts/install` | Build + symlink + restart LaunchAgent |
-| `scripts/turbodraft-launch-agent` | LaunchAgent management (install/uninstall/update/restart/status) |
-| `Sources/TurboDraftApp/AppDelegate.swift` | App lifecycle, quit handling, RPC dispatch |
-| `Sources/TurboDraftCLI/main.swift` | CLI, benchmarks, connectOrLaunch |
-| `bench/editor/baseline.json` | Benchmark regression thresholds |
+| `README.md` | Open-source README |
+| `Package.swift` | All module/product names |
+| `Sources/TurboDraftCore/CommandResolver.swift` | PATH resolution, supplemental paths, shared `buildEnv` |
+| `Sources/TurboDraftAgent/CodexPromptEngineerAdapter.swift` | Exec adapter — spawn, images |
+| `Sources/TurboDraftAgent/CodexAppServerPromptEngineerAdapter.swift` | App-server adapter — spawn, images, base64 |
+| `Sources/TurboDraftAgent/CodexCLIAgentAdapter.swift` | Basic CLI adapter |
+| `Sources/TurboDraftApp/EditorViewController.swift` | Image paste handling, autosave, agent integration |
+| `Tests/TurboDraftCoreTests/CommandResolverTests.swift` | New: CommandResolver + buildEnv tests |
+| `Tests/TurboDraftAgentTests/CodexAdapterTests.swift` | Updated: images test added |

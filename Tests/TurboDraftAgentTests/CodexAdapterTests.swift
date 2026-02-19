@@ -26,4 +26,14 @@ final class CodexAdapterTests: XCTestCase {
       // ok
     }
   }
+
+  func testAdapterIgnoresImagesGracefully() async throws {
+    // CodexCLIAgentAdapter logs a warning when images are passed but still
+    // produces output from the underlying command.
+    let adapter = CodexCLIAgentAdapter(command: "/bin/cat", args: [])
+    let fakeImage = URL(fileURLWithPath: "/dev/null")
+    let out = try await adapter.draft(prompt: "p", instruction: "i", images: [fakeImage])
+    XCTAssertTrue(out.contains("PROMPT:"))
+    XCTAssertTrue(out.contains("INSTRUCTION:"))
+  }
 }

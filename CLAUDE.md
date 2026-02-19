@@ -16,7 +16,7 @@ Do NOT skip this step. Do NOT just run `swift build` — use `scripts/install` s
 
 - `swift build` — debug build
 - `swift build -c release` — release build
-- `swift test` — run all tests (58 tests)
+- `swift test` — run all tests (67 tests)
 - `scripts/install` — build + symlink + restart LaunchAgent
 - `scripts/turbodraft-launch-agent install|uninstall|status|update|restart` — manage LaunchAgent
 - `.build/release/turbodraft bench run --path <file> --warm N --cold N` — editor benchmarks
@@ -26,7 +26,7 @@ Do NOT skip this step. Do NOT just run `swift build` — use `scripts/install` s
 
 ## Architecture
 
-Swift Package with 8 modules:
+Swift Package with 10 modules:
 
 | Module | Purpose |
 |--------|---------|
@@ -51,6 +51,7 @@ Communication: CLI → Unix domain socket (`~/Library/Application Support/TurboD
 - `Sources/TurboDraftCLI/main.swift` — CLI entry point, benchmark runner, `connectOrLaunch`
 - `Sources/TurboDraftTransport/UnixDomainSocket.swift` — socket bind/listen/connect/accept
 - `Sources/TurboDraftCore/EditorSession.swift` — file session state, revision tracking
+- `Sources/TurboDraftCore/CommandResolver.swift` — PATH resolution, supplemental paths (nvm/fnm/homebrew), shared `buildEnv`
 - `bench/editor/baseline.json` — benchmark regression thresholds
 
 ## Gotchas
@@ -62,3 +63,5 @@ Communication: CLI → Unix domain socket (`~/Library/Application Support/TurboD
 - Before benchmarks, kill stale `turbodraft-app` processes and remove the socket. Stale processes cause the CLI to connect to an old binary.
 - Bench lockfile (`~/Library/Application Support/TurboDraft/bench.lock`) can get stuck if a run is interrupted — remove manually.
 - Machine load heavily distorts benchmark p95s. Check `ps -eo %cpu,command -r | head -5` before chasing noisy regressions.
+- `TurboDraftOpen` is plain C (`main.c`), not Swift. All three agent adapters share spawn helpers (`setCloExec`/`setNonBlocking`/`writeAll`) — they're intentionally inlined per-file to avoid adding a shared C shim target.
+- All agent adapters must use `CommandResolver.buildEnv(prependingToPath:)` when spawning child processes. Using raw `environ` directly skips PATH enrichment and breaks under the LaunchAgent.

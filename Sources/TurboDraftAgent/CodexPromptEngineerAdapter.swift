@@ -120,7 +120,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
       stdin: Data(stdinRepairText.utf8),
       modelOverride: modelOverride,
       reasoningEffortOverride: repairEffort.isEmpty ? nil : repairEffort,
-      images: images
+      images: []
     )
     let out2 = PromptEngineerOutputGuard.normalize(output: out2Raw).trimmingCharacters(in: .whitespacesAndNewlines)
     let check2 = PromptEngineerOutputGuard.check(draft: prompt, output: out2)
@@ -273,7 +273,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     // (e.g. `#!/usr/bin/env node`) resolve when running under a LaunchAgent whose
     // PATH omits nvm/fnm-managed bin directories.
     let execDir = URL(fileURLWithPath: executablePath).deletingLastPathComponent().path
-    var cEnv: [UnsafeMutablePointer<CChar>?] = CodexPromptEngineerAdapter.buildEnv(prependingToPath: execDir).map { strdup($0) }
+    var cEnv: [UnsafeMutablePointer<CChar>?] = CommandResolver.buildEnv(prependingToPath: execDir).map { strdup($0) }
     cEnv.append(nil)
     defer { for p in cEnv where p != nil { free(p) } }
 
@@ -381,24 +381,6 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     }
 
     return SpawnResult(exitCode: exitCode, output: output, didTimeout: didTimeout)
-  }
-
-  private static func buildEnv(prependingToPath dir: String) -> [String] {
-    var result: [String] = []
-    var pathUpdated = false
-    var i = 0
-    while let entry = environ[i] {
-      let s = String(cString: entry)
-      if s.hasPrefix("PATH=") {
-        result.append("PATH=\(dir):\(s.dropFirst("PATH=".count))")
-        pathUpdated = true
-      } else {
-        result.append(s)
-      }
-      i += 1
-    }
-    if !pathUpdated { result.append("PATH=\(dir)") }
-    return result
   }
 
   private func setCloExec(_ fd: Int32) {

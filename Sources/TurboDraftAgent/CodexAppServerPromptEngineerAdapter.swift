@@ -252,7 +252,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
       prompt: prompt,
       instruction: PromptEngineerPrompts.repairInstruction,
       effortOverride: repairEff.isEmpty ? baseEff : repairEff,
-      images: images
+      images: []
     )
     let out2 = PromptEngineerOutputGuard.normalize(output: out2Raw).trimmingCharacters(in: .whitespacesAndNewlines)
     let check2 = PromptEngineerOutputGuard.check(draft: prompt, output: out2)
@@ -381,7 +381,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
       }
 
       let execDir = URL(fileURLWithPath: executablePath).deletingLastPathComponent().path
-      var cEnv: [UnsafeMutablePointer<CChar>?] = buildEnv(prependingToPath: execDir).map { strdup($0) }
+      var cEnv: [UnsafeMutablePointer<CChar>?] = CommandResolver.buildEnv(prependingToPath: execDir).map { strdup($0) }
       cEnv.append(nil)
       defer { for p in cEnv where p != nil { free(p) } }
 
@@ -510,24 +510,6 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
         return String(decoding: lineData, as: UTF8.self)
       }
       return nil
-    }
-
-    private static func buildEnv(prependingToPath dir: String) -> [String] {
-      var result: [String] = []
-      var pathUpdated = false
-      var i = 0
-      while let entry = environ[i] {
-        let s = String(cString: entry)
-        if s.hasPrefix("PATH=") {
-          result.append("PATH=\(dir):\(s.dropFirst("PATH=".count))")
-          pathUpdated = true
-        } else {
-          result.append(s)
-        }
-        i += 1
-      }
-      if !pathUpdated { result.append("PATH=\(dir)") }
-      return result
     }
 
     private static func setCloExec(_ fd: Int32) {

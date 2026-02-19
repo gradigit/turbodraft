@@ -779,10 +779,6 @@ def run_codex_exec(
             f"model_reasoning_effort={eff}",
             "-c",
             f"model_reasoning_summary={summary}",
-            "-c",
-            "mcp_servers.context7.enabled=false",
-            "-c",
-            "mcp_servers.playwright.enabled=false",
         ]
         if ephemeral:
             cmd.insert(2, "--ephemeral")
@@ -936,10 +932,6 @@ def run_codex_judge_exec(
             f"model_reasoning_effort={eff}",
             "-c",
             f"model_reasoning_summary={judge_summary}",
-            "-c",
-            "mcp_servers.context7.enabled=false",
-            "-c",
-            "mcp_servers.playwright.enabled=false",
             "-",
         ]
 
@@ -1021,10 +1013,6 @@ def run_codex_pairwise_judge_exec(
             f"model_reasoning_effort={eff}",
             "-c",
             f"model_reasoning_summary={judge_summary}",
-            "-c",
-            "mcp_servers.context7.enabled=false",
-            "-c",
-            "mcp_servers.playwright.enabled=false",
             "-",
         ]
 
@@ -1223,10 +1211,6 @@ def start_app_server(web_search: str, verbose: bool) -> subprocess.Popen:
         "approval=never",
         "-c",
         f"web_search={web_search}",
-        "-c",
-        "mcp_servers.context7.enabled=false",
-        "-c",
-        "mcp_servers.playwright.enabled=false",
     ]
 
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=False)

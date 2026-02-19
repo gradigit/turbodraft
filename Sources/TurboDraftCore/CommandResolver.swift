@@ -3,7 +3,7 @@ import Foundation
 public enum CommandResolver {
   /// Directories added by common shell-managed version managers that are absent
   /// from the LaunchAgent's minimal PATH.
-  private static var supplementalPaths: [String] {
+  private static let supplementalPaths: [String] = {
     let home = FileManager.default.homeDirectoryForCurrentUser.path
     var extras: [String] = [
       // homebrew (Apple Silicon)
@@ -16,13 +16,7 @@ public enum CommandResolver {
       "\(home)/.cargo/bin",
     ]
 
-    // nvm: pick up whichever node version is active by scanning aliases/default symlink
-    let nvmDefault = "\(home)/.nvm/alias/default"
-    if let version = try? String(contentsOfFile: nvmDefault, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
-       !version.isEmpty {
-      extras.append("\(home)/.nvm/versions/node/\(version)/bin")
-    }
-    // Also scan all installed nvm node versions as fallback (first found wins)
+    // nvm: scan all installed node versions (newest first; first executable wins at resolve time)
     let nvmVersionsDir = "\(home)/.nvm/versions/node"
     if let versions = try? FileManager.default.contentsOfDirectory(atPath: nvmVersionsDir) {
       for v in versions.sorted().reversed() {
@@ -30,14 +24,22 @@ public enum CommandResolver {
       }
     }
 
-    // fnm
-    let fnmDefault = "\(home)/.fnm/aliases/default"
-    if FileManager.default.fileExists(atPath: fnmDefault) {
-      extras.append("\(fnmDefault)/bin")
+    // fnm: check all known base directories (varies by install method / OS)
+    let fnmBaseDirs = [
+      "\(home)/.local/share/fnm",
+      "\(home)/.fnm",
+      "\(home)/Library/Application Support/fnm",
+    ]
+    for base in fnmBaseDirs {
+      let fnmDefault = "\(base)/aliases/default"
+      if FileManager.default.fileExists(atPath: fnmDefault) {
+        extras.append("\(fnmDefault)/bin")
+        break
+      }
     }
 
     return extras
-  }
+  }()
 
   public static func resolveInPATH(_ command: String, environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
     guard !command.isEmpty else { return nil }
@@ -62,6 +64,26 @@ public enum CommandResolver {
       }
     }
     return nil
+  }
+
+  /// Build an environment array suitable for `posix_spawn`, prepending `dir`
+  /// to the existing PATH.  Uses `ProcessInfo.processInfo.environment` (a
+  /// thread-safe snapshot) instead of the C `environ` pointer.
+  public static func buildEnv(prependingToPath dir: String) -> [String] {
+    let env = ProcessInfo.processInfo.environment
+    var result: [String] = []
+    result.reserveCapacity(env.count)
+    var pathUpdated = false
+    for (key, value) in env {
+      if key == "PATH" {
+        result.append("PATH=\(dir):\(value)")
+        pathUpdated = true
+      } else {
+        result.append("\(key)=\(value)")
+      }
+    }
+    if !pathUpdated { result.append("PATH=\(dir)") }
+    return result
   }
 }
 

@@ -129,17 +129,10 @@ class JsonLinesReader:
 
 
 class CodexAppServerClient:
-    def __init__(self, model: str, *, mcp_disabled: bool, transport: Transport, quiet: bool) -> None:
+    def __init__(self, model: str, *, transport: Transport, quiet: bool) -> None:
         self._next_id = 1
 
         cmd = ["codex", "app-server", "--listen", "stdio://"]
-        if mcp_disabled:
-            cmd += [
-                "-c",
-                "mcp_servers.context7.enabled=false",
-                "-c",
-                "mcp_servers.playwright.enabled=false",
-            ]
 
         self._proc = subprocess.Popen(
             cmd,
@@ -397,7 +390,6 @@ def main() -> int:
     ap.add_argument("--model", default="gpt-5.3-codex-spark")
     ap.add_argument("--cwd", default=os.getcwd())
     ap.add_argument("--timeout", type=float, default=120.0)
-    ap.add_argument("--no-disable-mcp", action="store_true", help="Allow MCP servers from ~/.codex/config.toml to start")
     ap.add_argument("--no-stream", action="store_true", help="Do not stream deltas to stdout")
     ap.add_argument("--no-output", action="store_true", help="Do not print the final agent message to stdout")
     ap.add_argument("--skip-model-list", action="store_true", help="Skip the initial model/list call")
@@ -414,7 +406,7 @@ def main() -> int:
     if args.turns < 1:
         raise SystemExit("--turns must be >= 1")
 
-    client = CodexAppServerClient(args.model, mcp_disabled=(not args.no_disable_mcp), transport=args.transport, quiet=args.quiet)
+    client = CodexAppServerClient(args.model, transport=args.transport, quiet=args.quiet)
     try:
         ua = client.initialize()
         if not args.quiet:

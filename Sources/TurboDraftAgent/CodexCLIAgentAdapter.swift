@@ -1,6 +1,7 @@
 import Foundation
 import TurboDraftCore
 import Darwin
+import os
 
 public enum CodexCLIAgentError: Error, CustomStringConvertible {
   case commandNotFound
@@ -20,6 +21,8 @@ public enum CodexCLIAgentError: Error, CustomStringConvertible {
   }
 }
 
+private let cliAgentLog = Logger(subsystem: "com.turbodraft", category: "CodexCLIAgentAdapter")
+
 public final class CodexCLIAgentAdapter: AgentAdapting, @unchecked Sendable {
   private let command: String
   private let args: [String]
@@ -34,6 +37,10 @@ public final class CodexCLIAgentAdapter: AgentAdapting, @unchecked Sendable {
   }
 
   public func draft(prompt: String, instruction: String, images: [URL] = []) async throws -> String {
+    if !images.isEmpty {
+      cliAgentLog.warning("CodexCLIAgentAdapter does not support images; \(images.count) image(s) will be ignored")
+    }
+
     let input = """
 PROMPT:
 \(prompt)
@@ -112,7 +119,12 @@ INSTRUCTION:
       for p in cArgs where p != nil { free(p) }
     }
 
-    let rc = posix_spawn(&pid, executablePath, &actions, nil, &cArgs, environ)
+    let execDir = URL(fileURLWithPath: executablePath).deletingLastPathComponent().path
+    var cEnv: [UnsafeMutablePointer<CChar>?] = CommandResolver.buildEnv(prependingToPath: execDir).map { strdup($0) }
+    cEnv.append(nil)
+    defer { for p in cEnv where p != nil { free(p) } }
+
+    let rc = posix_spawn(&pid, executablePath, &actions, nil, &cArgs, &cEnv)
     if rc != 0 {
       close(inFds[0]); close(inFds[1]); close(outFds[0]); close(outFds[1])
       if rc == ENOENT {

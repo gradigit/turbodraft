@@ -88,6 +88,7 @@ final class EditorViewController: NSViewController {
     watcherDebouncer.cancel()
     autosaveMaxFlushTask?.cancel()
     watcher?.stop()
+    for url in attachedImages { try? FileManager.default.removeItem(at: url) }
     NotificationCenter.default.removeObserver(self)
   }
 
@@ -307,6 +308,9 @@ final class EditorViewController: NSViewController {
     autosaveMaxFlushTask?.cancel()
     autosaveMaxFlushTask = nil
     autosavePending = info.isDirty
+
+    // Clean up stale image temp files from the previous session.
+    cleanUpAttachedImages()
 
     isApplyingProgrammaticUpdate = true
     textView.string = info.content
@@ -639,6 +643,11 @@ final class EditorViewController: NSViewController {
     }
   }
 
+  private func cleanUpAttachedImages() {
+    for url in attachedImages { try? FileManager.default.removeItem(at: url) }
+    attachedImages.removeAll()
+  }
+
   private func applyAgentConfig() {
     agentRow.isHidden = false
     agentButton.isHidden = !agentConfig.enabled
@@ -739,7 +748,11 @@ extension EditorViewController: NSTextViewDelegate {
     else { return nil }
     let url = URL(fileURLWithPath: NSTemporaryDirectory())
       .appendingPathComponent("turbodraft-img-\(UUID().uuidString).png")
-    try? png.write(to: url)
+    do {
+      try png.write(to: url)
+    } catch {
+      return nil
+    }
     return url
   }
 }
