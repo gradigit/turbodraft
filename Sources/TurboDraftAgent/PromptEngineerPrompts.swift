@@ -182,6 +182,15 @@ DRAFT PROMPT (Markdown):
 """
   }
 
+  public static func effectiveReasoningEffort(model: String, requested: String) -> String {
+    let e = requested.trimmingCharacters(in: .whitespacesAndNewlines)
+    if e.isEmpty { return e }
+    let m = model.lowercased()
+    if m.contains("spark"), e == "minimal" { return "low" }
+    if m.contains("gpt-5.3-codex"), e == "minimal" { return "none" }
+    return e
+  }
+
   public static func compose(prompt: String, instruction: String, profile: Profile = .largeOpt) -> String {
     """
 \(preamble(for: profile))

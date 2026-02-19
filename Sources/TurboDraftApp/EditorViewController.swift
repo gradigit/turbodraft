@@ -43,6 +43,7 @@ final class EditorViewController: NSViewController {
   private var agentAdapter: AgentAdapting?
   private var agentRunning = false
   private var attachedImages: [URL] = []
+  private var imageConversionTask: Task<Void, Never>?
   private var _typingLatencies: [Double] = []
 
   var typingLatencySamples: [Double] { _typingLatencies }
@@ -587,8 +588,6 @@ final class EditorViewController: NSViewController {
 
     let instruction = "" // adapter applies a default instruction when empty
     let basePrompt = textView.string
-    let imagesToPass = attachedImages
-    attachedImages = []
 
     let oldTitle = agentButton.title
     agentButton.title = "Improving..."
@@ -598,6 +597,14 @@ final class EditorViewController: NSViewController {
     banner.isHidden = false
 
     Task {
+      // Wait for any pending background image conversion to finish.
+      if let pending = imageConversionTask {
+        await pending.value
+        imageConversionTask = nil
+      }
+      let imagesToPass = attachedImages
+      attachedImages = []
+
       defer {
         for url in imagesToPass { try? FileManager.default.removeItem(at: url) }
       }
@@ -732,16 +739,30 @@ extension EditorViewController: NSTextViewDelegate {
           !images.isEmpty
     else { return false }
 
-    for image in images {
-      guard let url = saveTempImage(image) else { continue }
-      attachedImages.append(url)
-      let index = attachedImages.count
+    // Insert placeholder text immediately for responsive UI.
+    for i in 0..<images.count {
+      let index = attachedImages.count + i + 1
       textView.insertText("[image \(index)]", replacementRange: textView.selectedRange())
+    }
+
+    // Convert TIFF→PNG in background.
+    let imagesToConvert = images
+    imageConversionTask = Task.detached { [weak self] in
+      var urls: [URL] = []
+      for image in imagesToConvert {
+        if let url = Self.saveTempImageBackground(image) {
+          urls.append(url)
+        }
+      }
+      await MainActor.run {
+        guard let self else { return }
+        self.attachedImages.append(contentsOf: urls)
+      }
     }
     return true
   }
 
-  private func saveTempImage(_ image: NSImage) -> URL? {
+  private nonisolated static func saveTempImageBackground(_ image: NSImage) -> URL? {
     guard let tiff = image.tiffRepresentation,
           let bitmap = NSBitmapImageRep(data: tiff),
           let png = bitmap.representation(using: .png, properties: [:])

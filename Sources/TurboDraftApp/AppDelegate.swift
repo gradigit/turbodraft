@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSWindow.allowsAutomaticWindowTabbing = false
+    cleanUpStaleTempFiles()
 
     if !startHidden {
       let wc = makeWindowController(session: EditorSession())
@@ -726,8 +727,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func sanitizeReasoningForModel(_ model: String) {
-    if model.contains("spark"), cfg.agent.reasoningEffort == .minimal {
-      cfg.agent.reasoningEffort = .low
+    let effort = PromptEngineerPrompts.effectiveReasoningEffort(
+      model: model,
+      requested: cfg.agent.reasoningEffort.rawValue
+    )
+    if effort != cfg.agent.reasoningEffort.rawValue {
+      if let adjusted = TurboDraftConfig.Agent.ReasoningEffort(rawValue: effort) {
+        cfg.agent.reasoningEffort = adjusted
+      }
     }
   }
 
@@ -842,6 +849,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     sender.state = .on
     applyAgentConfigToAllWindows()
     try? cfg.write()
+  }
+
+  private func cleanUpStaleTempFiles() {
+    let tmpDir = NSTemporaryDirectory()
+    let fm = FileManager.default
+    guard let contents = try? fm.contentsOfDirectory(atPath: tmpDir) else { return }
+    let prefixes = ["turbodraft-img-", "turbodraft-codex-"]
+    for name in contents where prefixes.contains(where: { name.hasPrefix($0) }) {
+      try? fm.removeItem(atPath: tmpDir + "/" + name)
+    }
   }
 
   private func nowMs() -> Double {

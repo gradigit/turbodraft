@@ -6,24 +6,24 @@ import os
 public enum CodexCLIAgentError: Error, CustomStringConvertible {
   case commandNotFound
   case spawnFailed(errno: Int32)
-  case nonZeroExit(Int32)
+  case nonZeroExit(Int32, String)
   case outputTooLarge
-  case timeout
+  case timedOut
 
   public var description: String {
     switch self {
     case .commandNotFound: return "Command not found"
     case let .spawnFailed(e): return "Spawn failed errno=\(e)"
-    case let .nonZeroExit(code): return "Non-zero exit: \(code)"
+    case let .nonZeroExit(code, msg): return "Non-zero exit: \(code)\(msg.isEmpty ? "" : " (\(msg))")"
     case .outputTooLarge: return "Output too large"
-    case .timeout: return "Timed out"
+    case .timedOut: return "Timed out"
     }
   }
 }
 
 private let cliAgentLog = Logger(subsystem: "com.turbodraft", category: "CodexCLIAgentAdapter")
 
-public final class CodexCLIAgentAdapter: AgentAdapting, @unchecked Sendable {
+public final class CodexCLIAgentAdapter: AgentAdapting, Sendable {
   private let command: String
   private let args: [String]
   private let timeoutMs: Int
@@ -36,7 +36,7 @@ public final class CodexCLIAgentAdapter: AgentAdapting, @unchecked Sendable {
     self.maxOutputBytes = maxOutputBytes
   }
 
-  public func draft(prompt: String, instruction: String, images: [URL] = []) async throws -> String {
+  public func draft(prompt: String, instruction: String, images: [URL]) async throws -> String {
     if !images.isEmpty {
       cliAgentLog.warning("CodexCLIAgentAdapter does not support images; \(images.count) image(s) will be ignored")
     }
@@ -67,10 +67,12 @@ INSTRUCTION:
       throw CodexCLIAgentError.outputTooLarge
     }
     if result.didTimeout {
-      throw CodexCLIAgentError.timeout
+      throw CodexCLIAgentError.timedOut
     }
     guard result.exitCode == 0 else {
-      throw CodexCLIAgentError.nonZeroExit(result.exitCode)
+      let tail = String(decoding: result.output.suffix(512), as: UTF8.self)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      throw CodexCLIAgentError.nonZeroExit(result.exitCode, tail)
     }
     return String(decoding: result.output, as: UTF8.self)
   }

@@ -26,4 +26,31 @@ final class PromptEngineerPromptsTests: XCTestCase {
     XCTAssertFalse(p1.isEmpty)
     XCTAssertEqual(p1, p2)
   }
+
+  // MARK: - effectiveReasoningEffort
+
+  func testEffortPassthroughForNonSpark() {
+    let result = PromptEngineerPrompts.effectiveReasoningEffort(model: "gpt-5.3", requested: "high")
+    XCTAssertEqual(result, "high")
+  }
+
+  func testSparkMinimalBecomesLow() {
+    let result = PromptEngineerPrompts.effectiveReasoningEffort(model: "gpt-5.3-codex-spark", requested: "minimal")
+    XCTAssertEqual(result, "low")
+  }
+
+  func testCodexMinimalBecomesNone() {
+    let result = PromptEngineerPrompts.effectiveReasoningEffort(model: "gpt-5.3-codex", requested: "minimal")
+    XCTAssertEqual(result, "none")
+  }
+
+  func testEmptyEffortReturnsEmpty() {
+    let result = PromptEngineerPrompts.effectiveReasoningEffort(model: "gpt-5.3-codex-spark", requested: "")
+    XCTAssertEqual(result, "")
+  }
+
+  func testEffortWithWhitespace() {
+    let result = PromptEngineerPrompts.effectiveReasoningEffort(model: "gpt-5.3", requested: "  high  ")
+    XCTAssertEqual(result, "high")
+  }
 }

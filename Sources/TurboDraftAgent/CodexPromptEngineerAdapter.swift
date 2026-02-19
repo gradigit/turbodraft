@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import TurboDraftCore
+import os
 
 public enum CodexPromptEngineerError: Error, CustomStringConvertible {
   case commandNotFound
@@ -38,6 +39,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
   private let reasoningSummary: String
   private let extraArgs: [String]
   private let maxOutputBytes: Int
+  private static let adapterLog = Logger(subsystem: "com.turbodraft", category: "CodexPromptEngineerAdapter")
   private actor State {
     var disableModelOverride = false
 
@@ -73,11 +75,18 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     self.maxOutputBytes = maxOutputBytes
   }
 
-  public func draft(prompt: String, instruction: String, images: [URL] = []) async throws -> String {
+  public func draft(prompt: String, instruction: String, images: [URL]) async throws -> String {
     guard let resolved = CommandResolver.resolveInPATH(command) else {
       throw CodexPromptEngineerError.commandNotFound
     }
+    // Run blocking posix_spawn + poll loop off the cooperative thread pool.
+    let adapter = self
+    return try await Task.detached {
+      try await adapter.draftBlocking(resolved: resolved, prompt: prompt, instruction: instruction, images: images)
+    }.value
+  }
 
+  private func draftBlocking(resolved: String, prompt: String, instruction: String, images: [URL]) async throws -> String {
     let requestedModel: String? = await state.requestedModelOverride(model)
     var modelOverride: String? = requestedModel
     let profile = PromptEngineerPrompts.Profile(rawValue: promptProfile) ?? .largeOpt
@@ -85,7 +94,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     var out1: String
     do {
       let stdinText = PromptEngineerPrompts.compose(prompt: prompt, instruction: instruction, profile: profile)
-      out1 = try runCodex(resolved: resolved, stdin: Data(stdinText.utf8), modelOverride: modelOverride, images: images)
+      out1 = try runCodex(resolved: resolved, stdin: Data(stdinText.utf8), modelOverride: modelOverride, reasoningEffortOverride: nil, images: images)
     } catch let e as CodexPromptEngineerError {
       if case let .nonZeroExit(_, msg) = e,
         msg.contains("model is not supported when using Codex with a ChatGPT account")
@@ -94,7 +103,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
         await state.disableOverride()
         modelOverride = nil
         let stdinText = PromptEngineerPrompts.compose(prompt: prompt, instruction: instruction, profile: profile)
-        out1 = try runCodex(resolved: resolved, stdin: Data(stdinText.utf8), modelOverride: modelOverride, images: images)
+        out1 = try runCodex(resolved: resolved, stdin: Data(stdinText.utf8), modelOverride: modelOverride, reasoningEffortOverride: nil, images: images)
       } else {
         throw e
       }
@@ -107,7 +116,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     }
 
     let usedModel = (modelOverride?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? model
-    let baseEffort = effectiveReasoningEffort(model: usedModel, requested: reasoningEffort)
+    let baseEffort = PromptEngineerPrompts.effectiveReasoningEffort(model: usedModel, requested: reasoningEffort)
     let repairEffort = PromptEngineerOutputGuard.suggestedRepairEffort(baseEffort)
 
     let stdinRepairText = PromptEngineerPrompts.compose(
@@ -130,22 +139,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     return out2
   }
 
-  private func effectiveReasoningEffort(model: String, requested: String) -> String {
-    let e = requested.trimmingCharacters(in: .whitespacesAndNewlines)
-    if e.isEmpty { return e }
-    let m = model.lowercased()
-    if m.contains("spark"), e == "minimal" {
-      // Spark models reject "minimal"; prefer a safe, supported fallback.
-      return "low"
-    }
-    if m.contains("gpt-5.3-codex"), e == "minimal" {
-      // Some Codex backends reject "minimal" and accept "none" instead.
-      return "none"
-    }
-    return e
-  }
-
-  private func runCodex(resolved: String, stdin: Data, modelOverride: String?, reasoningEffortOverride: String? = nil, images: [URL] = []) throws -> String {
+  private func runCodex(resolved: String, stdin: Data, modelOverride: String?, reasoningEffortOverride: String?, images: [URL]) throws -> String {
     let outURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
       .appendingPathComponent("turbodraft-codex-\(UUID().uuidString).txt")
     defer { try? FileManager.default.removeItem(at: outURL) }
@@ -172,10 +166,16 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     args.append(contentsOf: ["-c", "web_search=\(webSearch)"])
     let usedModel = m.isEmpty ? model : m
     let reqEff = reasoningEffortOverride ?? reasoningEffort
-    args.append(contentsOf: ["-c", "model_reasoning_effort=\(effectiveReasoningEffort(model: usedModel, requested: reqEff))"])
+    args.append(contentsOf: ["-c", "model_reasoning_effort=\(PromptEngineerPrompts.effectiveReasoningEffort(model: usedModel, requested: reqEff))"])
     args.append(contentsOf: ["-c", "model_reasoning_summary=\(reasoningSummary)"])
 
+    let maxImageBytes = 20 * 1024 * 1024
     for img in images {
+      if let attrs = try? FileManager.default.attributesOfItem(atPath: img.path),
+         let size = attrs[.size] as? Int, size > maxImageBytes {
+        Self.adapterLog.warning("Skipping oversized image (\(size) bytes > \(maxImageBytes) limit): \(img.path)")
+        continue
+      }
       args.append(contentsOf: ["-i", img.path])
     }
 
@@ -280,12 +280,16 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     let rc = posix_spawn(&pid, executablePath, &actions, nil, &cArgs, &cEnv)
     if rc != 0 {
       close(inFds[0]); close(inFds[1]); close(outFds[0]); close(outFds[1])
+      if rc == ENOENT {
+        throw CodexPromptEngineerError.commandNotFound
+      }
       throw CodexPromptEngineerError.spawnFailed(errno: Int32(rc))
     }
 
     close(inFds[0])
     close(outFds[1])
 
+    // Write prompt to child stdin. writeAll handles partial writes on non-blocking FDs.
     do { try writeAll(fd: inFds[1], data: stdin) } catch { /* ignore */ }
     close(inFds[1])
 

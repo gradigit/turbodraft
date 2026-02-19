@@ -75,7 +75,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     }
   }
 
-  public func draft(prompt: String, instruction: String, images: [URL] = []) async throws -> String {
+  public func draft(prompt: String, instruction: String, images: [URL]) async throws -> String {
     try await withCheckedThrowingContinuation { cont in
       queue.async {
         do {
@@ -87,31 +87,20 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     }
   }
 
-  private func effectiveReasoningEffort(model: String) -> String {
-    let e = reasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
-    if e.isEmpty { return e }
-    let m = model.lowercased()
-    if m.contains("spark"), e == "minimal" {
-      return "low"
-    }
-    if m.contains("gpt-5.3-codex"), e == "minimal" {
-      return "none"
-    }
-    return e
-  }
-
   private func runTurn(
     s: ServerProcess,
     threadId: String,
     prompt: String,
     instruction: String,
     effortOverride: String?,
-    images: [URL] = []
+    images: [URL]
   ) throws -> String {
     let userText = PromptEngineerPrompts.userTurnText(prompt: prompt, instruction: instruction)
     var inputItems: [[String: Any]] = [["type": "text", "text": userText]]
+    let maxImageBytes = 20 * 1024 * 1024  // 20 MB limit
     for imgURL in images {
       if let data = try? Data(contentsOf: imgURL) {
+        if data.count > maxImageBytes { continue }
         inputItems.append([
           "type": "image_url",
           "image_url": ["url": "data:image/png;base64,\(data.base64EncodedString())"],
@@ -211,7 +200,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     throw CodexAppServerPromptEngineerError.timedOut
   }
 
-  private func draftSync(prompt: String, instruction: String, images: [URL] = []) throws -> String {
+  private func draftSync(prompt: String, instruction: String, images: [URL]) throws -> String {
     let s = try ensureServer()
     try s.ensureInitialized(timeoutMs: 10_000)
     let profile = PromptEngineerPrompts.Profile(rawValue: promptProfile) ?? .largeOpt
@@ -237,7 +226,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
       throw CodexAppServerPromptEngineerError.protocolError("thread/start missing thread.id")
     }
 
-    let baseEff = effectiveReasoningEffort(model: model)
+    let baseEff = PromptEngineerPrompts.effectiveReasoningEffort(model: model, requested: reasoningEffort)
     let out1Raw = try runTurn(s: s, threadId: threadId, prompt: prompt, instruction: instruction, effortOverride: baseEff, images: images)
     let out1 = PromptEngineerOutputGuard.normalize(output: out1Raw).trimmingCharacters(in: .whitespacesAndNewlines)
     let check = PromptEngineerOutputGuard.check(draft: prompt, output: out1)
@@ -388,6 +377,9 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
       let rc = posix_spawn(&pid, executablePath, &actions, nil, &cArgs, &cEnv)
       if rc != 0 {
         close(inFds[0]); close(inFds[1]); close(outFds[0]); close(outFds[1]); close(errFds[0]); close(errFds[1])
+        if rc == ENOENT {
+          throw CodexAppServerPromptEngineerError.commandNotFound
+        }
         throw CodexAppServerPromptEngineerError.spawnFailed(errno: Int32(rc))
       }
 

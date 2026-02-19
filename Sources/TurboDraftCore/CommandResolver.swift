@@ -16,7 +16,10 @@ public enum CommandResolver {
       "\(home)/.cargo/bin",
     ]
 
-    // nvm: scan all installed node versions (newest first; first executable wins at resolve time)
+    // Scan all installed node versions newest-first. The first match at resolve time
+    // wins, so this prefers the newest version — matching nvm's default behavior.
+    // Intentionally broad: nvm aliases contain version strings (e.g. "22"), not
+    // directory names, so we must scan all installed versions.
     let nvmVersionsDir = "\(home)/.nvm/versions/node"
     if let versions = try? FileManager.default.contentsOfDirectory(atPath: nvmVersionsDir) {
       for v in versions.sorted().reversed() {

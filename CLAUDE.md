@@ -16,7 +16,7 @@ Do NOT skip this step. Do NOT just run `swift build` — use `scripts/install` s
 
 - `swift build` — debug build
 - `swift build -c release` — release build
-- `swift test` — run all tests (67 tests)
+- `swift test` — run all tests (77 tests)
 - `scripts/install` — build + symlink + restart LaunchAgent
 - `scripts/turbodraft-launch-agent install|uninstall|status|update|restart` — manage LaunchAgent
 - `.build/release/turbodraft bench run --path <file> --warm N --cold N` — editor benchmarks
