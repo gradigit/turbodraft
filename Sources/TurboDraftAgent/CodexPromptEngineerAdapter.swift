@@ -173,8 +173,6 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     let reqEff = reasoningEffortOverride ?? reasoningEffort
     args.append(contentsOf: ["-c", "model_reasoning_effort=\(effectiveReasoningEffort(model: usedModel, requested: reqEff))"])
     args.append(contentsOf: ["-c", "model_reasoning_summary=\(reasoningSummary)"])
-    args.append(contentsOf: ["-c", "mcp_servers.context7.enabled=false"])
-    args.append(contentsOf: ["-c", "mcp_servers.playwright.enabled=false"])
 
     args.append(contentsOf: extraArgs)
     args.append("-")
