@@ -269,10 +269,6 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
         "stdio://",
         "-c",
         "web_search=\(webSearch)",
-        "-c",
-        "mcp_servers.context7.enabled=false",
-        "-c",
-        "mcp_servers.playwright.enabled=false",
       ]
 
       // Allow passing additional `-c/--config` overrides to app-server via agent.args.
