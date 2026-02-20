@@ -128,6 +128,9 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
   public var agent: Agent
   public var theme: ThemeMode
   public var editorMode: EditorMode
+  public var colorTheme: String
+  public var fontSize: Int
+  public var fontFamily: String
 
   public init(
     socketPath: String = TurboDraftPaths.defaultSocketPath(),
@@ -135,7 +138,10 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     autosaveMaxFlushMs: Int = 250,
     agent: Agent = Agent(),
     theme: ThemeMode = .system,
-    editorMode: EditorMode = .reliable
+    editorMode: EditorMode = .reliable,
+    colorTheme: String = "turbodraft-dark",
+    fontSize: Int = 13,
+    fontFamily: String = "system"
   ) {
     self.socketPath = socketPath
     self.autosaveDebounceMs = autosaveDebounceMs
@@ -143,6 +149,9 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     self.agent = agent
     self.theme = theme
     self.editorMode = editorMode
+    self.colorTheme = colorTheme
+    self.fontSize = fontSize
+    self.fontFamily = fontFamily
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -152,6 +161,9 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     case agent
     case theme
     case editorMode
+    case colorTheme
+    case fontSize
+    case fontFamily
   }
 
   public init(from decoder: Decoder) throws {
@@ -162,6 +174,9 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     self.agent = try c.decodeIfPresent(Agent.self, forKey: .agent) ?? Agent()
     self.theme = try c.decodeIfPresent(ThemeMode.self, forKey: .theme) ?? .system
     self.editorMode = try c.decodeIfPresent(EditorMode.self, forKey: .editorMode) ?? .reliable
+    self.colorTheme = try c.decodeIfPresent(String.self, forKey: .colorTheme) ?? "turbodraft-dark"
+    self.fontSize = try c.decodeIfPresent(Int.self, forKey: .fontSize) ?? 13
+    self.fontFamily = try c.decodeIfPresent(String.self, forKey: .fontFamily) ?? "system"
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -172,6 +187,9 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     try c.encode(agent, forKey: .agent)
     try c.encode(theme, forKey: .theme)
     try c.encode(editorMode, forKey: .editorMode)
+    try c.encode(colorTheme, forKey: .colorTheme)
+    try c.encode(fontSize, forKey: .fontSize)
+    try c.encode(fontFamily, forKey: .fontFamily)
   }
 
   public static func load() -> TurboDraftConfig {

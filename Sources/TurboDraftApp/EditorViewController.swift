@@ -24,6 +24,7 @@ final class EditorViewController: NSViewController {
   private let scrollView = NSScrollView()
   private let textView: TurboDraftEditorTextView
   private let styler = MarkdownStyler()
+  private var colorTheme: EditorColorTheme = .defaultTheme
 
   private let autosaveDebouncer = AsyncDebouncer()
   private let styleDebouncer = AsyncDebouncer()
@@ -42,6 +43,7 @@ final class EditorViewController: NSViewController {
   private let saveStatus = NSTextField(labelWithString: "Saved")
   private var agentAdapter: AgentAdapting?
   private var agentRunning = false
+  private var sessionCwd: String?
   private var attachedImages: [URL] = []
   private var imageConversionTask: Task<Void, Never>?
   private var _typingLatencies: [Double] = []
@@ -102,7 +104,7 @@ final class EditorViewController: NSViewController {
     view.wantsLayer = true
 
     banner.isHidden = true
-    banner.applyTheme()
+    banner.applyTheme(with: colorTheme)
     banner.onRestore = { [weak self] in
       Task { @MainActor in
         await self?.restoreFromBanner()
@@ -163,24 +165,17 @@ final class EditorViewController: NSViewController {
     agentRow.orientation = .horizontal
     agentRow.spacing = 10
     agentRow.translatesAutoresizingMaskIntoConstraints = false
+    agentRow.edgeInsets = NSEdgeInsets(top: 0, left: 18, bottom: 6, right: 18)
 
-    let spacer = NSView()
-    spacer.translatesAutoresizingMaskIntoConstraints = false
-
-    saveStatus.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+    saveStatus.font = NSFont.systemFont(ofSize: 11, weight: .regular)
     saveStatus.lineBreakMode = .byTruncatingTail
     saveStatus.alignment = .left
+    saveStatus.translatesAutoresizingMaskIntoConstraints = false
 
     agentButton.target = self
     agentButton.action = #selector(runAgent)
     agentButton.refusesFirstResponder = true
-    agentRow.addArrangedSubview(saveStatus)
-    agentRow.addArrangedSubview(spacer)
     agentRow.addArrangedSubview(agentButton)
-    saveStatus.setContentHuggingPriority(.required, for: .horizontal)
-    saveStatus.setContentCompressionResistancePriority(.required, for: .horizontal)
-    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     agentButton.setContentHuggingPriority(.required, for: .horizontal)
 
     let stack = NSStackView()
@@ -191,6 +186,7 @@ final class EditorViewController: NSViewController {
     stack.addArrangedSubview(scrollView)
     stack.addArrangedSubview(agentRow)
     view.addSubview(stack)
+    view.addSubview(saveStatus)
 
     NSLayoutConstraint.activate([
       stack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -198,6 +194,8 @@ final class EditorViewController: NSViewController {
       stack.topAnchor.constraint(equalTo: view.topAnchor),
       stack.bottomAnchor.constraint(equalTo: view.bottomAnchor),
       banner.heightAnchor.constraint(greaterThanOrEqualToConstant: 0),
+      saveStatus.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor, constant: 22),
+      saveStatus.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: 2),
     ])
 
     applyAgentConfig()
@@ -226,6 +224,22 @@ final class EditorViewController: NSViewController {
     }
   }
 
+  func prepareForIdlePool() {
+    watcher?.stop()
+    watcher = nil
+    textView.undoManager?.removeAllActions()
+    _typingLatencies.removeAll()
+    sessionCwd = nil
+    // Clear styler LRU cache to release attributed string memory.
+    styler.setTheme(colorTheme)
+    // Clear text storage so idle windows don't retain large documents.
+    isApplyingProgrammaticUpdate = true
+    textView.string = ""
+    isApplyingProgrammaticUpdate = false
+    // Clear session history snapshots (they're persisted in RecoveryStore).
+    Task { await session.resetForRecycle() }
+  }
+
   func flushAutosaveNow(reason: String = "forced_flush") async {
     autosaveDebouncer.cancel()
     autosaveMaxFlushTask?.cancel()
@@ -235,10 +249,16 @@ final class EditorViewController: NSViewController {
     // images to the clipboard so the user can Ctrl+V in the invoking CLI.
     if reason == "window_close" || reason == "app_terminate" {
       if let pending = imageConversionTask {
-        await pending.value
+        // Race the conversion against a 2s timeout to prevent quit hang.
+        await withTaskGroup(of: Void.self) { group in
+          group.addTask { await pending.value }
+          group.addTask { try? await Task.sleep(nanoseconds: 2_000_000_000) }
+          _ = await group.next()
+          group.cancelAll()
+        }
         imageConversionTask = nil
       }
-      appendImageReferencesForClose()
+      await appendImageReferencesForClose()
     }
 
     if !autosavePending, let info = await session.currentInfo(), info.isDirty {
@@ -247,15 +267,35 @@ final class EditorViewController: NSViewController {
     await runAutosave(reason: reason)
   }
 
-  /// Appends `@/path/to/image.png` references to the editor text for each
-  /// attached image. Called on window/app close so the invoking CLI model can
-  /// read the images via its Read tool.
-  private func appendImageReferencesForClose() {
+  /// Replaces `[image N]` placeholders with `@/path/to/image.png` references
+  /// inline. Called on window/app close so the invoking CLI model can read the
+  /// images via its Read tool. Images whose placeholders were deleted by the
+  /// user are prepended at the top of the document.
+  private func appendImageReferencesForClose() async {
     guard !attachedImages.isEmpty else { return }
 
-    let suffix = "\n" + attachedImages.map { "@\($0.path)" }.joined(separator: "\n")
-    textView.insertText(suffix, replacementRange: NSRange(location: textView.string.utf16.count, length: 0))
-    Task { await session.updateBufferContent(textView.string) }
+    var text = textView.string
+    var orphaned: [URL] = []
+
+    for (i, url) in attachedImages.enumerated() {
+      let placeholder = "[image \(i + 1)]"
+      if let range = text.range(of: placeholder) {
+        text.replaceSubrange(range, with: "@\(url.path)")
+      } else {
+        orphaned.append(url)
+      }
+    }
+
+    // Prepend any orphaned image references at the top.
+    if !orphaned.isEmpty {
+      let prefix = orphaned.map { "@\($0.path)" }.joined(separator: "\n") + "\n"
+      text = prefix + text
+    }
+
+    isApplyingProgrammaticUpdate = true
+    textView.string = text
+    isApplyingProgrammaticUpdate = false
+    await session.updateBufferContent(text)
     autosavePending = true
 
     // Clear so deinit doesn't delete the files — the CLI model needs them.
@@ -263,18 +303,39 @@ final class EditorViewController: NSViewController {
   }
 
   private func applyTheme() {
-    view.layer?.backgroundColor = EditorTheme.editorBackground.cgColor
+    let t = colorTheme
+    view.layer?.backgroundColor = t.background.cgColor
     #if TURBODRAFT_USE_CODEEDIT_TEXTVIEW
     textView.wantsLayer = true
-    textView.layer?.backgroundColor = EditorTheme.editorBackground.cgColor
-    textView.textColor = EditorTheme.primaryText
+    textView.layer?.backgroundColor = t.background.cgColor
+    textView.textColor = t.foreground
     #else
-    textView.backgroundColor = EditorTheme.editorBackground
-    textView.textColor = EditorTheme.primaryText
-    textView.insertionPointColor = EditorTheme.caret
+    textView.backgroundColor = t.background
+    textView.textColor = t.foreground
+    textView.insertionPointColor = t.caret
     #endif
-    banner.applyTheme()
+    banner.applyTheme(with: t)
     setSaveState(saveState)
+  }
+
+  func setColorTheme(_ theme: EditorColorTheme) {
+    colorTheme = theme
+    styler.setTheme(theme)
+    applyTheme()
+    let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
+    if fullRange.length > 0 {
+      applyStyling(forChangedRange: fullRange)
+    }
+  }
+
+  func setFont(family: String, size: Int) {
+    let sz = CGFloat(max(9, min(size, 72)))
+    styler.rebuildFonts(family: family, size: sz)
+    textView.font = styler.baseFont
+    let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
+    if fullRange.length > 0 {
+      applyStyling(forChangedRange: fullRange)
+    }
   }
 
   func focusEditor() {
@@ -337,6 +398,7 @@ final class EditorViewController: NSViewController {
     autosaveMaxFlushTask?.cancel()
     autosaveMaxFlushTask = nil
     autosavePending = info.isDirty
+    sessionCwd = info.cwd
 
     // Clean up stale image temp files from the previous session.
     cleanUpAttachedImages()
@@ -447,9 +509,10 @@ final class EditorViewController: NSViewController {
       if let updated = (note.userInfo?["NSUpdatedRange"] as? NSValue)?.rangeValue {
         return updated
       }
-      // Fallback: style around insertion point instead of re-styling whole document.
-      let cursor = max(0, min((content as NSString).length, textView.selectedRange().location))
-      return NSRange(location: cursor, length: 0)
+      // editedRange is only valid during processEditing; by the time
+      // didChangeNotification fires it may already be NSNotFound.
+      // Fall back to the full document so pastes always get styled.
+      return NSRange(location: 0, length: (content as NSString).length)
     }()
     let styleRange = stylingRange(forChangedRange: changedRange, in: content as NSString)
     styleDebouncer.schedule(delayMs: 10) { [weak self] in
@@ -540,15 +603,19 @@ final class EditorViewController: NSViewController {
     defer { isApplyingProgrammaticUpdate = false }
 
     let fullText = textView.string as NSString
-    let lineRange = fullText.lineRange(for: range)
+    // Clamp range to current text length (range may be stale from debounce).
+    let safeRange = NSIntersectionRange(range, NSRange(location: 0, length: fullText.length))
+    let lineRange = fullText.lineRange(for: safeRange)
     let editorFont: NSFont
     let editorTextColor: NSColor
     #if TURBODRAFT_USE_CODEEDIT_TEXTVIEW
     editorFont = textView.font
-    editorTextColor = textView.textColor
+    editorTextColor = colorTheme.foreground
     #else
     editorFont = textView.font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-    editorTextColor = textView.textColor ?? EditorTheme.primaryText
+    // Don't read textView.textColor — NSTextView derives it from the text
+    // storage, so our own highlight attributes (marker, heading) corrupt it.
+    editorTextColor = colorTheme.foreground
     #endif
     let baseAttrs: [NSAttributedString.Key: Any] = [
       .font: editorFont,
@@ -567,6 +634,9 @@ final class EditorViewController: NSViewController {
 
     storage.endEditing()
     textView.undoManager?.enableUndoRegistration()
+
+    // Reset typingAttributes so stale styles don't bleed into new keystrokes.
+    textView.typingAttributes = baseAttrs
   }
 
   private func moveCursor(toLine line: Int, column: Int) {
@@ -638,7 +708,7 @@ final class EditorViewController: NSViewController {
       }
       do {
         await flushAutosaveNow(reason: "agent_preflight")
-        let draft = try await adapter.draft(prompt: basePrompt, instruction: instruction, images: imagesToPass)
+        let draft = try await adapter.draft(prompt: basePrompt, instruction: instruction, images: imagesToPass, cwd: self.sessionCwd)
 
         let currentText = await MainActor.run { self.textView.string }
         await session.updateBufferContent(currentText)
@@ -694,13 +764,13 @@ final class EditorViewController: NSViewController {
     switch state {
     case .saved:
       saveStatus.stringValue = "Saved"
-      saveStatus.textColor = NSColor.systemGreen
+      saveStatus.textColor = colorTheme.secondaryText.withAlphaComponent(0.7)
     case .unsaved:
-      saveStatus.stringValue = "Unsaved"
-      saveStatus.textColor = NSColor.systemOrange
+      saveStatus.stringValue = "Edited"
+      saveStatus.textColor = colorTheme.secondaryText
     case .saving:
       saveStatus.stringValue = "Saving..."
-      saveStatus.textColor = EditorTheme.secondaryText
+      saveStatus.textColor = colorTheme.secondaryText.withAlphaComponent(0.7)
     case .error:
       saveStatus.stringValue = "Save Error"
       saveStatus.textColor = NSColor.systemRed
@@ -835,7 +905,7 @@ final class EditorTextView: NSTextView {
   /// Also override paste: for programmatic paste calls and Edit menu.
   override func paste(_ sender: Any?) {
     if handleImagePaste() { return }
-    super.paste(sender)
+    pasteAsPlainText(sender)
   }
 
   private func handleImagePaste() -> Bool {
@@ -937,12 +1007,13 @@ final class BannerView: NSView {
 
   override func viewDidChangeEffectiveAppearance() {
     super.viewDidChangeEffectiveAppearance()
-    applyTheme()
+    applyTheme(with: nil)
   }
 
-  func applyTheme() {
-    layer?.backgroundColor = EditorTheme.bannerBackground.cgColor
-    label.textColor = EditorTheme.secondaryText
+  func applyTheme(with theme: EditorColorTheme? = nil) {
+    let t = theme ?? .defaultTheme
+    layer?.backgroundColor = t.banner.cgColor
+    label.textColor = t.secondaryText
   }
 
   func set(message: String?, snapshotId: String?) {

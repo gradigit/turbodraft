@@ -94,9 +94,9 @@ def main():
     args = ap.parse_args()
 
     repo = pathlib.Path(__file__).resolve().parents[1]
-    release_turbodraft = repo / ".build/release/turbodraft"
+    release_turbodraft = repo / ".build/release/turbodraft-bench"
     release_app = repo / ".build/release/turbodraft-app"
-    release_open = repo / ".build/release/turbodraft-open"
+    release_open = repo / ".build/release/turbodraft"
     fixture = repo / args.fixture
 
     stamp = now_ts()
@@ -104,8 +104,8 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
-    env["EDITOR"] = str(repo / "scripts/turbodraft-editor")
-    env["VISUAL"] = str(repo / "scripts/turbodraft-editor")
+    env["EDITOR"] = str(release_open)
+    env["VISUAL"] = str(release_open)
 
     meta = {
         "timestamp": stamp,
@@ -245,12 +245,12 @@ def main():
     md.append("")
     md.append(f"- warm `turbodraft open` p50: {warm_turbodraft.get('p50_ms')}")
     md.append(f"- warm `turbodraft open` p95: {warm_turbodraft.get('p95_ms')}")
-    md.append(f"- warm `turbodraft-open` p50: {warm_open.get('p50_ms')}")
-    md.append(f"- warm `turbodraft-open` p95: {warm_open.get('p95_ms')}")
+    md.append(f"- warm `turbodraft` p50: {warm_open.get('p50_ms')}")
+    md.append(f"- warm `turbodraft` p95: {warm_open.get('p95_ms')}")
     md.append(f"- cold `turbodraft open` p50: {cold_turbodraft.get('p50_ms')}")
     md.append(f"- cold `turbodraft open` p95: {cold_turbodraft.get('p95_ms')}")
-    md.append(f"- cold `turbodraft-open` p50: {cold_open.get('p50_ms')}")
-    md.append(f"- cold `turbodraft-open` p95: {cold_open.get('p95_ms')}")
+    md.append(f"- cold `turbodraft` p50: {cold_open.get('p50_ms')}")
+    md.append(f"- cold `turbodraft` p95: {cold_open.get('p95_ms')}")
     md.append("")
     if isinstance(bench_metrics, dict) and bench_metrics.get("metrics"):
         md.append("## turbodraft bench run metrics")

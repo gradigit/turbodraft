@@ -82,11 +82,21 @@ final class MarkdownHighlighterTests: XCTestCase {
     XCTAssertTrue(hs.contains { $0.kind == .taskBox(checked: true) && (text as NSString).substring(with: $0.range) == "[x]" })
   }
 
-  func testTableSyntaxHasNoSpecialHighlighting() {
+  func testTableSyntaxHighlightsPipesSeparatorAndHeaders() {
     let text = "| col a | col b |\n| --- | --- |\n| 1 | 2 |"
     let range = NSRange(location: 0, length: (text as NSString).length)
     let hs = MarkdownHighlighter.highlights(in: text, range: range)
-    XCTAssertTrue(hs.isEmpty)
+    let pipes = hs.filter { $0.kind == .tablePipe }
+    let seps = hs.filter { $0.kind == .tableSeparator }
+    let headers = hs.filter { $0.kind == .tableHeaderText }
+    // Header row: 3 pipes, body row: 3 pipes = 6 total pipe highlights.
+    XCTAssertEqual(pipes.count, 6)
+    // Separator row matched as a single .tableSeparator span.
+    XCTAssertEqual(seps.count, 1)
+    // Header cells: "col a" and "col b".
+    XCTAssertEqual(headers.count, 2)
+    let headerTexts = headers.map { (text as NSString).substring(with: $0.range) }
+    XCTAssertEqual(headerTexts, ["col a", "col b"])
   }
 
   func testBareURLTrimsSentencePunctuation() {

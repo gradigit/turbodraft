@@ -7,7 +7,7 @@ import TurboDraftCore
 @MainActor
 final class EditorWindowController: NSWindowController, NSWindowDelegate {
   private static let frameAutosaveName = NSWindow.FrameAutosaveName("TurboDraftMainWindowFrame")
-  private let session: EditorSession
+  let session: EditorSession
   private var config: TurboDraftConfig
   private let editorVC: EditorViewController
   private var didBecomeActiveObserver: NSObjectProtocol?
@@ -51,6 +51,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     ) { [weak self] _ in
       Task { @MainActor [weak self] in
         guard let self else { return }
+        guard self.window?.isVisible == true else { return }
         self.editorVC.focusEditor()
       }
     }
@@ -64,13 +65,31 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
   }
 
-  func windowWillClose(_ notification: Notification) {
+  func windowShouldClose(_ sender: NSWindow) -> Bool {
     Task { @MainActor [weak self] in
       guard let self else { return }
-      await self.editorVC.flushAutosaveNow(reason: "window_close")
-      await self.session.markClosed()
+      // Race flush against a 3s timeout to prevent close hang.
+      await withTaskGroup(of: Void.self) { group in
+        group.addTask { @MainActor [weak self] in
+          guard let self else { return }
+          await self.editorVC.flushAutosaveNow(reason: "window_close")
+          await self.session.markClosed()
+        }
+        group.addTask {
+          try? await Task.sleep(nanoseconds: 3_000_000_000)
+        }
+        _ = await group.next()
+        group.cancelAll()
+      }
+      self.editorVC.prepareForIdlePool()
+      self.window?.orderOut(nil)
       self.onClosed?()
     }
+    return false
+  }
+
+  func windowWillClose(_ notification: Notification) {
+    // No-op: recycling handled in windowShouldClose
   }
 
   func windowDidBecomeKey(_ notification: Notification) {
@@ -93,6 +112,22 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
   func setEditorMode(_ mode: TurboDraftConfig.EditorMode) {
     config.editorMode = mode
+  }
+
+  func setColorTheme(_ theme: EditorColorTheme) {
+    editorVC.setColorTheme(theme)
+    guard let window else { return }
+    if theme.id == "default" {
+      // Default theme follows the ThemeMode setting — don't override.
+    } else if theme.isDark {
+      window.appearance = NSAppearance(named: .darkAqua)
+    } else {
+      window.appearance = NSAppearance(named: .aqua)
+    }
+  }
+
+  func setFont(family: String, size: Int) {
+    editorVC.setFont(family: family, size: size)
   }
 
   func runPromptEngineer() {
@@ -119,10 +154,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     await editorVC.flushAutosaveNow(reason: reason)
   }
 
-  @discardableResult
-  func openPath(_ path: String, line: Int?, column: Int?) async throws -> SessionInfo {
-    let url = URL(fileURLWithPath: path)
-    let info = try await session.open(fileURL: url)
+  func presentSession(_ info: SessionInfo, line: Int?, column: Int?) async {
     editorVC.applySessionInfo(info, moveCursorLine: line, column: column)
     window?.orderFrontRegardless()
     window?.makeKeyAndOrderFront(nil)
@@ -132,6 +164,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     if config.editorMode == .reliable {
       _ = await editorVC.waitUntilEditorReady(timeoutMs: 350)
     }
+  }
+
+  @discardableResult
+  func openPath(_ path: String, line: Int?, column: Int?) async throws -> SessionInfo {
+    let url = URL(fileURLWithPath: path)
+    let info = try await session.open(fileURL: url)
+    await presentSession(info, line: line, column: column)
     return info
   }
 

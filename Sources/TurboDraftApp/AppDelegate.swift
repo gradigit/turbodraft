@@ -9,6 +9,7 @@ import TurboDraftTransport
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private var allWindowControllers: [EditorWindowController] = []
+  private var idleWindowControllers: [EditorWindowController] = []
   private var sessionsById: [String: EditorSession] = [:]
   private var windowsById: [String: EditorWindowController] = [:]
   private var sessionPathById: [String: String] = [:]
@@ -18,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var stdioServer: JSONRPCServerConnection?
   private var cfg = TurboDraftConfig.load()
 
+  private var colorThemes: [EditorColorTheme] = []
   private var agentEnabledMenuItem: NSMenuItem?
   private let modelPresets: [String] = [
     "gpt-5.3-codex-spark",
@@ -33,11 +35,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSWindow.allowsAutomaticWindowTabbing = false
     cleanUpStaleTempFiles()
+    colorThemes = EditorColorTheme.allThemes()
 
     if !startHidden {
-      let wc = makeWindowController(session: EditorSession())
+      let wc = makeWindowController(session: EditorSession(), showInDock: true)
       wc.showWindow(nil)
       focusedWindowController = wc
+    } else {
+      // Pre-create one idle window so first Ctrl+G is instant.
+      let wc = makeWindowController(session: EditorSession(), showInDock: false)
+      idleWindowControllers.append(wc)
     }
     installMenu()
 
@@ -91,7 +98,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       wc.showWindow(nil)
       wc.window?.makeKeyAndOrderFront(nil)
     } else {
-      let wc = makeWindowController(session: EditorSession())
+      if NSApp.activationPolicy() == .accessory {
+        NSApp.setActivationPolicy(.regular)
+      }
+      let wc = dequeueIdleWindowController()
       wc.showWindow(nil)
       focusedWindowController = wc
     }
@@ -104,8 +114,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return
     }
     Task { @MainActor in
-      let editorSession = EditorSession()
-      let wc = makeWindowController(session: editorSession)
+      let wc = dequeueIdleWindowController()
+      let editorSession = wc.session
+      if NSApp.activationPolicy() == .accessory {
+        NSApp.setActivationPolicy(.regular)
+      }
       do {
         let info = try await wc.openPath(first, line: nil, column: nil)
         registerSession(
@@ -123,6 +136,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   @objc private func gracefulQuit(_ sender: Any?) {
+    if startHidden {
+      // LaunchAgent mode: close all windows → idle pool, stay alive for instant reopen.
+      for wc in allWindowControllers where !idleWindowControllers.contains(where: { $0 === wc }) {
+        wc.window?.performClose(nil)
+      }
+    } else {
+      Task { @MainActor in
+        await performGracefulShutdown()
+        NSApplication.shared.terminate(nil)
+      }
+    }
+  }
+
+  @objc private func forceQuit(_ sender: Any?) {
     Task { @MainActor in
       await performGracefulShutdown()
       NSApplication.shared.terminate(nil)
@@ -130,11 +157,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func performGracefulShutdown() async {
-    for wc in allWindowControllers {
-      await wc.flushAutosaveNow(reason: "app_terminate")
-    }
-    for session in sessionsById.values {
-      await session.markClosed()
+    // Race all flushes against a 5s overall timeout to prevent quit hang.
+    await withTaskGroup(of: Void.self) { group in
+      group.addTask { @MainActor in
+        for wc in self.allWindowControllers {
+          await wc.flushAutosaveNow(reason: "app_terminate")
+        }
+        for session in self.sessionsById.values {
+          await session.markClosed()
+        }
+      }
+      group.addTask {
+        try? await Task.sleep(nanoseconds: 5_000_000_000)
+      }
+      _ = await group.next()
+      group.cancelAll()
     }
   }
 
@@ -157,10 +194,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  private func makeWindowController(session: EditorSession) -> EditorWindowController {
-    // If launched as an accessory app (--start-hidden), promote to regular so
-    // the window appears in the Dock and System Events reports frontmost correctly.
-    if NSApp.activationPolicy() == .accessory {
+  private func makeWindowController(session: EditorSession, showInDock: Bool = true) -> EditorWindowController {
+    if showInDock && NSApp.activationPolicy() == .accessory {
       NSApp.setActivationPolicy(.regular)
     }
     let wc = EditorWindowController(session: session, config: cfg)
@@ -175,22 +210,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     wc.setAgentConfig(cfg.agent)
     wc.setThemeMode(cfg.theme)
     wc.setEditorMode(cfg.editorMode)
+    let resolvedColorTheme = EditorColorTheme.resolve(id: cfg.colorTheme, from: colorThemes)
+    wc.setColorTheme(resolvedColorTheme)
+    wc.setFont(family: cfg.fontFamily, size: cfg.fontSize)
     allWindowControllers.append(wc)
     return wc
   }
 
+  private func dequeueIdleWindowController() -> EditorWindowController {
+    if let wc = idleWindowControllers.popLast() {
+      return wc
+    }
+    return makeWindowController(session: EditorSession(), showInDock: false)
+  }
+
   private func handleWindowClosed(_ wc: EditorWindowController) {
-    allWindowControllers.removeAll { $0 === wc }
     let removedSessionIds = windowsById.compactMap { key, value in
       value === wc ? key : nil
     }
     for sessionId in removedSessionIds {
       windowsById.removeValue(forKey: sessionId)
       sessionPathById.removeValue(forKey: sessionId)
-      // Keep sessionsById alive until session.wait completes and explicitly removes it.
     }
     if focusedWindowController === wc {
       focusedWindowController = nil
+    }
+
+    // Recycle to idle pool (keep max 3 idle windows)
+    if idleWindowControllers.count < 3 {
+      idleWindowControllers.append(wc)
+    } else {
+      allWindowControllers.removeAll { $0 === wc }
+    }
+
+    // If no visible windows remain, handle accessory mode and terminate-on-last-close
+    let visibleCount = allWindowControllers.count - idleWindowControllers.count
+    if visibleCount <= 0 {
+      if terminateOnLastClose {
+        Task { @MainActor in
+          await self.performGracefulShutdown()
+          NSApplication.shared.terminate(nil)
+        }
+      } else if startHidden {
+        NSApp.setActivationPolicy(.accessory)
+      }
     }
   }
 
@@ -227,7 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if let focusedWindowController {
       return focusedWindowController
     }
-    return allWindowControllers.last
+    return allWindowControllers.last(where: { wc in !idleWindowControllers.contains(where: { $0 === wc }) })
   }
 
   private func applyAgentConfigToAllWindows() {
@@ -317,10 +380,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return ok(out)
           }
         } else {
-          editorSession = EditorSession()
-          wc = makeWindowController(session: editorSession)
+          wc = dequeueIdleWindowController()
+          editorSession = wc.session
         }
-        let info = try await wc.openPath(params.path, line: params.line, column: params.column)
+        if NSApp.activationPolicy() == .accessory {
+          NSApp.setActivationPolicy(.regular)
+        }
+        let url = URL(fileURLWithPath: params.path)
+        let info = try await editorSession.open(fileURL: url, cwd: params.cwd)
         retireSessionMappings(for: editorSession)
         registerSession(
           id: info.sessionId,
@@ -328,6 +395,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           session: editorSession,
           window: wc
         )
+
+        // Present window asynchronously — doesn't block RPC response
+        Task { @MainActor in
+          await wc.presentSession(info, line: params.line, column: params.column)
+        }
 
         let openMs = nowMs() - t0
         appendLatencyRecord([
@@ -503,6 +575,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     appMenu.addItem(NSMenuItem(title: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: ""))
     appMenu.addItem(.separator())
     appMenu.addItem(NSMenuItem(title: "Quit \(appName)", action: #selector(gracefulQuit(_:)), keyEquivalent: "q"))
+    if startHidden {
+      let forceQuitItem = NSMenuItem(title: "Force Quit \(appName)", action: #selector(forceQuit(_:)), keyEquivalent: "q")
+      forceQuitItem.keyEquivalentModifierMask = [.command, .option]
+      appMenu.addItem(forceQuitItem)
+    }
 
     // File menu
     let fileItem = NSMenuItem()
@@ -565,6 +642,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     addModeItem(title: "Ultra Fast", value: .ultraFast)
     modeParent.submenu = modeMenu
     viewMenu.addItem(modeParent)
+
+    let colorThemeParent = NSMenuItem(title: "Color Theme", action: nil, keyEquivalent: "")
+    let colorThemeMenu = NSMenu(title: "Color Theme")
+    let resolvedId = cfg.colorTheme
+    let builtIn = EditorColorTheme.builtInThemes
+    let custom = colorThemes.filter { ct in !builtIn.contains(where: { $0.id == ct.id }) }
+    for ct in builtIn {
+      let item = NSMenuItem(title: ct.displayName, action: #selector(selectColorTheme(_:)), keyEquivalent: "")
+      item.target = self
+      item.representedObject = ct.id
+      item.state = (ct.id == resolvedId) ? .on : .off
+      item.tag = 903
+      colorThemeMenu.addItem(item)
+    }
+    if !custom.isEmpty {
+      colorThemeMenu.addItem(.separator())
+      for ct in custom {
+        let item = NSMenuItem(title: ct.displayName, action: #selector(selectColorTheme(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = ct.id
+        item.state = (ct.id == resolvedId) ? .on : .off
+        item.tag = 903
+        colorThemeMenu.addItem(item)
+      }
+    }
+    colorThemeParent.submenu = colorThemeMenu
+    viewMenu.addItem(colorThemeParent)
+
+    viewMenu.addItem(.separator())
+
+    let fontSizeParent = NSMenuItem(title: "Font Size", action: nil, keyEquivalent: "")
+    let fontSizeMenu = NSMenu(title: "Font Size")
+    for sz in [11, 12, 13, 14, 15, 16, 18, 20] {
+      let item = NSMenuItem(title: "\(sz)", action: #selector(selectFontSize(_:)), keyEquivalent: "")
+      item.target = self
+      item.representedObject = sz
+      item.state = (cfg.fontSize == sz) ? .on : .off
+      item.tag = 904
+      fontSizeMenu.addItem(item)
+    }
+    fontSizeParent.submenu = fontSizeMenu
+    viewMenu.addItem(fontSizeParent)
+
+    let fontFamilyParent = NSMenuItem(title: "Font Family", action: nil, keyEquivalent: "")
+    let fontFamilyMenu = NSMenu(title: "Font Family")
+    let fontPresets: [(title: String, family: String)] = [
+      ("System Mono", "system"),
+      ("Menlo", "Menlo"),
+      ("SF Mono", "SF Mono"),
+      ("JetBrains Mono", "JetBrains Mono NL"),
+      ("Fira Code", "Fira Code"),
+    ]
+    for preset in fontPresets {
+      let item = NSMenuItem(title: preset.title, action: #selector(selectFontFamily(_:)), keyEquivalent: "")
+      item.target = self
+      item.representedObject = preset.family
+      item.state = (cfg.fontFamily == preset.family) ? .on : .off
+      item.tag = 905
+      fontFamilyMenu.addItem(item)
+    }
+    fontFamilyParent.submenu = fontFamilyMenu
+    viewMenu.addItem(fontFamilyParent)
 
     // Agent menu
     let agentItem = NSMenuItem()
@@ -794,6 +933,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     sender.state = .on
     applyEditorModeToAllWindows()
     try? cfg.write()
+  }
+
+  @MainActor @objc private func selectColorTheme(_ sender: NSMenuItem) {
+    guard let themeId = sender.representedObject as? String else { return }
+    cfg.colorTheme = themeId
+    sender.menu?.items.filter { $0.tag == 903 }.forEach { $0.state = .off }
+    sender.state = .on
+    applyColorThemeToAllWindows()
+    try? cfg.write()
+  }
+
+  private func applyColorThemeToAllWindows() {
+    let resolved = EditorColorTheme.resolve(id: cfg.colorTheme, from: colorThemes)
+    for wc in allWindowControllers {
+      wc.setColorTheme(resolved)
+    }
+  }
+
+  @MainActor @objc private func selectFontSize(_ sender: NSMenuItem) {
+    guard let sz = sender.representedObject as? Int else { return }
+    cfg.fontSize = sz
+    sender.menu?.items.filter { $0.tag == 904 }.forEach { $0.state = .off }
+    sender.state = .on
+    applyFontToAllWindows()
+    try? cfg.write()
+  }
+
+  @MainActor @objc private func selectFontFamily(_ sender: NSMenuItem) {
+    guard let family = sender.representedObject as? String else { return }
+    cfg.fontFamily = family
+    sender.menu?.items.filter { $0.tag == 905 }.forEach { $0.state = .off }
+    sender.state = .on
+    applyFontToAllWindows()
+    try? cfg.write()
+  }
+
+  private func applyFontToAllWindows() {
+    for wc in allWindowControllers {
+      wc.setFont(family: cfg.fontFamily, size: cfg.fontSize)
+    }
   }
 
   @MainActor @objc private func selectPromptProfile(_ sender: NSMenuItem) {

@@ -75,18 +75,18 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     self.maxOutputBytes = maxOutputBytes
   }
 
-  public func draft(prompt: String, instruction: String, images: [URL]) async throws -> String {
+  public func draft(prompt: String, instruction: String, images: [URL], cwd: String?) async throws -> String {
     guard let resolved = CommandResolver.resolveInPATH(command) else {
       throw CodexPromptEngineerError.commandNotFound
     }
     // Run blocking posix_spawn + poll loop off the cooperative thread pool.
     let adapter = self
     return try await Task.detached {
-      try await adapter.draftBlocking(resolved: resolved, prompt: prompt, instruction: instruction, images: images)
+      try await adapter.draftBlocking(resolved: resolved, prompt: prompt, instruction: instruction, images: images, cwd: cwd)
     }.value
   }
 
-  private func draftBlocking(resolved: String, prompt: String, instruction: String, images: [URL]) async throws -> String {
+  private func draftBlocking(resolved: String, prompt: String, instruction: String, images: [URL], cwd: String?) async throws -> String {
     let requestedModel: String? = await state.requestedModelOverride(model)
     var modelOverride: String? = requestedModel
     let profile = PromptEngineerPrompts.Profile(rawValue: promptProfile) ?? .largeOpt
@@ -94,7 +94,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     var out1: String
     do {
       let stdinText = PromptEngineerPrompts.compose(prompt: prompt, instruction: instruction, profile: profile)
-      out1 = try runCodex(resolved: resolved, stdin: Data(stdinText.utf8), modelOverride: modelOverride, reasoningEffortOverride: nil, images: images)
+      out1 = try runCodex(resolved: resolved, stdin: Data(stdinText.utf8), modelOverride: modelOverride, reasoningEffortOverride: nil, images: images, cwd: cwd)
     } catch let e as CodexPromptEngineerError {
       if case let .nonZeroExit(_, msg) = e,
         msg.contains("model is not supported when using Codex with a ChatGPT account")
@@ -103,7 +103,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
         await state.disableOverride()
         modelOverride = nil
         let stdinText = PromptEngineerPrompts.compose(prompt: prompt, instruction: instruction, profile: profile)
-        out1 = try runCodex(resolved: resolved, stdin: Data(stdinText.utf8), modelOverride: modelOverride, reasoningEffortOverride: nil, images: images)
+        out1 = try runCodex(resolved: resolved, stdin: Data(stdinText.utf8), modelOverride: modelOverride, reasoningEffortOverride: nil, images: images, cwd: cwd)
       } else {
         throw e
       }
@@ -129,7 +129,8 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
       stdin: Data(stdinRepairText.utf8),
       modelOverride: modelOverride,
       reasoningEffortOverride: repairEffort.isEmpty ? nil : repairEffort,
-      images: []
+      images: [],
+      cwd: cwd
     )
     let out2 = PromptEngineerOutputGuard.normalize(output: out2Raw).trimmingCharacters(in: .whitespacesAndNewlines)
     let check2 = PromptEngineerOutputGuard.check(draft: prompt, output: out2)
@@ -139,7 +140,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     return out2
   }
 
-  private func runCodex(resolved: String, stdin: Data, modelOverride: String?, reasoningEffortOverride: String?, images: [URL]) throws -> String {
+  private func runCodex(resolved: String, stdin: Data, modelOverride: String?, reasoningEffortOverride: String?, images: [URL], cwd: String?) throws -> String {
     let outURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
       .appendingPathComponent("turbodraft-codex-\(UUID().uuidString).txt")
     defer { try? FileManager.default.removeItem(at: outURL) }
@@ -182,7 +183,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     args.append(contentsOf: extraArgs)
     args.append("-")
 
-    let res = try spawnAndCapture(executablePath: resolved, arguments: args, stdin: stdin, timeoutMs: timeoutMs, maxOutputBytes: 256 * 1024)
+    let res = try spawnAndCapture(executablePath: resolved, arguments: args, stdin: stdin, timeoutMs: timeoutMs, maxOutputBytes: 256 * 1024, cwd: cwd)
     if res.didTimeout {
       throw CodexPromptEngineerError.timedOut
     }
@@ -236,7 +237,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     var didTimeout: Bool
   }
 
-  private func spawnAndCapture(executablePath: String, arguments: [String], stdin: Data, timeoutMs: Int, maxOutputBytes: Int) throws -> SpawnResult {
+  private func spawnAndCapture(executablePath: String, arguments: [String], stdin: Data, timeoutMs: Int, maxOutputBytes: Int, cwd: String? = nil) throws -> SpawnResult {
     var inFds: [Int32] = [0, 0]
     guard pipe(&inFds) == 0 else { throw CodexPromptEngineerError.spawnFailed(errno: errno) }
     var outFds: [Int32] = [0, 0]
@@ -260,6 +261,10 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     posix_spawn_file_actions_addclose(&actions, outFds[0])
     posix_spawn_file_actions_addclose(&actions, inFds[0])
     posix_spawn_file_actions_addclose(&actions, outFds[1])
+
+    if let cwd, !cwd.isEmpty {
+      posix_spawn_file_actions_addchdir_np(&actions, cwd)
+    }
 
     var pid: pid_t = 0
     let argv = [executablePath] + arguments

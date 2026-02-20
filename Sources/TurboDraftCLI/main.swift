@@ -820,7 +820,7 @@ Commands:
     let baseArgs = ["--path", path, "--line", "1", "--column", "1", "--timeout-ms", "60000"]
     let cfg = TurboDraftConfig.load()
     let socketPath = cfg.socketPath
-    let argv0 = args.first ?? "turbodraft"
+    let argv0 = args.first ?? "turbodraft-bench"
 
     do {
       let code = try posixSpawnAndWait(command: argv0, arguments: ["open"] + baseArgs)
@@ -831,14 +831,14 @@ Commands:
       // Fall through.
     }
 
-    if let exe = siblingExecutablePath(named: "turbodraft-open") {
+    if let exe = siblingExecutablePath(named: "turbodraft") {
       if let code = try? posixSpawnAndWait(command: exe, arguments: baseArgs), code == 0 {
         return 0
       }
     }
 
     do {
-      let code = try posixSpawnAndWait(command: "turbodraft-open", arguments: baseArgs)
+      let code = try posixSpawnAndWait(command: "turbodraft", arguments: baseArgs)
       if code == 0 {
         return 0
       }
@@ -984,7 +984,7 @@ Commands:
   }
 
   private func appLaunchCommand() -> (URL, [String]) {
-    let argv0 = args.first ?? "turbodraft"
+    let argv0 = args.first ?? "turbodraft-bench"
     if argv0.contains("/") {
       let dir = URL(fileURLWithPath: argv0).deletingLastPathComponent()
       let candidate = dir.appendingPathComponent("turbodraft-app")

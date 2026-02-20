@@ -30,11 +30,17 @@ link() {
 echo "Linking binaries to $bin_dir:"
 link turbodraft
 link turbodraft-app
-link turbodraft-open
+link turbodraft-bench
 
-# Link the editor shim script too.
-ln -sf "$repo_root/scripts/turbodraft-editor" "$bin_dir/turbodraft-editor"
-echo "  $bin_dir/turbodraft-editor -> $repo_root/scripts/turbodraft-editor"
+# ── Clean up old binary names ─────────────────────────────────────────────
+
+for old_name in turbodraft-open turbodraft-editor; do
+  old_link="$bin_dir/$old_name"
+  if [[ -L "$old_link" || -e "$old_link" ]]; then
+    rm -f "$old_link"
+    echo "  removed stale $old_link"
+  fi
+done
 
 # ── Restart Launch Agent if installed ───────────────────────────────────────
 
@@ -56,6 +62,11 @@ fi
 echo ""
 if command -v turbodraft >/dev/null 2>&1; then
   echo "Done. turbodraft is on your PATH."
+  echo ""
+  echo "Set as your editor:"
+  echo "  fish:  set -Ux VISUAL turbodraft"
+  echo "  bash:  export VISUAL=turbodraft"
+  echo "  zsh:   export VISUAL=turbodraft"
 else
   echo "Done. Add $bin_dir to your PATH:"
   echo "  fish:  fish_add_path $bin_dir"

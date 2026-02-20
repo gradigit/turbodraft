@@ -36,7 +36,7 @@ public final class CodexCLIAgentAdapter: AgentAdapting, Sendable {
     self.maxOutputBytes = maxOutputBytes
   }
 
-  public func draft(prompt: String, instruction: String, images: [URL]) async throws -> String {
+  public func draft(prompt: String, instruction: String, images: [URL], cwd: String?) async throws -> String {
     if !images.isEmpty {
       cliAgentLog.warning("CodexCLIAgentAdapter does not support images; \(images.count) image(s) will be ignored")
     }
@@ -49,10 +49,10 @@ INSTRUCTION:
 \(instruction)
 """
 
-    return try await runProcess(stdin: input)
+    return try await runProcess(stdin: input, cwd: cwd)
   }
 
-  private func runProcess(stdin: String) async throws -> String {
+  private func runProcess(stdin: String, cwd: String?) async throws -> String {
     guard let resolved = CommandResolver.resolveInPATH(command) else {
       throw CodexCLIAgentError.commandNotFound
     }
@@ -61,7 +61,7 @@ INSTRUCTION:
     // Run blocking posix_spawn + poll loop off the cooperative thread pool (#10).
     let adapter = self
     let result = try await Task.detached {
-      try adapter.spawnAndCapture(executablePath: resolved, arguments: adapter.args, stdin: inputData)
+      try adapter.spawnAndCapture(executablePath: resolved, arguments: adapter.args, stdin: inputData, cwd: cwd)
     }.value
     if result.didOverflow {
       throw CodexCLIAgentError.outputTooLarge
@@ -84,7 +84,7 @@ INSTRUCTION:
     var didOverflow: Bool
   }
 
-  private func spawnAndCapture(executablePath: String, arguments: [String], stdin: Data) throws -> SpawnResult {
+  private func spawnAndCapture(executablePath: String, arguments: [String], stdin: Data, cwd: String? = nil) throws -> SpawnResult {
     var inFds: [Int32] = [0, 0]
     guard pipe(&inFds) == 0 else {
       throw CodexCLIAgentError.spawnFailed(errno: errno)
@@ -112,6 +112,10 @@ INSTRUCTION:
     posix_spawn_file_actions_addclose(&actions, outFds[0])
     posix_spawn_file_actions_addclose(&actions, inFds[0])
     posix_spawn_file_actions_addclose(&actions, outFds[1])
+
+    if let cwd, !cwd.isEmpty {
+      posix_spawn_file_actions_addchdir_np(&actions, cwd)
+    }
 
     var pid: pid_t = 0
     let argv = [executablePath] + arguments

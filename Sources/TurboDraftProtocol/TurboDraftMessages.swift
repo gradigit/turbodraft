@@ -39,12 +39,14 @@ public struct SessionOpenParams: Codable, Sendable, Equatable {
   public var line: Int?
   public var column: Int?
   public var requestId: String?
+  public var cwd: String?
 
-  public init(path: String, line: Int? = nil, column: Int? = nil, requestId: String? = nil) {
+  public init(path: String, line: Int? = nil, column: Int? = nil, requestId: String? = nil, cwd: String? = nil) {
     self.path = path
     self.line = line
     self.column = column
     self.requestId = requestId
+    self.cwd = cwd
   }
 }
 

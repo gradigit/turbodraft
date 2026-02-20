@@ -1,5 +1,19 @@
 # TurboDraft — Claude Code Instructions
 
+## Priorities
+
+TurboDraft is a performance-first tool for drafting prompts via Ctrl+G. Every decision should be evaluated through this lens:
+
+1. **Performance** — startup latency, typing responsiveness, memory footprint. Never regress these. If a feature adds overhead, it needs to justify itself against the core use case.
+2. **Prompt engineering / agent integration** — the Codex-powered "Improve Prompt" flow and related agentic features.
+3. **Everything else** — themes, UI polish, extra markdown features, etc. Nice to have, but never at the cost of (1) or (2).
+
+**Evidence-based performance decisions.** Do NOT dismiss feature ideas by assuming they'll be slow. If you don't have concrete numbers, you don't have an opinion. Before rejecting or accepting a feature on performance grounds:
+1. **Research first** — look up the APIs involved (e.g. Apple docs for NSTextTable), find prior art, read how other editors solve it. Understand the actual mechanism before speculating about cost.
+2. **State the specific metric at risk** — cold start, warm start, typing p95, memory, etc.
+3. **Quantify with evidence** — cite a benchmark, profile result, or documented complexity. "It'll be slow" is not an argument. A feature that adds 1ms to styling but zero to cold/warm start is fine.
+4. **If you can't quantify, prototype and measure** — implement it behind a flag, benchmark it against baselines, then decide with data.
+
 ## Build and Install
 
 After ANY code change (bug fix, feature, refactor), you MUST run `scripts/install` before testing or asking the user to verify. This rebuilds the release binary, re-symlinks, and restarts the LaunchAgent if installed.
@@ -19,8 +33,8 @@ Do NOT skip this step. Do NOT just run `swift build` — use `scripts/install` s
 - `swift test` — run all tests (77 tests)
 - `scripts/install` — build + symlink + restart LaunchAgent
 - `scripts/turbodraft-launch-agent install|uninstall|status|update|restart` — manage LaunchAgent
-- `.build/release/turbodraft bench run --path <file> --warm N --cold N` — editor benchmarks
-- `.build/release/turbodraft bench check --baseline bench/editor/baseline.json --results <file>` — check baselines
+- `.build/release/turbodraft-bench bench run --path <file> --warm N --cold N` — editor benchmarks
+- `.build/release/turbodraft-bench bench check --baseline bench/editor/baseline.json --results <file>` — check baselines
 - `python3 scripts/bench_editor_e2e_ux.py --warm N --cold N` — end-to-end UX benchmark (needs Accessibility permissions)
 - `pkill -9 -f turbodraft-app && rm -f ~/Library/Application\ Support/TurboDraft/rpc.sock` — kill stale processes + remove socket before benchmarks
 
@@ -31,8 +45,8 @@ Swift Package with 10 modules:
 | Module | Purpose |
 |--------|---------|
 | `TurboDraftApp` | macOS AppKit GUI — window, editor, menu, socket server |
-| `TurboDraftCLI` | CLI binary (`turbodraft open`, `turbodraft bench`) |
-| `TurboDraftOpen` | Minimal fast-path open binary (`turbodraft-open`) |
+| `TurboDraftCLI` | Benchmark CLI (`turbodraft-bench run`, `turbodraft-bench check`) |
+| `TurboDraftOpen` | Main CLI — C binary used as `$VISUAL` (`turbodraft`) |
 | `TurboDraftCore` | `EditorSession`, file I/O, directory watcher |
 | `TurboDraftProtocol` | JSON-RPC message types and method definitions |
 | `TurboDraftTransport` | Unix domain socket server/client, JSON-RPC framing |
@@ -41,6 +55,8 @@ Swift Package with 10 modules:
 | `TurboDraftConfig` | User config loading/saving |
 | `TurboDraftE2EHarness` | E2E benchmark harness binary |
 
+Binaries: `turbodraft` (C, main CLI / `$VISUAL`), `turbodraft-app` (Swift/AppKit GUI), `turbodraft-bench` (Swift, dev benchmarks).
+
 Communication: CLI → Unix domain socket (`~/Library/Application Support/TurboDraft/rpc.sock`) → App. JSON-RPC over content-length framed streams.
 
 ## Key Files
@@ -48,7 +64,7 @@ Communication: CLI → Unix domain socket (`~/Library/Application Support/TurboD
 - `Sources/TurboDraftApp/AppDelegate.swift` — app lifecycle, socket server, RPC dispatch, quit handling
 - `Sources/TurboDraftApp/EditorViewController.swift` — text editing, autosave, styling, agent integration
 - `Sources/TurboDraftApp/EditorWindowController.swift` — window management, session binding
-- `Sources/TurboDraftCLI/main.swift` — CLI entry point, benchmark runner, `connectOrLaunch`
+- `Sources/TurboDraftCLI/main.swift` — benchmark CLI entry point (`turbodraft-bench`), `connectOrLaunch`
 - `Sources/TurboDraftTransport/UnixDomainSocket.swift` — socket bind/listen/connect/accept
 - `Sources/TurboDraftCore/EditorSession.swift` — file session state, revision tracking
 - `Sources/TurboDraftCore/CommandResolver.swift` — PATH resolution, supplemental paths (nvm/fnm/homebrew), shared `buildEnv`

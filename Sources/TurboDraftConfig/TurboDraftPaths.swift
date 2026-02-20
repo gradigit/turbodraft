@@ -18,5 +18,12 @@ public enum TurboDraftPaths {
     let dir = (try? applicationSupportDir()) ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
     return dir.appendingPathComponent("config.json").path
   }
+
+  public static func themesDir() -> URL {
+    let dir = ((try? applicationSupportDir()) ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true))
+      .appendingPathComponent("themes", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir
+  }
 }
 

@@ -10,6 +10,7 @@ public final class RecoveryStore: @unchecked Sendable {
   }
 
   private let ioLock = NSLock()
+  private let writeQueue = DispatchQueue(label: "com.turbodraft.recovery.write")
   private let maxSnapshotsPerFile: Int
   private let maxBytesPerFile: Int
   private let ttlDays: Int
@@ -77,6 +78,43 @@ public final class RecoveryStore: @unchecked Sendable {
     return snapshot.id
   }
 
+  /// Combined load + append in a single read-compute-write cycle.
+  /// Eliminates the double read/write that `loadSnapshots` + `appendSnapshot` would perform.
+  /// The write is dispatched to a background queue (Tier 3).
+  public func loadAndAppend(for fileURL: URL, snapshot: HistorySnapshot, loadMaxCount: Int = 64) -> [HistorySnapshot] {
+    ioLock.lock()
+    defer { ioLock.unlock() }
+
+    let path = normalizedPath(for: fileURL)
+    let file = snapshotsFileURL(forPath: path)
+    var items = readStoredSnapshots(from: file)
+    prune(&items)
+
+    // Capture load result before appending
+    let loaded = items.suffix(max(1, loadMaxCount)).map {
+      HistorySnapshot(id: $0.id, createdAt: $0.createdAt, reason: $0.reason, content: $0.content)
+    }
+
+    // Append (with dedup + size guard)
+    let bytes = snapshot.content.utf8.count
+    if bytes <= maxSnapshotBytes {
+      let contentHash = Revision.sha256(text: snapshot.content)
+      if items.last?.contentHash != contentHash {
+        items.append(StoredSnapshot(
+          id: snapshot.id,
+          createdAt: snapshot.createdAt,
+          reason: snapshot.reason,
+          content: snapshot.content,
+          contentHash: contentHash
+        ))
+        prune(&items)
+      }
+    }
+
+    writeStoredSnapshotsAsync(items, to: file)
+    return loaded
+  }
+
   private func normalizedPath(for fileURL: URL) -> String {
     fileURL.standardizedFileURL.path
   }
@@ -116,6 +154,7 @@ public final class RecoveryStore: @unchecked Sendable {
   }
 
   private func readStoredSnapshots(from file: URL) -> [StoredSnapshot] {
+    writeQueue.sync {}  // Drain pending background writes before reading
     guard let data = try? Data(contentsOf: file) else { return [] }
     return (try? JSONDecoder().decode([StoredSnapshot].self, from: data)) ?? []
   }
@@ -123,5 +162,12 @@ public final class RecoveryStore: @unchecked Sendable {
   private func writeStoredSnapshots(_ items: [StoredSnapshot], to file: URL) {
     guard let data = try? JSONEncoder().encode(items) else { return }
     try? data.write(to: file, options: [.atomic])
+  }
+
+  private func writeStoredSnapshotsAsync(_ items: [StoredSnapshot], to file: URL) {
+    writeQueue.async {
+      guard let data = try? JSONEncoder().encode(items) else { return }
+      try? data.write(to: file, options: [.atomic])
+    }
   }
 }

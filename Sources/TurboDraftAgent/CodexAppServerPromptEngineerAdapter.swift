@@ -75,11 +75,11 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     }
   }
 
-  public func draft(prompt: String, instruction: String, images: [URL]) async throws -> String {
+  public func draft(prompt: String, instruction: String, images: [URL], cwd: String?) async throws -> String {
     try await withCheckedThrowingContinuation { cont in
       queue.async {
         do {
-          cont.resume(returning: try self.draftSync(prompt: prompt, instruction: instruction, images: images))
+          cont.resume(returning: try self.draftSync(prompt: prompt, instruction: instruction, images: images, cwd: cwd))
         } catch {
           cont.resume(throwing: error)
         }
@@ -200,13 +200,13 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     throw CodexAppServerPromptEngineerError.timedOut
   }
 
-  private func draftSync(prompt: String, instruction: String, images: [URL]) throws -> String {
+  private func draftSync(prompt: String, instruction: String, images: [URL], cwd: String?) throws -> String {
     let s = try ensureServer()
     try s.ensureInitialized(timeoutMs: 10_000)
     let profile = PromptEngineerPrompts.Profile(rawValue: promptProfile) ?? .largeOpt
     let preamble = PromptEngineerPrompts.preamble(for: profile)
 
-    let cwd = FileManager.default.currentDirectoryPath
+    let cwd = cwd ?? FileManager.default.currentDirectoryPath
     let threadParams: [String: Any] = [
       "model": model,
       "modelProvider": "openai",

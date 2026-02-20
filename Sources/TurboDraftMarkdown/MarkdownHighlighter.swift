@@ -21,6 +21,7 @@ public enum MarkdownHighlightKind: Sendable, Equatable {
   case headerText(level: Int)
   case listMarker
   case taskBox(checked: Bool)
+  case taskText(checked: Bool)
   case quoteMarker(level: Int)
   case quoteText(level: Int)
   case horizontalRule
@@ -39,6 +40,11 @@ public enum MarkdownHighlightKind: Sendable, Equatable {
   case linkText
   case linkURL
   case linkPunctuation
+
+  // Tables
+  case tablePipe
+  case tableSeparator
+  case tableHeaderText
 }
 
 public enum MarkdownHighlighter {
@@ -55,6 +61,8 @@ public enum MarkdownHighlighter {
   private static let unorderedListRegex = try! NSRegularExpression(pattern: #"^(\s*)([-*+])(\s+)(.*)$"#)
   private static let orderedListRegex = try! NSRegularExpression(pattern: #"^(\s*)(\d{1,9})([.)])(\s+)(.*)$"#)
   private static let hrRegex = try! NSRegularExpression(pattern: #"^\s*((?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})\s*$"#)
+  private static let tableSepRegex = try! NSRegularExpression(pattern: #"^\|?(\s*:?-{1,}:?\s*\|)+\s*:?-{1,}:?\s*\|?\s*$"#)
+  private static let tablePipeRegex = try! NSRegularExpression(pattern: #"\|"#)
 
   private static let backtickRunRegex = try! NSRegularExpression(pattern: #"`+"#)
   private static let strongRegex = try! NSRegularExpression(pattern: #"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"#)
@@ -93,6 +101,38 @@ public enum MarkdownHighlighter {
 
       if nextNL.location == NSNotFound { break }
       idx = lineEnd + 1
+    }
+
+    // Post-processing: mark table header rows (the line immediately before a separator).
+    let separators = out.filter { $0.kind == .tableSeparator }
+    for sep in separators {
+      // Find the line before the separator.
+      guard sep.range.location > 0 else { continue }
+      let beforeSep = sep.range.location - 1  // the \n before separator
+      guard beforeSep > safe.location else { continue }
+      let headerLineRange = ns.lineRange(for: NSRange(location: beforeSep, length: 0))
+      let headerLine = ns.substring(with: headerLineRange)
+      let trimmed = headerLine.trimmingCharacters(in: .whitespaces)
+      guard trimmed.hasPrefix("|") || trimmed.hasSuffix("|") else { continue }
+      // Find cell content between pipes.
+      let hns = headerLine as NSString
+      let hfull = NSRange(location: 0, length: hns.length)
+      let pipeMatches = tablePipeRegex.matches(in: headerLine, range: hfull)
+      for i in 0..<(pipeMatches.count - 1) {
+        let afterPipe = pipeMatches[i].range.location + pipeMatches[i].range.length
+        let nextPipe = pipeMatches[i + 1].range.location
+        guard nextPipe > afterPipe else { continue }
+        // Trim whitespace from cell content range.
+        var cellStart = afterPipe
+        var cellEnd = nextPipe
+        while cellStart < cellEnd, hns.character(at: cellStart) == 0x20 { cellStart += 1 }
+        while cellEnd > cellStart, hns.character(at: cellEnd - 1) == 0x20 { cellEnd -= 1 }
+        guard cellEnd > cellStart else { continue }
+        out.append(MarkdownHighlight(
+          range: NSRange(location: headerLineRange.location + cellStart, length: cellEnd - cellStart),
+          kind: .tableHeaderText
+        ))
+      }
     }
 
     out.sort {
@@ -199,6 +239,22 @@ public enum MarkdownHighlighter {
     if hrRegex.firstMatch(in: line, range: full) != nil {
       add(full, .horizontalRule)
       return
+    }
+
+    // Table separator row (e.g. `|---|---|---`)
+    if tableSepRegex.firstMatch(in: line, range: full) != nil {
+      add(full, .tableSeparator)
+      return
+    }
+
+    // Table rows: highlight `|` pipe characters as markers
+    if lineNS.length > 0, lineNS.contains("|") {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if trimmed.hasPrefix("|") || trimmed.hasSuffix("|") {
+        for m in tablePipeRegex.matches(in: line, range: full) {
+          add(m.range, .tablePipe)
+        }
+      }
     }
 
     // Block quotes (detect before headers to avoid overlapping highlights on `> # Heading`)
@@ -408,6 +464,18 @@ public enum MarkdownHighlighter {
       range: NSRange(location: absLineRange.location + boxRange.location, length: boxRange.length),
       kind: .taskBox(checked: checked)
     ))
+    // Emit taskText for the rest of the line after the box (+ optional space).
+    var textStart = start + 3
+    if textStart < lineNS.length, lineNS.character(at: textStart) == 0x20 /* space */ {
+      textStart += 1
+    }
+    let lineEnd = absLineRange.length
+    if textStart < lineEnd {
+      out.append(MarkdownHighlight(
+        range: NSRange(location: absLineRange.location + textStart, length: lineEnd - textStart),
+        kind: .taskText(checked: checked)
+      ))
+    }
   }
 
   private static func trimmedURLRange(_ range: NSRange, in lineNS: NSString) -> NSRange {

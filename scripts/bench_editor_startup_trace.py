@@ -276,7 +276,7 @@ def main() -> int:
     args = ap.parse_args()
 
     repo = pathlib.Path(__file__).resolve().parents[1]
-    turbodraft_bin = repo / ".build/release/turbodraft"
+    turbodraft_bin = repo / ".build/release/turbodraft-bench"
     harness_bin = repo / ".build/release/turbodraft-e2e-harness"
     if not turbodraft_bin.exists():
         raise SystemExit(f"missing binary: {turbodraft_bin}")

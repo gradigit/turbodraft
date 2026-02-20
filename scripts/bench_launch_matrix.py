@@ -236,7 +236,7 @@ def main():
   args = ap.parse_args()
 
   repo = pathlib.Path(__file__).resolve().parents[1]
-  turbodraft_bin = repo / ".build/release/turbodraft"
+  turbodraft_bin = repo / ".build/release/turbodraft-bench"
   app_bin = repo / ".build/release/turbodraft-app"
   launch_script = repo / "scripts/turbodraft-launch-agent"
   fixture = repo / args.fixture

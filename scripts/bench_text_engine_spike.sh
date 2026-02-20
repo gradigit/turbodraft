@@ -80,17 +80,17 @@ build_and_bench() {
 
   echo "==> Building variant: $variant"
   if [[ -n "$swiftc_flag" ]]; then
-    TURBODRAFT_SPIKE_CODEEDIT=1 swift build -c release --product turbodraft --product turbodraft-open --product turbodraft-app -Xswiftc "$swiftc_flag"
+    TURBODRAFT_SPIKE_CODEEDIT=1 swift build -c release --product turbodraft-bench --product turbodraft --product turbodraft-app -Xswiftc "$swiftc_flag"
   else
-    swift build -c release --product turbodraft --product turbodraft-open --product turbodraft-app
+    swift build -c release --product turbodraft-bench --product turbodraft --product turbodraft-app
   fi
 
+  cp .build/release/turbodraft-bench "$bin_dir/"
   cp .build/release/turbodraft "$bin_dir/"
-  cp .build/release/turbodraft-open "$bin_dir/"
   cp .build/release/turbodraft-app "$bin_dir/"
 
   echo "==> Benchmarking variant: $variant"
-  TURBODRAFT_CONFIG="$config_path" "$bin_dir/turbodraft" bench run \
+  TURBODRAFT_CONFIG="$config_path" "$bin_dir/turbodraft-bench" bench run \
     --path "$PROMPT_FILE" \
     --warm "$WARM" \
     --cold "$COLD" \

@@ -18,14 +18,16 @@ final class MarkdownStyler {
   private var cacheOrder: [CacheKey] = []
   private let cacheLimit = 512
 
-  private let baseFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-  private let strongFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold)
-  private let header1Font = NSFont.monospacedSystemFont(ofSize: 17, weight: .bold)
-  private let header2Font = NSFont.monospacedSystemFont(ofSize: 15, weight: .bold)
-  private let header3Font = NSFont.monospacedSystemFont(ofSize: 14, weight: .semibold)
-  private let headerFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold)
-  private let italicFont: NSFont
-  private let strongItalicFont: NSFont
+  var theme: EditorColorTheme = .defaultTheme
+
+  private(set) var baseFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+  private var strongFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold)
+  private var header1Font = NSFont.monospacedSystemFont(ofSize: 17, weight: .bold)
+  private var header2Font = NSFont.monospacedSystemFont(ofSize: 15, weight: .bold)
+  private var header3Font = NSFont.monospacedSystemFont(ofSize: 14, weight: .semibold)
+  private var headerFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold)
+  private var italicFont: NSFont
+  private var strongItalicFont: NSFont
 
   init() {
     let italicTraits: NSFontDescriptor.SymbolicTraits = [.italic]
@@ -44,6 +46,48 @@ final class MarkdownStyler {
     }
   }
 
+  func rebuildFonts(family: String, size: CGFloat) {
+    let sz = max(9, min(size, 72))
+    if family == "system" {
+      baseFont = NSFont.monospacedSystemFont(ofSize: sz, weight: .regular)
+      strongFont = NSFont.monospacedSystemFont(ofSize: sz, weight: .semibold)
+    } else if let named = NSFont(name: family, size: sz) {
+      baseFont = named
+      let boldDesc = named.fontDescriptor.withSymbolicTraits(.bold)
+      strongFont = NSFont(descriptor: boldDesc, size: sz) ?? named
+    } else {
+      baseFont = NSFont.monospacedSystemFont(ofSize: sz, weight: .regular)
+      strongFont = NSFont.monospacedSystemFont(ofSize: sz, weight: .semibold)
+    }
+
+    header1Font = fontVariant(of: baseFont, size: sz + 4, weight: .bold)
+    header2Font = fontVariant(of: baseFont, size: sz + 2, weight: .bold)
+    header3Font = fontVariant(of: baseFont, size: sz + 1, weight: .semibold)
+    headerFont = fontVariant(of: strongFont, size: sz, weight: .semibold)
+
+    let italicTraits: NSFontDescriptor.SymbolicTraits = [.italic]
+    let baseItalicDesc = baseFont.fontDescriptor.withSymbolicTraits(italicTraits)
+    italicFont = NSFont(descriptor: baseItalicDesc, size: baseFont.pointSize) ?? baseFont
+
+    let strongItalicDesc = strongFont.fontDescriptor.withSymbolicTraits(italicTraits)
+    strongItalicFont = NSFont(descriptor: strongItalicDesc, size: strongFont.pointSize) ?? strongFont
+
+    cache.removeAll()
+    cacheOrder.removeAll()
+  }
+
+  private func fontVariant(of base: NSFont, size: CGFloat, weight: NSFont.Weight) -> NSFont {
+    let traits: NSFontDescriptor.SymbolicTraits = (weight == .bold || weight == .semibold) ? [.bold] : []
+    let desc = base.fontDescriptor.withSymbolicTraits(traits)
+    return NSFont(descriptor: desc, size: size) ?? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+  }
+
+  func setTheme(_ newTheme: EditorColorTheme) {
+    theme = newTheme
+    cache.removeAll()
+    cacheOrder.removeAll()
+  }
+
   func highlights(in text: String, range: NSRange) -> [Highlight] {
     let key = cacheKey(text: text, range: range)
     if let cached = cache[key] {
@@ -52,21 +96,22 @@ final class MarkdownStyler {
 
     var out: [Highlight] = []
     let spans = MarkdownHighlighter.highlights(in: text, range: range)
+    let t = theme
     for span in spans {
       let attrs: [NSAttributedString.Key: Any]
       switch span.kind {
       case .codeFenceDelimiter:
-        attrs = [.foregroundColor: EditorTheme.markerText]
+        attrs = [.foregroundColor: t.marker]
       case .codeFenceInfo:
-        attrs = [.foregroundColor: EditorTheme.secondaryText]
+        attrs = [.foregroundColor: t.secondaryText]
       case .codeBlockLine:
         attrs = [
-          .foregroundColor: EditorTheme.primaryText,
-          .backgroundColor: EditorTheme.codeBlockBackground,
+          .foregroundColor: t.code,
+          .backgroundColor: t.codeBackground,
         ]
       case let .headerMarker(level):
         _ = level
-        attrs = [.foregroundColor: EditorTheme.markerText]
+        attrs = [.foregroundColor: t.marker]
       case let .headerText(level):
         let font: NSFont
         switch level {
@@ -76,67 +121,82 @@ final class MarkdownStyler {
         default: font = headerFont
         }
         attrs = [
-          .foregroundColor: EditorTheme.primaryText,
+          .foregroundColor: t.heading,
           .font: font,
         ]
       case .listMarker:
-        attrs = [.foregroundColor: EditorTheme.markerText]
+        attrs = [.foregroundColor: t.marker]
       case let .taskBox(checked):
         if checked {
-          attrs = [.foregroundColor: NSColor.controlAccentColor]
+          attrs = [.foregroundColor: t.link]
         } else {
-          attrs = [.foregroundColor: EditorTheme.markerText]
+          attrs = [.foregroundColor: t.marker]
         }
       case let .quoteMarker(level):
         _ = level
-        attrs = [.foregroundColor: EditorTheme.markerText]
+        attrs = [.foregroundColor: t.marker]
       case let .quoteText(level):
         _ = level
-        attrs = [.foregroundColor: EditorTheme.primaryText]
+        attrs = [.foregroundColor: t.quote]
       case .horizontalRule:
-        attrs = [.foregroundColor: EditorTheme.markerText]
+        attrs = [.foregroundColor: t.marker]
       case .inlineCodeDelimiter:
-        attrs = [.foregroundColor: EditorTheme.markerText]
+        attrs = [.foregroundColor: t.marker]
       case .inlineCodeText:
         attrs = [
-          .foregroundColor: EditorTheme.primaryText,
-          .backgroundColor: EditorTheme.inlineCodeBackground,
+          .foregroundColor: t.code,
+          .backgroundColor: t.inlineCodeBackground,
           .font: baseFont,
         ]
       case .strongMarker:
-        attrs = [.foregroundColor: EditorTheme.markerText]
+        attrs = [.foregroundColor: t.marker]
       case .strongText:
-        attrs = [.font: strongFont]
+        attrs = [.foregroundColor: t.strong, .font: strongFont]
       case .emphasisMarker:
-        attrs = [.foregroundColor: EditorTheme.markerText]
+        attrs = [.foregroundColor: t.marker]
       case .emphasisText:
-        attrs = [.font: italicFont]
+        attrs = [.foregroundColor: t.emphasis, .font: italicFont]
       case .strikethroughMarker:
-        attrs = [.foregroundColor: EditorTheme.markerText]
+        attrs = [.foregroundColor: t.marker]
       case .strikethroughText:
         attrs = [
-          .foregroundColor: EditorTheme.secondaryText,
+          .foregroundColor: t.strikethrough,
           .strikethroughStyle: NSUnderlineStyle.single.rawValue,
         ]
       case .highlightMarker:
-        attrs = [.foregroundColor: EditorTheme.markerText]
+        attrs = [.foregroundColor: t.marker]
       case .highlightText:
         attrs = [
-          .foregroundColor: EditorTheme.primaryText,
-          .backgroundColor: EditorTheme.highlightBackground,
+          .foregroundColor: t.foreground,
+          .backgroundColor: t.highlight,
         ]
       case .linkText:
         attrs = [
-          .foregroundColor: NSColor.linkColor,
+          .foregroundColor: t.link,
           .underlineStyle: NSUnderlineStyle.single.rawValue,
         ]
       case .linkURL:
         attrs = [
-          .foregroundColor: NSColor.linkColor,
+          .foregroundColor: t.link,
           .underlineStyle: NSUnderlineStyle.single.rawValue,
         ]
       case .linkPunctuation:
-        attrs = [.foregroundColor: EditorTheme.markerText]
+        attrs = [.foregroundColor: t.marker]
+      case .tablePipe:
+        attrs = [.foregroundColor: t.marker]
+      case .tableSeparator:
+        attrs = [.foregroundColor: t.marker]
+      case .tableHeaderText:
+        attrs = [.foregroundColor: t.heading, .font: strongFont]
+      case let .taskText(checked):
+        if checked {
+          attrs = [
+            .foregroundColor: t.strikethrough,
+            .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+          ]
+        } else {
+          attrs = [:]
+        }
       }
       out.append(Highlight(range: span.range, attributes: attrs))
     }

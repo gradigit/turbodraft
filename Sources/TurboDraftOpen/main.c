@@ -1,5 +1,6 @@
 #include <ctype.h>
 #include <errno.h>
+#include <limits.h>
 #include <poll.h>
 #include <spawn.h>
 #include <stdbool.h>
@@ -20,7 +21,7 @@ static void die_usage(const char *msg) {
   if (msg && msg[0] != '\0') {
     fprintf(stderr, "error: %s\n", msg);
   }
-  fprintf(stderr, "usage: turbodraft-open --path <file> [--line N] [--column N] [--wait] [--timeout-ms N] [--socket-path <path>]\n");
+  fprintf(stderr, "usage: turbodraft [--path] <file> [+line] [--line N] [--column N] [--wait] [--timeout-ms N] [--socket-path <path>]\n");
   exit(2);
 }
 
@@ -582,29 +583,29 @@ static bool extract_session_id(const char *body, char **out_session_id) {
   return json_extract_string_value(body, "\"sessionId\"", out_session_id);
 }
 
-static char *format_open_request_json(const char *path_escaped, int line, int column) {
+static char *format_open_request_json(const char *path_escaped, int line, int column, const char *cwd_escaped) {
   const char *fmt = NULL;
   if (line > 0 && column > 0) {
-    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\",\"line\":%d,\"column\":%d}}";
+    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\",\"line\":%d,\"column\":%d,\"cwd\":\"%s\"}}";
   } else if (line > 0) {
-    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\",\"line\":%d}}";
+    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\",\"line\":%d,\"cwd\":\"%s\"}}";
   } else {
-    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\"}}";
+    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\",\"cwd\":\"%s\"}}";
   }
 
   int n = (line > 0 && column > 0)
-    ? snprintf(NULL, 0, fmt, path_escaped, line, column)
-    : (line > 0 ? snprintf(NULL, 0, fmt, path_escaped, line) : snprintf(NULL, 0, fmt, path_escaped));
+    ? snprintf(NULL, 0, fmt, path_escaped, line, column, cwd_escaped)
+    : (line > 0 ? snprintf(NULL, 0, fmt, path_escaped, line, cwd_escaped) : snprintf(NULL, 0, fmt, path_escaped, cwd_escaped));
   if (n < 0) return NULL;
 
   char *out = (char *)malloc((size_t)n + 1);
   if (!out) return NULL;
   if (line > 0 && column > 0) {
-    snprintf(out, (size_t)n + 1, fmt, path_escaped, line, column);
+    snprintf(out, (size_t)n + 1, fmt, path_escaped, line, column, cwd_escaped);
   } else if (line > 0) {
-    snprintf(out, (size_t)n + 1, fmt, path_escaped, line);
+    snprintf(out, (size_t)n + 1, fmt, path_escaped, line, cwd_escaped);
   } else {
-    snprintf(out, (size_t)n + 1, fmt, path_escaped);
+    snprintf(out, (size_t)n + 1, fmt, path_escaped, cwd_escaped);
   }
   return out;
 }
@@ -619,12 +620,33 @@ static char *format_wait_request_json(const char *session_id, int timeout_ms) {
   return out;
 }
 
+static void restore_terminal_focus(void) {
+  const char *bundle_id = getenv("TURBODRAFT_TERMINAL_BUNDLE_ID");
+  if (!bundle_id || bundle_id[0] == '\0') {
+    const char *term = getenv("TERM_PROGRAM");
+    if (!term) return;
+    if (strcmp(term, "Apple_Terminal") == 0) bundle_id = "com.apple.Terminal";
+    else if (strcmp(term, "iTerm.app") == 0) bundle_id = "com.googlecode.iterm2";
+    else if (strcmp(term, "WezTerm") == 0) bundle_id = "com.github.wez.wezterm";
+    else if (strcmp(term, "ghostty") == 0 || strcmp(term, "Ghostty") == 0) bundle_id = "com.mitchellh.ghostty";
+    else return;
+  }
+  char cmd[512];
+  snprintf(cmd, sizeof(cmd),
+    "osascript -e 'tell application id \"%s\" to activate' >/dev/null 2>&1 &",
+    bundle_id);
+  system(cmd);
+}
+
 int main(int argc, char **argv) {
   const char *path = NULL;
+  bool path_from_flag = false;
   int line = -1;
   int column = -1;
   bool wait = false;
+  bool wait_explicit = false;
   int timeout_ms = 600000;
+  bool timeout_explicit = false;
   char *socket_path_override = NULL;
 
   for (int i = 1; i < argc; i++) {
@@ -632,6 +654,7 @@ int main(int argc, char **argv) {
     if (strcmp(a, "--path") == 0) {
       if (i + 1 >= argc) die_usage("missing value for --path");
       path = argv[++i];
+      path_from_flag = true;
     } else if (strcmp(a, "--line") == 0) {
       if (i + 1 >= argc) die_usage("missing value for --line");
       line = atoi(argv[++i]);
@@ -641,19 +664,32 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--timeout-ms") == 0) {
       if (i + 1 >= argc) die_usage("missing value for --timeout-ms");
       timeout_ms = atoi(argv[++i]);
+      timeout_explicit = true;
     } else if (strcmp(a, "--wait") == 0) {
       wait = true;
+      wait_explicit = true;
     } else if (strcmp(a, "--socket-path") == 0) {
       if (i + 1 >= argc) die_usage("missing value for --socket-path");
       socket_path_override = dup_str(argv[++i]);
     } else if (strcmp(a, "--help") == 0 || strcmp(a, "-h") == 0) {
       die_usage(NULL);
+    } else if (a[0] == '+' && a[1] >= '0' && a[1] <= '9') {
+      line = atoi(a + 1);
+    } else if (a[0] != '-') {
+      path = a;
     } else {
       die_usage("unknown argument");
     }
   }
 
-  if (!path || path[0] == '\0') die_usage("missing --path");
+  if (!path || path[0] == '\0') die_usage("missing file path");
+
+  // Editor mode: positional path implies --wait and long timeout.
+  bool editor_mode = !path_from_flag;
+  if (editor_mode) {
+    if (!wait_explicit) wait = true;
+    if (!timeout_explicit) timeout_ms = 86400000;
+  }
 
   char *socket_path = socket_path_override ? socket_path_override : resolve_socket_path();
   if (!socket_path) {
@@ -676,8 +712,15 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  char *open_json = format_open_request_json(path_escaped, line, column);
+  char cwd_buf[PATH_MAX];
+  const char *cwd_raw = getcwd(cwd_buf, sizeof(cwd_buf));
+  if (!cwd_raw) cwd_raw = "/";
+  char *cwd_escaped = json_escape(cwd_raw);
+  if (!cwd_escaped) cwd_escaped = json_escape("/");
+
+  char *open_json = format_open_request_json(path_escaped, line, column, cwd_escaped);
   free(path_escaped);
+  free(cwd_escaped);
   if (!open_json) {
     fprintf(stderr, "error: failed to format open request\n");
     close(fd);
@@ -759,6 +802,10 @@ int main(int argc, char **argv) {
       return 1;
     }
     free(wait_body);
+
+    if (editor_mode) {
+      restore_terminal_focus();
+    }
   }
 
   free(session_id);

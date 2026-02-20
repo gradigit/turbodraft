@@ -8,6 +8,7 @@ public struct SessionInfo: Sendable, Equatable {
   public var isDirty: Bool
   public var conflictSnapshotId: String?
   public var bannerMessage: String?
+  public var cwd: String?
 
   public init(
     sessionId: String,
@@ -16,7 +17,8 @@ public struct SessionInfo: Sendable, Equatable {
     diskRevision: String,
     isDirty: Bool,
     conflictSnapshotId: String? = nil,
-    bannerMessage: String? = nil
+    bannerMessage: String? = nil,
+    cwd: String? = nil
   ) {
     self.sessionId = sessionId
     self.fileURL = fileURL
@@ -25,6 +27,7 @@ public struct SessionInfo: Sendable, Equatable {
     self.isDirty = isDirty
     self.conflictSnapshotId = conflictSnapshotId
     self.bannerMessage = bannerMessage
+    self.cwd = cwd
   }
 }
 
@@ -45,13 +48,15 @@ public actor EditorSession {
   private var conflictSnapshotId: String?
   private var bannerMessage: String?
 
+  private var cwd: String?
+
   private var isClosed: Bool = true
   private var waiters: [CheckedContinuation<Void, Never>] = []
   private var revisionWaiters: [UUID: RevisionWaiter] = [:]
 
   public init() {}
 
-  public func open(fileURL: URL) throws -> SessionInfo {
+  public func open(fileURL: URL, cwd: String? = nil) throws -> SessionInfo {
     // Perform failable I/O before mutating instance state (#13).
     if !FileManager.default.fileExists(atPath: fileURL.path) {
       try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -60,8 +65,10 @@ public actor EditorSession {
 
     // PERF: sync file I/O on actor — acceptable for single-file editor
     let text = try FileIO.readText(at: fileURL)
-    // PERF: sync disk I/O for recovery store
-    let recovered = recoveryStore.loadSnapshots(for: fileURL, maxCount: 48)
+    // PERF: combined load+append in single read-write cycle (Tier 2),
+    // write dispatched to background queue (Tier 3).
+    let openSnap = HistorySnapshot(reason: "open_buffer", content: text)
+    let recovered = recoveryStore.loadAndAppend(for: fileURL, snapshot: openSnap, loadMaxCount: 48)
 
     // All failable operations succeeded — now mutate instance state.
 
@@ -77,6 +84,7 @@ public actor EditorSession {
     self.fileURL = fileURL
     self.sessionId = UUID().uuidString
     self.isClosed = false
+    self.cwd = cwd
 
     self.history = HistoryStore(maxCount: 64)
     for snap in recovered.suffix(48) {
@@ -94,10 +102,7 @@ public actor EditorSession {
       self.bannerMessage = nil
     }
 
-    let openSnap = HistorySnapshot(reason: "open_buffer", content: text)
     self.history.append(openSnap)
-    // PERF: sync disk I/O for recovery store
-    _ = recoveryStore.appendSnapshot(openSnap, for: fileURL)
 
     return SessionInfo(
       sessionId: sessionId,
@@ -106,7 +111,8 @@ public actor EditorSession {
       diskRevision: diskRevision,
       isDirty: isDirty,
       conflictSnapshotId: conflictSnapshotId,
-      bannerMessage: bannerMessage
+      bannerMessage: bannerMessage,
+      cwd: cwd
     )
   }
 
@@ -133,7 +139,8 @@ public actor EditorSession {
       diskRevision: diskRevision,
       isDirty: isDirty,
       conflictSnapshotId: conflictSnapshotId,
-      bannerMessage: bannerMessage
+      bannerMessage: bannerMessage,
+      cwd: cwd
     )
   }
 
@@ -197,8 +204,18 @@ public actor EditorSession {
       diskRevision: diskRevision,
       isDirty: isDirty,
       conflictSnapshotId: conflictSnapshotId,
-      bannerMessage: bannerMessage
+      bannerMessage: bannerMessage,
+      cwd: cwd
     )
+  }
+
+  public func resetForRecycle() {
+    history = HistoryStore(maxCount: 64)
+    content = ""
+    isDirty = false
+    conflictSnapshotId = nil
+    bannerMessage = nil
+    cwd = nil
   }
 
   public func markClosed() {

@@ -38,7 +38,7 @@ def main() -> int:
     print(f"[editor] running turbodraft bench run -> {result_json}")
     rc = run(
         [
-            str(repo / ".build/release/turbodraft"),
+            str(repo / ".build/release/turbodraft-bench"),
             "bench",
             "run",
             "--path",
@@ -59,7 +59,7 @@ def main() -> int:
     print(f"[editor] checking thresholds against {args.baseline}")
     rc = run(
         [
-            str(repo / ".build/release/turbodraft"),
+            str(repo / ".build/release/turbodraft-bench"),
             "bench",
             "check",
             "--baseline",
