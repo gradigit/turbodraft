@@ -1,12 +1,11 @@
-# Context Handoff — 2026-02-19
+# Context Handoff — 2026-02-20
 
 Session summary for context continuity after clearing.
 
 ## First Steps (Read in Order)
 
 1. Read CLAUDE.md — project conventions, build/install rule, architecture, gotchas
-2. Read README.md — open-source README with install, usage, performance, architecture
-3. Read this file's "Deferred Work" section — known issues not addressed this session
+2. Read this file's session summary and deferred work
 
 After reading these files, you'll have full context to continue.
 
@@ -14,60 +13,50 @@ After reading these files, you'll have full context to continue.
 
 ### What Was Done
 
-**Fixed bugs and code quality issues from PRs #2, #4, #5, #6** (4 merged PRs from contributor `guzus`, +185/-34 LOC, zero tests)
+**Added iA Writer-inspired themes, font settings, and fixed styling bug** (commit 260f167)
 
-Fixes implemented:
-
-1. **Extracted `buildEnv` to `CommandResolver`** — deduplicated from two adapters, now a single `CommandResolver.buildEnv(prependingToPath:)` using `ProcessInfo.processInfo.environment` (thread-safe) instead of raw C `environ`
-2. **Applied `buildEnv` to `CodexCLIAgentAdapter`** — was missing entirely, causing spawn failures under LaunchAgent
-3. **Added warning when CLI adapter receives images** — `CodexCLIAgentAdapter` has no mechanism to forward images but silently accepted them
-4. **Fixed repair turns re-sending images** — both `CodexPromptEngineerAdapter` and `CodexAppServerPromptEngineerAdapter` now pass `images: []` on repair
-5. **Fixed session switch image bleed** — `applySessionInfo` now cleans up stale temp files and clears `attachedImages`
-6. **Fixed temp file leak in deinit** — `EditorViewController.deinit` now removes orphaned image temp files
-7. **Removed dead nvm alias resolution** — `~/.nvm/alias/default` contains alias strings (e.g. "22"), not directory names; the version-scan fallback already handles this
-8. **Fixed fnm base directory** — now checks all 3 known locations (`~/.local/share/fnm`, `~/.fnm`, `~/Library/Application Support/fnm`)
-9. **Cached `supplementalPaths`** — changed from computed `var` (filesystem I/O every call) to `static let`
-10. **Fixed `saveTempImage` silent failure** — write errors now return `nil` instead of a URL to a nonexistent file
-11. **Removed broken MCP disable flags from Python scripts** — `bench_codex_prompt_engineer.py` (4 occurrences) and `codex_app_server_poc.py`
-12. **Added 9 new tests** — `CommandResolverTests` (8 tests for `resolveInPATH` + `buildEnv`) and `CodexAdapterTests.testAdapterIgnoresImagesGracefully`
-13. **Updated CLAUDE.md** — test count 58→67, module count 8→10, added `CommandResolver.swift` to key files, added gotchas
+1. **3 TurboDraft themes** — Dark (monochrome + `#60a5fa` blue accent), Light (off-white + `#1088c8` blue), Ice (near-black + ice blue) — all inspired by iA Writer's monochrome aesthetic
+2. **Kept all 17 community themes** — originally removed them by mistake, restored alongside the 3 new themes
+3. **EditorColorTheme system** — new file with built-in themes + custom JSON theme loading from `~/Library/Application Support/TurboDraft/themes/`
+4. **Font settings** — configurable font size (11-20pt) and family (System Mono, Menlo, SF Mono, JetBrains Mono, Fira Code) via View menu
+5. **Dynamic font rebuilding** — `EditorStyler.rebuildFonts(family:size:)` reconstructs all 8 font variants, clears LRU cache
+6. **Task checkbox strikethrough** — `taskText(checked: Bool)` token in MarkdownHighlighter; checked items get dimmed + struck
+7. **Save status moved to top-left** — floating overlay at top-left of editor instead of bottom bar, themed with secondaryText
+8. **Fixed typing attributes corruption** — `NSTextView.textColor` reflects text storage attributes, so our highlight colors (marker, heading) fed back into `baseAttrs` creating a permanent color feedback loop. Fix: use `colorTheme.foreground` directly in `applyStyling`.
+9. **TurboDraftConfig additions** — `fontSize` (default 13), `fontFamily` (default "system"), `colorTheme` default changed to "turbodraft-dark"
 
 ### Current State
-- All 67 tests pass on main
-- Release build clean, LaunchAgent restarted via `scripts/install`
-- Changes are uncommitted (ready to commit)
+- All 77 tests pass on main
+- Commit 260f167 pushed to origin/main
+- LaunchAgent running latest binary
 
 ### What's Next (Deferred Work)
 
 | Issue | Reason deferred |
 |-------|----------------|
+| Image passthrough from TurboDraft → Claude Code | Research done (`research-image-passthrough-2026-02-20.md`), needs implementation |
 | Extract `setCloExec`/`setNonBlocking`/`writeAll` triplicate | Refactor — no behavior change |
 | Image size limits (50MB retina screenshots) | Needs UX design for user feedback |
-| Paste interception robustness (NSTextView subclass) | Architecture change — careful AppKit work |
 | Undo/image index desync | Complex state management — needs design |
-| Add `os.Logger` throughout | Enhancement — no correctness impact |
-| Error type unification across adapters | Refactor — no behavior change |
-| Hardcoded PNG MIME type | Optimization — functional as-is |
-| App-server stderr silently drained | Needs logging story first |
-| fnm fallback scan (like nvm's version scan) | Low priority — symlink approach works |
-| No UI feedback about queued images | UX enhancement |
+
+### Failed Approaches
+- Resetting `typingAttributes` in `handleTextDidChange` (after insertion — too late)
+- Resetting `typingAttributes` via `insertText` override in EditorTextView (before insertion — still didn't help because `baseAttrs` itself was corrupted)
+- Root cause was `textView.textColor` being derived from text storage, not a stored property
 
 ### Key Context
 - User runs fish shell and Ghostty terminal — use OSC-8 hyperlinks with `tput` styling
 - User has LaunchAgent installed — always run `scripts/install` after code changes
-- 4 binaries: `turbodraft` (Swift CLI), `turbodraft-app` (AppKit GUI), `turbodraft-open` (C fast-path), `turbodraft-editor` (bash $EDITOR shim)
+- Default theme is now `turbodraft-dark` (iA Writer-inspired monochrome)
 
 ## Reference Files
 
 | File | Purpose |
 |------|---------|
 | `CLAUDE.md` | Project instructions for Claude Code |
-| `README.md` | Open-source README |
-| `Package.swift` | All module/product names |
-| `Sources/TurboDraftCore/CommandResolver.swift` | PATH resolution, supplemental paths, shared `buildEnv` |
-| `Sources/TurboDraftAgent/CodexPromptEngineerAdapter.swift` | Exec adapter — spawn, images |
-| `Sources/TurboDraftAgent/CodexAppServerPromptEngineerAdapter.swift` | App-server adapter — spawn, images, base64 |
-| `Sources/TurboDraftAgent/CodexCLIAgentAdapter.swift` | Basic CLI adapter |
-| `Sources/TurboDraftApp/EditorViewController.swift` | Image paste handling, autosave, agent integration |
-| `Tests/TurboDraftCoreTests/CommandResolverTests.swift` | New: CommandResolver + buildEnv tests |
-| `Tests/TurboDraftAgentTests/CodexAdapterTests.swift` | Updated: images test added |
+| `Sources/TurboDraftApp/EditorColorTheme.swift` | Theme definitions (built-in + custom) |
+| `Sources/TurboDraftApp/EditorStyler.swift` | Markdown styling, font management, LRU cache |
+| `Sources/TurboDraftApp/EditorViewController.swift` | Text editing, autosave, styling, agent integration |
+| `Sources/TurboDraftApp/AppDelegate.swift` | App lifecycle, menus (theme, font size, font family) |
+| `Sources/TurboDraftConfig/TurboDraftConfig.swift` | Config with fontSize, fontFamily, colorTheme |
+| `Sources/TurboDraftMarkdown/MarkdownHighlighter.swift` | Markdown tokenizer with taskText token |

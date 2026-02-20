@@ -61,9 +61,11 @@ Communication: CLI → Unix domain socket (`~/Library/Application Support/TurboD
 
 ## Key Files
 
-- `Sources/TurboDraftApp/AppDelegate.swift` — app lifecycle, socket server, RPC dispatch, quit handling
+- `Sources/TurboDraftApp/AppDelegate.swift` — app lifecycle, socket server, RPC dispatch, quit handling, menus
 - `Sources/TurboDraftApp/EditorViewController.swift` — text editing, autosave, styling, agent integration
 - `Sources/TurboDraftApp/EditorWindowController.swift` — window management, session binding
+- `Sources/TurboDraftApp/EditorColorTheme.swift` — built-in + custom color theme definitions
+- `Sources/TurboDraftApp/EditorStyler.swift` — markdown styling engine, font management, LRU cache
 - `Sources/TurboDraftCLI/main.swift` — benchmark CLI entry point (`turbodraft-bench`), `connectOrLaunch`
 - `Sources/TurboDraftTransport/UnixDomainSocket.swift` — socket bind/listen/connect/accept
 - `Sources/TurboDraftCore/EditorSession.swift` — file session state, revision tracking
@@ -81,3 +83,4 @@ Communication: CLI → Unix domain socket (`~/Library/Application Support/TurboD
 - Machine load heavily distorts benchmark p95s. Check `ps -eo %cpu,command -r | head -5` before chasing noisy regressions.
 - `TurboDraftOpen` is plain C (`main.c`), not Swift. All three agent adapters share spawn helpers (`setCloExec`/`setNonBlocking`/`writeAll`) — they're intentionally inlined per-file to avoid adding a shared C shim target.
 - All agent adapters must use `CommandResolver.buildEnv(prependingToPath:)` when spawning child processes. Using raw `environ` directly skips PATH enrichment and breaks under the LaunchAgent.
+- `NSTextView.textColor` is NOT a simple stored property — it reflects the foreground color from the text storage. If `applyStyling` sets marker/heading colors via `addAttributes`, reading `textView.textColor` returns those colors, creating a feedback loop that corrupts `baseAttrs`. Always use `colorTheme.foreground` directly in `applyStyling`.
