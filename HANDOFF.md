@@ -1,11 +1,12 @@
-# Context Handoff — 2026-02-20
+# Context Handoff — 2026-02-20 (Session 2)
 
 Session summary for context continuity after clearing.
 
 ## First Steps (Read in Order)
 
 1. Read CLAUDE.md — project conventions, build/install rule, architecture, gotchas
-2. Read this file's session summary and deferred work
+2. Read this file's session summary and next steps
+3. Read `docs/production-readiness-review-2026-02-20.md` — full production readiness report with P0-P3 findings
 
 After reading these files, you'll have full context to continue.
 
@@ -13,50 +14,73 @@ After reading these files, you'll have full context to continue.
 
 ### What Was Done
 
-**Added iA Writer-inspired themes, font settings, and fixed styling bug** (commit 260f167)
+**Implemented deferred work from previous session + production readiness review.**
 
-1. **3 TurboDraft themes** — Dark (monochrome + `#60a5fa` blue accent), Light (off-white + `#1088c8` blue), Ice (near-black + ice blue) — all inspired by iA Writer's monochrome aesthetic
-2. **Kept all 17 community themes** — originally removed them by mistake, restored alongside the 3 new themes
-3. **EditorColorTheme system** — new file with built-in themes + custom JSON theme loading from `~/Library/Application Support/TurboDraft/themes/`
-4. **Font settings** — configurable font size (11-20pt) and family (System Mono, Menlo, SF Mono, JetBrains Mono, Fira Code) via View menu
-5. **Dynamic font rebuilding** — `EditorStyler.rebuildFonts(family:size:)` reconstructs all 8 font variants, clears LRU cache
-6. **Task checkbox strikethrough** — `taskText(checked: Bool)` token in MarkdownHighlighter; checked items get dimmed + struck
-7. **Save status moved to top-left** — floating overlay at top-left of editor instead of bottom bar, themed with secondaryText
-8. **Fixed typing attributes corruption** — `NSTextView.textColor` reflects text storage attributes, so our highlight colors (marker, heading) fed back into `baseAttrs` creating a permanent color feedback loop. Fix: use `colorTheme.foreground` directly in `applyStyling`.
-9. **TurboDraftConfig additions** — `fontSize` (default 13), `fontFamily` (default "system"), `colorTheme` default changed to "turbodraft-dark"
+1. **Image passthrough: @refs at top** (commit cfd2b92) — Changed `attachedImages` from `[URL]` array to `[String: URL]` dictionary with 8-char UUID keys. Placeholders are now `[image-a3f2b1c4]` instead of `[image 1]`, making them stable across undo/redo. On close, regex scans for surviving placeholders, prepends `@/path/to/image.png` references at the top of the document so Claude reads images first, and cleans up temp files for undone/deleted images.
+
+2. **ProcessHelpers refactor** (commit b53055b) — Extracted `setCloExec`, `setNonBlocking`, `writeAll` from 3 agent adapters into shared `Sources/TurboDraftAgent/ProcessHelpers.swift`. Removed ~80 lines of duplication.
+
+3. **Image size limits TODO** — Created `todos/002-pending-p2-image-size-limits.md` for refusing oversized images (>20MB / >8000px) with user-facing error.
+
+4. **Production readiness review** (commit a0404c4) — 4-agent parallel review (performance, security, architecture, simplicity) of the full 9,545-line codebase. Report saved to `docs/production-readiness-review-2026-02-20.md`.
 
 ### Current State
 - All 77 tests pass on main
-- Commit 260f167 pushed to origin/main
+- Last commit: a0404c4 (3 commits ahead of origin/main, not pushed)
 - LaunchAgent running latest binary
+- Untracked files: `docs/benchmarks/editor/`, `docs/markdown-reference.txt`, `docs/theme-preview.html`, `research-image-passthrough-2026-02-20.md` (reference artifacts from previous sessions)
 
-### What's Next (Deferred Work)
+### What's Next — P0 Fixes from Production Review
 
-| Issue | Reason deferred |
-|-------|----------------|
-| Image passthrough from TurboDraft → Claude Code | Research done (`research-image-passthrough-2026-02-20.md`), needs implementation |
-| Extract `setCloExec`/`setNonBlocking`/`writeAll` triplicate | Refactor — no behavior change |
-| Image size limits (50MB retina screenshots) | Needs UX design for user feedback |
-| Undo/image index desync | Complex state management — needs design |
+These 5 items were identified as fix-before-shipping:
+
+| # | Issue | File | Effort |
+|---|-------|------|--------|
+| **SEC-1** | Command injection via `system()` — `TURBODRAFT_TERMINAL_BUNDLE_ID` unsanitized | `main.c:635` | Low — replace `system()` with `posix_spawn` |
+| **SEC-2** | Raw `environ` leaked to child via `posix_spawn` | `main.c:292,318` | Medium — filter env |
+| **SEC-3** | `getpeereid()` fail-open — connections accepted without auth on failure | `UnixDomainSocket.swift:160` | 1-line fix |
+| **BUG-1** | Stale `editorMode` in EditorViewController after config change | `EditorViewController.swift:454` | Low — propagate mode change |
+| **BUG-2** | `sessionsById` memory leak — no session GC/close RPC | `AppDelegate.swift:497` | Medium — add periodic sweep |
+
+### P1 Items (Fix Soon)
+
+| # | Issue | Detail |
+|---|-------|--------|
+| **PERF-1** | O(n) fence-state prefix scan per keystroke | Fine for <5KB, 5-10ms at 100KB |
+| **PERF-2** | O(n) cache key hashing via substring copy | Combined with PERF-1, can exceed 16ms at 100KB |
+| **SEC-4** | Socket dir permissions briefly 0755 after creation | Use explicit `mkdir` mode |
+| **SEC-5** | Config `agent.command` accepts arbitrary binaries | Add validation |
+| **ARCH-1** | No protocol version enforcement | Implement version negotiation |
+| **ARCH-2** | Config write failures silently swallowed (12 `try?` calls) | Add `os.Logger` on failure |
+
+### P2 — Dead Code (~660 LOC removable)
+
+See full list in `docs/production-readiness-review-2026-02-20.md` section P2.
+
+Key items: `CodexCLIAgentAdapter.swift` (255 LOC dead code, never instantiated), `#if TURBODRAFT_USE_CODEEDIT_TEXTVIEW` (~80 LOC spike), vestigial `EditorTheme.swift`, 22→5 built-in themes.
 
 ### Failed Approaches
-- Resetting `typingAttributes` in `handleTextDidChange` (after insertion — too late)
-- Resetting `typingAttributes` via `insertText` override in EditorTextView (before insertion — still didn't help because `baseAttrs` itself was corrupted)
-- Root cause was `textView.textColor` being derived from text storage, not a stored property
+- Sequential `[image N]` placeholders — indices shift on undo/redo, corrupting references
+- Clipboard-based image passthrough — hijacks user's clipboard, unreliable
+- Appending @refs at bottom of document — Claude may not read images before prompt text
 
 ### Key Context
 - User runs fish shell and Ghostty terminal — use OSC-8 hyperlinks with `tput` styling
 - User has LaunchAgent installed — always run `scripts/install` after code changes
-- Default theme is now `turbodraft-dark` (iA Writer-inspired monochrome)
+- Image placeholders use `[image-XXXX]` format (8-char hex UUID), NOT `[image N]`
+- @file references are prepended at top of document on close, not appended at bottom
+- `ProcessHelpers.swift` contains shared POSIX helpers — don't re-add to adapter files
 
 ## Reference Files
 
 | File | Purpose |
 |------|---------|
 | `CLAUDE.md` | Project instructions for Claude Code |
-| `Sources/TurboDraftApp/EditorColorTheme.swift` | Theme definitions (built-in + custom) |
-| `Sources/TurboDraftApp/EditorStyler.swift` | Markdown styling, font management, LRU cache |
-| `Sources/TurboDraftApp/EditorViewController.swift` | Text editing, autosave, styling, agent integration |
-| `Sources/TurboDraftApp/AppDelegate.swift` | App lifecycle, menus (theme, font size, font family) |
-| `Sources/TurboDraftConfig/TurboDraftConfig.swift` | Config with fontSize, fontFamily, colorTheme |
-| `Sources/TurboDraftMarkdown/MarkdownHighlighter.swift` | Markdown tokenizer with taskText token |
+| `docs/production-readiness-review-2026-02-20.md` | Full production readiness report (P0-P3) |
+| `todos/002-pending-p2-image-size-limits.md` | Image size limit TODO |
+| `Sources/TurboDraftApp/EditorViewController.swift` | Text editing, images, autosave, styling, agent |
+| `Sources/TurboDraftAgent/ProcessHelpers.swift` | Shared setCloExec/setNonBlocking/writeAll |
+| `Sources/TurboDraftAgent/CodexPromptEngineerAdapter.swift` | Primary agent adapter |
+| `Sources/TurboDraftApp/AppDelegate.swift` | App lifecycle, socket server, RPC dispatch |
+| `Sources/TurboDraftTransport/UnixDomainSocket.swift` | Socket security (getpeereid, chmod) |
+| `Sources/TurboDraftOpen/main.c` | C CLI — has SEC-1 and SEC-2 issues |
