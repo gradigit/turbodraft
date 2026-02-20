@@ -16,7 +16,8 @@ final class MarkdownStyler {
 
   private var cache: [CacheKey: [Highlight]] = [:]
   private var cacheOrder: [CacheKey] = []
-  private let cacheLimit = 512
+  // Keep highlight cache small to avoid long-lived attributed range buildup.
+  private let cacheLimit = 128
 
   private let baseFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
   private let strongFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold)
@@ -143,7 +144,7 @@ final class MarkdownStyler {
 
     cache[key] = out
     cacheOrder.append(key)
-    // O(n) FIFO eviction is fine here — cacheLimit is small (512) and this runs
+    // O(n) FIFO eviction is fine here — cacheLimit is small (128) and this runs
     // at most once per highlight pass, removing only a handful of entries.
     if cacheOrder.count > cacheLimit {
       let removeCount = cacheOrder.count - cacheLimit

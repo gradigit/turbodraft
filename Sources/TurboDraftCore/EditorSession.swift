@@ -29,6 +29,10 @@ public struct SessionInfo: Sendable, Equatable {
 }
 
 public actor EditorSession {
+  private static let historyMaxCount = 32
+  private static let historyMaxBytes = 4_000_000
+  private static let recoveryLoadCount = 16
+
   private struct RevisionWaiter {
     let baseRevision: String
     let continuation: CheckedContinuation<SessionInfo?, Never>
@@ -40,7 +44,10 @@ public actor EditorSession {
   private var content: String = ""
   private var diskRevision: String = Revision.sha256(text: "")
   private var isDirty: Bool = false
-  private var history = HistoryStore(maxCount: 64)
+  private var history = HistoryStore(
+    maxCount: EditorSession.historyMaxCount,
+    maxBytes: EditorSession.historyMaxBytes
+  )
   private let recoveryStore = RecoveryStore()
   private var conflictSnapshotId: String?
   private var bannerMessage: String?
@@ -61,7 +68,7 @@ public actor EditorSession {
     // PERF: sync file I/O on actor — acceptable for single-file editor
     let text = try FileIO.readText(at: fileURL)
     // PERF: sync disk I/O for recovery store
-    let recovered = recoveryStore.loadSnapshots(for: fileURL, maxCount: 48)
+    let recovered = recoveryStore.loadSnapshots(for: fileURL, maxCount: EditorSession.recoveryLoadCount)
 
     // All failable operations succeeded — now mutate instance state.
 
@@ -78,8 +85,11 @@ public actor EditorSession {
     self.sessionId = UUID().uuidString
     self.isClosed = false
 
-    self.history = HistoryStore(maxCount: 64)
-    for snap in recovered.suffix(48) {
+    self.history = HistoryStore(
+      maxCount: EditorSession.historyMaxCount,
+      maxBytes: EditorSession.historyMaxBytes
+    )
+    for snap in recovered.suffix(EditorSession.recoveryLoadCount) {
       self.history.append(snap)
     }
 
