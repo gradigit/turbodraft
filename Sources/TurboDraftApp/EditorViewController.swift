@@ -44,7 +44,7 @@ final class EditorViewController: NSViewController {
   private var agentAdapter: AgentAdapting?
   private var agentRunning = false
   private var sessionCwd: String?
-  private var attachedImages: [URL] = []
+  private var attachedImages: [String: URL] = [:]
   private var imageConversionTask: Task<Void, Never>?
   private var _typingLatencies: [Double] = []
 
@@ -91,7 +91,7 @@ final class EditorViewController: NSViewController {
     watcherDebouncer.cancel()
     autosaveMaxFlushTask?.cancel()
     watcher?.stop()
-    for url in attachedImages { try? FileManager.default.removeItem(at: url) }
+    for url in attachedImages.values { try? FileManager.default.removeItem(at: url) }
     NotificationCenter.default.removeObserver(self)
   }
 
@@ -267,29 +267,38 @@ final class EditorViewController: NSViewController {
     await runAutosave(reason: reason)
   }
 
-  /// Replaces `[image N]` placeholders with `@/path/to/image.png` references
-  /// inline. Called on window/app close so the invoking CLI model can read the
-  /// images via its Read tool. Images whose placeholders were deleted by the
-  /// user are prepended at the top of the document.
+  /// Scans text for `[image-XXXX]` placeholders, resolves them to `@/path`
+  /// references prepended at the top, and strips the placeholders. Called on
+  /// window/app close so the invoking CLI model reads images first.
   private func appendImageReferencesForClose() async {
     guard !attachedImages.isEmpty else { return }
 
     var text = textView.string
-    var orphaned: [URL] = []
 
-    for (i, url) in attachedImages.enumerated() {
-      let placeholder = "[image \(i + 1)]"
-      if let range = text.range(of: placeholder) {
-        text.replaceSubrange(range, with: "@\(url.path)")
-      } else {
-        orphaned.append(url)
+    // Find all [image-XXXX] placeholders still present in the text.
+    let pattern = #"\[image-([a-f0-9]{8})\]"#
+    let regex = try! NSRegularExpression(pattern: pattern)
+    let ns = text as NSString
+    let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+
+    // Collect URLs for placeholders that still exist (not undone/deleted).
+    var referencedURLs: [URL] = []
+    for match in matches {
+      let id = ns.substring(with: match.range(at: 1))
+      if let url = attachedImages[id] {
+        referencedURLs.append(url)
       }
     }
 
-    // Prepend any orphaned image references at the top.
-    if !orphaned.isEmpty {
-      let prefix = orphaned.map { "@\($0.path)" }.joined(separator: "\n") + "\n"
-      text = prefix + text
+    // Remove all [image-XXXX] placeholders from the text.
+    for match in matches.reversed() {
+      text.replaceSubrange(Range(match.range, in: text)!, with: "")
+    }
+
+    // Prepend image references at the top so the model reads them first.
+    if !referencedURLs.isEmpty {
+      let refs = referencedURLs.map { "@\($0.path)" }.joined(separator: "\n")
+      text = refs + "\n" + text
     }
 
     isApplyingProgrammaticUpdate = true
@@ -299,6 +308,11 @@ final class EditorViewController: NSViewController {
     autosavePending = true
 
     // Clear so deinit doesn't delete the files — the CLI model needs them.
+    // Delete temp files for images that were undone/removed by the user.
+    let referencedSet = Set(referencedURLs)
+    for url in attachedImages.values where !referencedSet.contains(url) {
+      try? FileManager.default.removeItem(at: url)
+    }
     attachedImages.removeAll()
   }
 
@@ -700,8 +714,8 @@ final class EditorViewController: NSViewController {
         await pending.value
         imageConversionTask = nil
       }
-      let imagesToPass = attachedImages
-      attachedImages = []
+      let imagesToPass = Array(attachedImages.values)
+      attachedImages = [:]
 
       defer {
         for url in imagesToPass { try? FileManager.default.removeItem(at: url) }
@@ -749,7 +763,7 @@ final class EditorViewController: NSViewController {
   }
 
   private func cleanUpAttachedImages() {
-    for url in attachedImages { try? FileManager.default.removeItem(at: url) }
+    for url in attachedImages.values { try? FileManager.default.removeItem(at: url) }
     attachedImages.removeAll()
   }
 
@@ -826,23 +840,27 @@ extension EditorViewController: NSTextViewDelegate {
   }
 
   /// Shared image insertion logic for paste and drag-and-drop.
-  /// Inserts `[image N]` placeholders immediately, converts TIFF→PNG in background.
+  /// Inserts `[image-XXXX]` placeholders immediately, converts TIFF→PNG in background.
   private func insertImages(_ images: [NSImage]) {
-    for i in 0..<images.count {
-      let index = attachedImages.count + i + 1
-      textView.insertText("[image \(index)]", replacementRange: textView.selectedRange())
+    var ids: [String] = []
+    for _ in images {
+      let id = UUID().uuidString.prefix(8).lowercased()
+      ids.append(String(id))
+      textView.insertText("[image-\(id)]", replacementRange: textView.selectedRange())
     }
     let imagesToConvert = images
     imageConversionTask = Task.detached { [weak self] in
-      var urls: [URL] = []
-      for image in imagesToConvert {
+      var pairs: [(String, URL)] = []
+      for (i, image) in imagesToConvert.enumerated() {
         if let url = Self.saveTempImageBackground(image) {
-          urls.append(url)
+          pairs.append((ids[i], url))
         }
       }
       await MainActor.run {
         guard let self else { return }
-        self.attachedImages.append(contentsOf: urls)
+        for (id, url) in pairs {
+          self.attachedImages[id] = url
+        }
       }
     }
   }
