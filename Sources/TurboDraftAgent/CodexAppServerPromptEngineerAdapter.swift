@@ -504,40 +504,5 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
       return nil
     }
 
-    private static func setCloExec(_ fd: Int32) {
-      let flags = fcntl(fd, F_GETFD)
-      if flags >= 0 {
-        _ = fcntl(fd, F_SETFD, flags | FD_CLOEXEC)
-      }
-    }
-
-    private static func setNonBlocking(_ fd: Int32) {
-      let flags = fcntl(fd, F_GETFL)
-      if flags >= 0 {
-        _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
-      }
-    }
-
-    private static func writeAll(fd: Int32, data: Data) throws {
-      try data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-        guard let base = raw.baseAddress else { return }
-        var offset = 0
-        while offset < raw.count {
-          let n = Darwin.write(fd, base.advanced(by: offset), raw.count - offset)
-          if n > 0 {
-            offset += n
-            continue
-          }
-          if n == -1, errno == EINTR {
-            continue
-          }
-          throw CodexAppServerPromptEngineerError.spawnFailed(errno: errno)
-        }
-      }
-    }
-
-    private func setCloExec(_ fd: Int32) { Self.setCloExec(fd) }
-    private func setNonBlocking(_ fd: Int32) { Self.setNonBlocking(fd) }
-    private func writeAll(fd: Int32, data: Data) throws { try Self.writeAll(fd: fd, data: data) }
   }
 }

@@ -252,35 +252,4 @@ INSTRUCTION:
     return SpawnResult(exitCode: exitCode, output: output, didTimeout: didTimeout, didOverflow: didOverflow)
   }
 
-  private func setCloExec(_ fd: Int32) {
-    let flags = fcntl(fd, F_GETFD)
-    if flags >= 0 {
-      _ = fcntl(fd, F_SETFD, flags | FD_CLOEXEC)
-    }
-  }
-
-  private func setNonBlocking(_ fd: Int32) {
-    let flags = fcntl(fd, F_GETFL)
-    if flags >= 0 {
-      _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
-    }
-  }
-
-  private func writeAll(fd: Int32, data: Data) throws {
-    try data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-      guard let base = raw.baseAddress else { return }
-      var offset = 0
-      while offset < raw.count {
-        let n = Darwin.write(fd, base.advanced(by: offset), raw.count - offset)
-        if n > 0 {
-          offset += n
-          continue
-        }
-        if n == -1, errno == EINTR {
-          continue
-        }
-        throw CodexCLIAgentError.spawnFailed(errno: errno)
-      }
-    }
-  }
 }
