@@ -16,19 +16,19 @@ cd turbodraft
 scripts/install
 ```
 
-This builds release binaries, symlinks `turbodraft`, `turbodraft-app`, `turbodraft-open`, and `turbodraft-editor` into `~/.local/bin`, and restarts the LaunchAgent if installed.
+This builds release binaries, symlinks `turbodraft`, `turbodraft-app`, and `turbodraft-bench` into `~/.local/bin`, and restarts the LaunchAgent if installed.
 
 Make sure `~/.local/bin` is on your `PATH`.
 
 ## Set as your editor
 
 ```sh
-export EDITOR="turbodraft-editor"
+export VISUAL=turbodraft
 ```
 
 That's it. Claude Code's `Ctrl+G` and Codex CLI's editor hooks will now open TurboDraft.
 
-`turbodraft-editor` accepts `--line N`, `--column N`, and `+N` line jump syntax. It blocks until you close the editor tab, then returns focus to your terminal.
+`turbodraft` accepts positional file paths, `+N` line jump syntax, and `--line N`/`--column N` flags. It blocks until you close the editor tab, then returns focus to your terminal.
 
 ## LaunchAgent (recommended)
 
@@ -77,16 +77,14 @@ Tables, footnotes, and full CommonMark/GFM edge cases are out of scope. This is 
 ## How it works
 
 ```
-CLI (turbodraft open)
+turbodraft <file>
   → Unix domain socket (~/Library/Application Support/TurboDraft/turbodraft.sock)
     → Resident AppKit app (turbodraft-app)
       → Editor window with Markdown highlighting
         → Close tab → CLI unblocks → terminal regains focus
 ```
 
-JSON-RPC over content-length framed streams. The CLI connects, sends `turbodraft.session.open`, and blocks on `turbodraft.session.wait` until you close the tab.
-
-`turbodraft-open` is a C binary that does the same thing without the Swift runtime. It's faster for the first-byte case but both paths converge on the same socket.
+JSON-RPC over content-length framed streams. `turbodraft` (a 36KB C binary) connects, sends `turbodraft.session.open`, and blocks on `turbodraft.session.wait` until you close the tab.
 
 ## Configuration
 
@@ -109,8 +107,8 @@ Config lives at `~/Library/Application Support/TurboDraft/config.json`.
 
 Override socket or config path:
 ```sh
-TURBODRAFT_SOCKET=/path/to/sock turbodraft open --path file.md --wait
-TURBODRAFT_CONFIG=/path/to/config.json turbodraft open --path file.md --wait
+TURBODRAFT_SOCKET=/path/to/sock turbodraft --path file.md --wait
+TURBODRAFT_CONFIG=/path/to/config.json turbodraft --path file.md --wait
 ```
 
 ## Building from source
@@ -130,8 +128,8 @@ Run the benchmark suite:
 
 ```sh
 swift build -c release
-.build/release/turbodraft bench run --path /tmp/prompt.md --warm 50 --cold 5 --out /tmp/bench.json
-.build/release/turbodraft bench check --baseline bench/editor/baseline.json --results /tmp/bench.json
+.build/release/turbodraft-bench bench run --path /tmp/prompt.md --warm 50 --cold 5 --out /tmp/bench.json
+.build/release/turbodraft-bench bench check --baseline bench/editor/baseline.json --results /tmp/bench.json
 ```
 
 End-to-end UX benchmark (requires Accessibility permission):
@@ -146,8 +144,8 @@ Baseline thresholds are in `bench/editor/baseline.json`. P95 values have headroo
 | Module | Purpose |
 |--------|---------|
 | `TurboDraftApp` | AppKit GUI, window management, socket server |
-| `TurboDraftCLI` | CLI (`turbodraft open`, `turbodraft bench`) |
-| `TurboDraftOpen` | Minimal C binary for fast-path opens |
+| `TurboDraftCLI` | Benchmark CLI (`turbodraft-bench`) |
+| `TurboDraftOpen` | Main CLI — C binary used as `$VISUAL` (`turbodraft`) |
 | `TurboDraftCore` | Editor sessions, file I/O, directory watcher |
 | `TurboDraftProtocol` | JSON-RPC message types |
 | `TurboDraftTransport` | Unix domain socket server/client |
