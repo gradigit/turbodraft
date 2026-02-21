@@ -55,7 +55,10 @@ public enum MarkdownHighlighter {
   }
 
   // Static regex properties: try! is safe — patterns are compile-time literals.
-  private static let fenceRegex = try! NSRegularExpression(pattern: #"^(\s*)(`{3,}|~{3,})(.*)$"#)
+  private static let fenceRegex = try! NSRegularExpression(
+    pattern: #"^(\s*)(`{3,}|~{3,})(.*)$"#,
+    options: [.anchorsMatchLines]
+  )
   private static let headerRegex = try! NSRegularExpression(pattern: #"^(\s*)(#{1,6})(\s+)(.*)$"#)
   private static let quoteRegex = try! NSRegularExpression(pattern: #"^(\s*)(>+)(\s*)(.*)$"#)
   private static let unorderedListRegex = try! NSRegularExpression(pattern: #"^(\s*)([-*+])(\s+)(.*)$"#)
@@ -85,7 +88,7 @@ public enum MarkdownHighlighter {
     if safe.length <= 0 { return [] }
 
     // Determine whether the starting range is inside a fenced code block by scanning the prefix.
-    var state = computeFenceState(in: ns, before: safe.location)
+    var state = computeFenceState(in: text, ns: ns, before: safe.location)
     var out: [MarkdownHighlight] = []
 
     var idx = safe.location
@@ -143,34 +146,28 @@ public enum MarkdownHighlighter {
     return out
   }
 
-  private static func computeFenceState(in ns: NSString, before location: Int) -> FenceState {
+  private static func computeFenceState(in text: String, ns: NSString, before location: Int) -> FenceState {
     if location <= 0 { return FenceState(inFence: false, fenceChar: nil, fenceLen: 0) }
     let end = min(location, ns.length)
+    if end <= 0 { return FenceState(inFence: false, fenceChar: nil, fenceLen: 0) }
     var state = FenceState(inFence: false, fenceChar: nil, fenceLen: 0)
-
-    var idx = 0
-    while idx < end {
-      let nextNL = ns.range(of: "\n", options: [], range: NSRange(location: idx, length: end - idx))
-      let lineEnd = nextNL.location == NSNotFound ? end : nextNL.location
-      let lineRange = NSRange(location: idx, length: max(0, lineEnd - idx))
-      let line = ns.substring(with: lineRange)
-      // Process only fence delimiters to update state.
-      if let fence = fenceMatch(in: line) {
-        let delim = (line as NSString).substring(with: fence.delimRange)
-        let ch = delim.first
-        let len = (delim as NSString).length
-        if !state.inFence {
-          state.inFence = true
-          state.fenceChar = ch
-          state.fenceLen = len
-        } else if ch == state.fenceChar, len >= state.fenceLen {
-          state.inFence = false
-          state.fenceChar = nil
-          state.fenceLen = 0
-        }
+    let prefixRange = NSRange(location: 0, length: end)
+    fenceRegex.enumerateMatches(in: text, options: [], range: prefixRange) { match, _, _ in
+      guard let match else { return }
+      let delimRange = match.range(at: 2)
+      guard delimRange.location != NSNotFound, delimRange.length > 0 else { return }
+      guard let scalar = UnicodeScalar(ns.character(at: delimRange.location)) else { return }
+      let ch = Character(scalar)
+      let len = delimRange.length
+      if !state.inFence {
+        state.inFence = true
+        state.fenceChar = ch
+        state.fenceLen = len
+      } else if ch == state.fenceChar, len >= state.fenceLen {
+        state.inFence = false
+        state.fenceChar = nil
+        state.fenceLen = 0
       }
-      if nextNL.location == NSNotFound { break }
-      idx = lineEnd + 1
     }
 
     return state

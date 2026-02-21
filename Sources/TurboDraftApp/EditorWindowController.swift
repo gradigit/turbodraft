@@ -112,6 +112,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
   func setEditorMode(_ mode: TurboDraftConfig.EditorMode) {
     config.editorMode = mode
+    editorVC.setEditorMode(mode)
   }
 
   func setColorTheme(_ theme: EditorColorTheme) {

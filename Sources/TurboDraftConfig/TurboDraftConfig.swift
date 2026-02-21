@@ -1,6 +1,8 @@
 import Foundation
 
 public struct TurboDraftConfig: Codable, Sendable, Equatable {
+  private static let allowedAgentCommands: Set<String> = ["codex", "claude"]
+
   public enum EditorMode: String, Codable, Sendable, Equatable {
     case reliable
     case ultraFast = "ultra_fast"
@@ -217,6 +219,22 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     if cfg.agent.model.contains("spark"), cfg.agent.reasoningEffort == .minimal {
       cfg.agent.reasoningEffort = .low
     }
+
+    let normalizedCommand = cfg.agent.command
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    if Self.allowedAgentCommands.contains(normalizedCommand) {
+      cfg.agent.command = normalizedCommand
+    } else {
+      cfg.agent.command = cfg.agent.backend == .claude ? "claude" : "codex"
+    }
+    switch cfg.agent.backend {
+    case .claude:
+      cfg.agent.command = "claude"
+    case .exec, .appServer:
+      cfg.agent.command = "codex"
+    }
+
     return cfg
   }
 

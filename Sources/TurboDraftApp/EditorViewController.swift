@@ -18,6 +18,7 @@ private typealias TurboDraftEditorTextView = EditorTextView
 final class EditorViewController: NSViewController {
   private let session: EditorSession
   private let config: TurboDraftConfig
+  private var editorMode: TurboDraftConfig.EditorMode
   private var agentConfig: TurboDraftConfig.Agent
 
   private let banner = BannerView()
@@ -62,6 +63,7 @@ final class EditorViewController: NSViewController {
   init(session: EditorSession, config: TurboDraftConfig) {
     self.session = session
     self.config = config
+    self.editorMode = config.editorMode
     self.agentConfig = config.agent
     #if TURBODRAFT_USE_CODEEDIT_TEXTVIEW
     self.textView = TextView(
@@ -212,6 +214,10 @@ final class EditorViewController: NSViewController {
   func setAgentConfig(_ agent: TurboDraftConfig.Agent) {
     agentConfig = agent
     applyAgentConfig()
+  }
+
+  func setEditorMode(_ mode: TurboDraftConfig.EditorMode) {
+    editorMode = mode
   }
 
   func runPromptEngineer() {
@@ -433,7 +439,7 @@ final class EditorViewController: NSViewController {
         self.applyStyling(forChangedRange: initialRange)
       }
     }
-    let deferredStyleDelayMs = (config.editorMode == .ultraFast) ? 260 : 140
+    let deferredStyleDelayMs = (editorMode == .ultraFast) ? 260 : 140
     fullOpenStyleDebouncer.schedule(delayMs: deferredStyleDelayMs) { [weak self] in
       guard let self else { return }
       await MainActor.run {
@@ -451,7 +457,7 @@ final class EditorViewController: NSViewController {
   }
 
   private func initialOpenStylingRange(fullRange: NSRange) -> NSRange {
-    let eagerLimit = (config.editorMode == .ultraFast) ? 8_000 : 12_000
+    let eagerLimit = (editorMode == .ultraFast) ? 8_000 : 12_000
     if fullRange.length <= eagerLimit {
       return fullRange
     }
@@ -462,7 +468,7 @@ final class EditorViewController: NSViewController {
       let visibleRect = scrollView.contentView.documentVisibleRect
       let glyph = lm.glyphRange(forBoundingRect: visibleRect, in: tc)
       let char = lm.characterRange(forGlyphRange: glyph, actualGlyphRange: nil)
-      let pad = (config.editorMode == .ultraFast) ? 1_200 : 2_000
+      let pad = (editorMode == .ultraFast) ? 1_200 : 2_000
       let start = max(0, char.location - pad)
       let end = min(fullRange.length, NSMaxRange(char) + pad)
       let padded = NSRange(location: start, length: max(0, end - start))
@@ -470,7 +476,7 @@ final class EditorViewController: NSViewController {
     }
     #endif
 
-    let fallbackLimit = (config.editorMode == .ultraFast) ? 4_500 : 8_000
+    let fallbackLimit = (editorMode == .ultraFast) ? 4_500 : 8_000
     let fallback = NSRange(location: 0, length: min(fullRange.length, fallbackLimit))
     return fullText.lineRange(for: fallback)
   }

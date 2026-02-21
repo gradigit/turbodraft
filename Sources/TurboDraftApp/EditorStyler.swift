@@ -224,13 +224,27 @@ final class MarkdownStyler {
       return CacheKey(rangeLocation: 0, rangeLength: 0, textHash: 0)
     }
 
-    let slice = ns.substring(with: safe)
-    var hasher = Hasher()
-    hasher.combine(slice)
     return CacheKey(
       rangeLocation: safe.location,
       rangeLength: safe.length,
-      textHash: hasher.finalize()
+      textHash: hashUTF16(in: ns, range: safe)
     )
+  }
+
+  private func hashUTF16(in ns: NSString, range: NSRange) -> Int {
+    var hasher = Hasher()
+    var cursor = range.location
+    let end = range.location + range.length
+    var buffer = [unichar](repeating: 0, count: 1024)
+    while cursor < end {
+      let chunkLen = min(buffer.count, end - cursor)
+      let chunkRange = NSRange(location: cursor, length: chunkLen)
+      ns.getCharacters(&buffer, range: chunkRange)
+      for i in 0..<chunkLen {
+        hasher.combine(buffer[i])
+      }
+      cursor += chunkLen
+    }
+    return hasher.finalize()
   }
 }
