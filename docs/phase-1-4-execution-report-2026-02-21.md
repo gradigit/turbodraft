@@ -70,8 +70,13 @@ Added tests:
 ## Deferred (Phase 5–6 TODO)
 
 ### Phase 5 (deferred)
-- P2 simplification/dead-code cleanup batch from production review (e.g., dead adapters/theme pruning/general LOC reduction).
+- P1 benchmark overhaul from TODO 003:
+  - replace/clean fixtures (domain-diverse, non-self-referential)
+  - make judge + pairwise default
+  - add complexity-aware/fidelity scoring
+  - add regression tracking outputs
 
 ### Phase 6 (deferred)
-- P3 test coverage expansion and deeper verification work (RecoveryStore/file I/O coverage, app-level testability, broader perf/regression campaign).
-
+- P2 product TODOs:
+  - TODO 001: session context for prompt engineer
+  - TODO 002: image size reject UX
