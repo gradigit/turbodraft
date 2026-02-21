@@ -54,6 +54,13 @@ public enum MarkdownHighlighter {
     var fenceLen: Int
   }
 
+  private struct FenceScanCheckpoint {
+    var textObjectID: ObjectIdentifier
+    var textLength: Int
+    var scannedUpTo: Int
+    var stateAtScannedUpTo: FenceState
+  }
+
   // Static regex properties: try! is safe — patterns are compile-time literals.
   private static let fenceRegex = try! NSRegularExpression(
     pattern: #"^(\s*)(`{3,}|~{3,})(.*)$"#,
@@ -80,6 +87,8 @@ public enum MarkdownHighlighter {
   private static let bareURLRegex = try! NSRegularExpression(pattern: #"(https?://[^\s<>()\[\]]+)"#)
   private static let wordish = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_"))
   private static let trailingURLPunctuation = CharacterSet(charactersIn: ".,;:!?")
+  private static let fenceCheckpointLock = NSLock()
+  private static var fenceCheckpoint: FenceScanCheckpoint?
 
   public static func highlights(in text: String, range: NSRange) -> [MarkdownHighlight] {
     let ns = text as NSString
@@ -151,7 +160,20 @@ public enum MarkdownHighlighter {
     let end = min(location, ns.length)
     if end <= 0 { return FenceState(inFence: false, fenceChar: nil, fenceLen: 0) }
     var state = FenceState(inFence: false, fenceChar: nil, fenceLen: 0)
-    let prefixRange = NSRange(location: 0, length: end)
+    let textObjectID = ObjectIdentifier(ns)
+    var scanStart = 0
+
+    fenceCheckpointLock.lock()
+    if let checkpoint = fenceCheckpoint,
+       checkpoint.textObjectID == textObjectID,
+       checkpoint.textLength == ns.length,
+       checkpoint.scannedUpTo <= end {
+      scanStart = checkpoint.scannedUpTo
+      state = checkpoint.stateAtScannedUpTo
+    }
+    fenceCheckpointLock.unlock()
+
+    let prefixRange = NSRange(location: scanStart, length: max(0, end - scanStart))
     fenceRegex.enumerateMatches(in: text, options: [], range: prefixRange) { match, _, _ in
       guard let match else { return }
       let delimRange = match.range(at: 2)
@@ -169,6 +191,22 @@ public enum MarkdownHighlighter {
         state.fenceLen = 0
       }
     }
+
+    fenceCheckpointLock.lock()
+    if let checkpoint = fenceCheckpoint,
+       checkpoint.textObjectID == textObjectID,
+       checkpoint.textLength == ns.length,
+       checkpoint.scannedUpTo >= end {
+      // Keep farther-progress checkpoint for this same text.
+    } else {
+      fenceCheckpoint = FenceScanCheckpoint(
+        textObjectID: textObjectID,
+        textLength: ns.length,
+        scannedUpTo: end,
+        stateAtScannedUpTo: state
+      )
+    }
+    fenceCheckpointLock.unlock()
 
     return state
   }

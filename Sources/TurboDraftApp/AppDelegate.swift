@@ -21,6 +21,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var stdioServer: JSONRPCServerConnection?
   private var sessionSweepTask: Task<Void, Never>?
   private var lastSessionSweepAt = Date.distantPast
+  private var telemetryHandle: FileHandle?
+  private lazy var telemetryFileURL: URL? = {
+    do {
+      let dir = try TurboDraftPaths.applicationSupportDir().appendingPathComponent("telemetry", isDirectory: true)
+      try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+      return dir.appendingPathComponent("editor-open.jsonl")
+    } catch {
+      Self.appLog.warning("Failed to prepare telemetry path: \(String(describing: error), privacy: .public)")
+      return nil
+    }
+  }()
   private var cfg = TurboDraftConfig.load()
 
   private var colorThemes: [EditorColorTheme] = []
@@ -37,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let startHidden = CommandLine.arguments.contains("--start-hidden")
   private let terminateOnLastClose = CommandLine.arguments.contains("--terminate-on-last-close")
   private static let appLog = Logger(subsystem: "com.turbodraft", category: "AppDelegate")
+  private static let telemetryDateFormatter = ISO8601DateFormatter()
   private let sessionSweepInterval: TimeInterval = 60
   private let orphanSessionMaxAge: TimeInterval = 120
 
@@ -165,6 +177,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private func performGracefulShutdown() async {
     stopSessionSweepTask()
+    try? telemetryHandle?.close()
+    telemetryHandle = nil
 
     // Race all flushes against a 5s overall timeout to prevent quit hang.
     await withTaskGroup(of: Void.self) { group in
@@ -187,12 +201,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func ensureSocketDirectorySecure(for socketPath: String) throws {
     let socketURL = URL(fileURLWithPath: socketPath)
     let socketDirURL = socketURL.deletingLastPathComponent()
-    try FileManager.default.createDirectory(
-      at: socketDirURL,
-      withIntermediateDirectories: true,
-      attributes: [.posixPermissions: 0o700]
-    )
-    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: socketDirURL.path)
+    let fm = FileManager.default
+    var isDir: ObjCBool = false
+    let path = socketDirURL.path
+    if !fm.fileExists(atPath: path, isDirectory: &isDir) {
+      try fm.createDirectory(
+        at: socketDirURL,
+        withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700]
+      )
+      return
+    }
+    guard isDir.boolValue else {
+      throw NSError(domain: NSPOSIXErrorDomain, code: Int(ENOTDIR))
+    }
+
+    let attrs = try? fm.attributesOfItem(atPath: path)
+    let ownerID = (attrs?[.ownerAccountID] as? NSNumber)?.uint32Value
+    let perms = (attrs?[.posixPermissions] as? NSNumber)?.intValue ?? 0
+
+    if ownerID == getuid() {
+      do {
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path)
+      } catch {
+        Self.appLog.warning("Unable to tighten socket directory permissions at \(path, privacy: .public): \(String(describing: error), privacy: .public)")
+      }
+      return
+    }
+
+    // For shared/system-owned directories (for example /tmp), don't hard-fail startup.
+    if (perms & 0o077) != 0 {
+      Self.appLog.warning(
+        "Socket directory \(path, privacy: .public) is not user-owned and is group/world-accessible (mode=\(String(perms, radix: 8), privacy: .public)); continuing with socket-file permissions + peer UID checks."
+      )
+    } else {
+      Self.appLog.info(
+        "Socket directory \(path, privacy: .public) is not user-owned (owner=\(String(ownerID ?? 0), privacy: .public)); skipping chmod."
+      )
+    }
   }
 
   private func startSessionSweepTask() {
@@ -1213,20 +1259,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func appendLatencyRecord(_ payload: [String: Any]) {
+    guard let file = telemetryFileURL else { return }
     do {
-      let dir = try TurboDraftPaths.applicationSupportDir().appendingPathComponent("telemetry", isDirectory: true)
-      try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-      let file = dir.appendingPathComponent("editor-open.jsonl")
       var record = payload
-      record["ts"] = ISO8601DateFormatter().string(from: Date())
+      record["ts"] = Self.telemetryDateFormatter.string(from: Date())
       let data = try JSONSerialization.data(withJSONObject: record, options: [])
       let line = data + Data([0x0A])
-      if let fh = try? FileHandle(forWritingTo: file) {
+      if telemetryHandle == nil {
+        telemetryHandle = try? FileHandle(forWritingTo: file)
+      }
+      if let fh = telemetryHandle {
         try fh.seekToEnd()
         try fh.write(contentsOf: line)
-        try fh.close()
       } else {
+        // First record fallback if file doesn't exist yet.
         try line.write(to: file, options: [.atomic])
+        telemetryHandle = try? FileHandle(forWritingTo: file)
       }
     } catch {
       // Best-effort telemetry only.

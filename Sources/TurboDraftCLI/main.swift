@@ -15,6 +15,17 @@ enum CLIError: Error {
 
 struct CLI {
   let args: [String]
+  private static let telemetryDateFormatter = ISO8601DateFormatter()
+  private static var telemetryHandle: FileHandle?
+  private static let telemetryFileURL: URL? = {
+    do {
+      let dir = try TurboDraftPaths.applicationSupportDir().appendingPathComponent("telemetry", isDirectory: true)
+      try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+      return dir.appendingPathComponent("editor-open.jsonl")
+    } catch {
+      return nil
+    }
+  }()
 
   static let helpText = """
 turbodraft
@@ -116,20 +127,21 @@ Commands:
   }
 
   private func appendOpenLatencyRecord(_ payload: [String: Any]) {
+    guard let file = Self.telemetryFileURL else { return }
     do {
-      let dir = try TurboDraftPaths.applicationSupportDir().appendingPathComponent("telemetry", isDirectory: true)
-      try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-      let file = dir.appendingPathComponent("editor-open.jsonl")
       var record = payload
-      record["ts"] = ISO8601DateFormatter().string(from: Date())
+      record["ts"] = Self.telemetryDateFormatter.string(from: Date())
       let data = try JSONSerialization.data(withJSONObject: record, options: [])
       let line = data + Data([0x0A])
-      if let fh = try? FileHandle(forWritingTo: file) {
+      if Self.telemetryHandle == nil {
+        Self.telemetryHandle = try? FileHandle(forWritingTo: file)
+      }
+      if let fh = Self.telemetryHandle {
         try fh.seekToEnd()
         try fh.write(contentsOf: line)
-        try fh.close()
       } else {
         try line.write(to: file, options: [.atomic])
+        Self.telemetryHandle = try? FileHandle(forWritingTo: file)
       }
     } catch {
       // Best-effort telemetry only.

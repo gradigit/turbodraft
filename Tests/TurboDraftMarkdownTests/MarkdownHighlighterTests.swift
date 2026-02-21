@@ -140,4 +140,38 @@ regular line
     let hs = MarkdownHighlighter.highlights(in: text, range: targetLine)
     XCTAssertFalse(hs.contains { $0.kind == .codeBlockLine })
   }
+
+  func testFenceStateRemainsCorrectAcrossRepeatedCalls() {
+    let text = """
+intro
+```swift
+let a = 1
+let b = 2
+```
+tail
+"""
+    let ns = text as NSString
+    let firstRange = ns.range(of: "intro")
+    _ = MarkdownHighlighter.highlights(in: text, range: firstRange)
+
+    let fenceBodyRange = ns.range(of: "let b = 2")
+    let hs = MarkdownHighlighter.highlights(in: text, range: fenceBodyRange)
+    XCTAssertTrue(hs.contains { $0.kind == .codeBlockLine })
+  }
+
+  func testFenceStateRemainsCorrectWhenRangeMovesBackward() {
+    let text = """
+```js
+const x = 1
+```
+outside
+"""
+    let ns = text as NSString
+    let outsideRange = ns.range(of: "outside")
+    _ = MarkdownHighlighter.highlights(in: text, range: outsideRange)
+
+    let insideRange = ns.range(of: "const x = 1")
+    let hs = MarkdownHighlighter.highlights(in: text, range: insideRange)
+    XCTAssertTrue(hs.contains { $0.kind == .codeBlockLine })
+  }
 }
