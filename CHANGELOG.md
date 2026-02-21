@@ -3,6 +3,29 @@
 All notable changes to TurboDraft are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Claude/Sonnet backend**: `ClaudePromptEngineerAdapter` invokes `claude -p` with `--output-format text`, `--effort` mapping, and `--tools ""`. New `Backend.claude` config option with auto-detection when model name contains "claude" or "sonnet".
+- Backend menu in app menu bar (Codex exec / Codex app-server / Claude)
+- **Image drag-and-drop and paste**: images pasted or dragged into the editor are saved as temp files and attached to the prompt-engineer context as `[Image #N]` placeholders with `@image-ref` annotations
+- **Color themes**: 7 built-in themes (turbodraft-dark, turbodraft-light, github-dark, github-light, dracula, solarized-dark, solarized-light) + custom theme support via config
+- **Font settings**: configurable font family and size via config
+- **Task strikethrough**: completed task checkboxes (`- [x]`) render with strikethrough styling
+- Unique IDs for image placeholders, `@refs` prepended at top of prompt text
+- Shared POSIX spawn helpers extracted into `ProcessHelpers.swift`
+- Benchmark suite overhaul TODO with full audit findings (todos/003)
+
+### Fixed
+
+- Styling feedback loop: `applyStyling` now uses `colorTheme.foreground` directly instead of reading `textView.textColor` (which reflects text storage attributes, not the base color)
+- Benchmark fixture corruption: restored `dictation_flush_mode.md`, removed misplaced top-level baseline, fixed stale `profile_set.txt` reference
+
+### Changed
+
+- Removed hardcoded test counts from README.md and CLAUDE.md (go stale on every test addition)
+
 ## [0.2.0] — 2026-02-19
 
 ### Fixed

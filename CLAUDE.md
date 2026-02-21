@@ -5,7 +5,7 @@
 TurboDraft is a performance-first tool for drafting prompts via Ctrl+G. Every decision should be evaluated through this lens:
 
 1. **Performance** — startup latency, typing responsiveness, memory footprint. Never regress these. If a feature adds overhead, it needs to justify itself against the core use case.
-2. **Prompt engineering / agent integration** — the Codex-powered "Improve Prompt" flow and related agentic features.
+2. **Prompt engineering / agent integration** — the "Improve Prompt" flow (Codex + Claude backends) and related agentic features.
 3. **Everything else** — themes, UI polish, extra markdown features, etc. Nice to have, but never at the cost of (1) or (2).
 
 **Evidence-based performance decisions.** Do NOT dismiss feature ideas by assuming they'll be slow. If you don't have concrete numbers, you don't have an opinion. Before rejecting or accepting a feature on performance grounds:
@@ -37,6 +37,7 @@ Do NOT skip this step. Do NOT just run `swift build` — use `scripts/install` s
 - `.build/release/turbodraft-bench bench check --baseline bench/editor/baseline.json --results <file>` — check baselines
 - `python3 scripts/bench_editor_e2e_ux.py --warm N --cold N` — end-to-end UX benchmark (needs Accessibility permissions)
 - `pkill -9 -f turbodraft-app && rm -f ~/Library/Application\ Support/TurboDraft/rpc.sock` — kill stale processes + remove socket before benchmarks
+- `CLAUDECODE= python3 scripts/bench_codex_prompt_engineer.py --draft <file> --models <model> --efforts <effort> -n <runs> --backend exec --save-outputs <dir>` — prompt-engineering quality benchmark
 
 ## Architecture
 
@@ -70,7 +71,11 @@ Communication: CLI → Unix domain socket (`~/Library/Application Support/TurboD
 - `Sources/TurboDraftTransport/UnixDomainSocket.swift` — socket bind/listen/connect/accept
 - `Sources/TurboDraftCore/EditorSession.swift` — file session state, revision tracking
 - `Sources/TurboDraftCore/CommandResolver.swift` — PATH resolution, supplemental paths (nvm/fnm/homebrew), shared `buildEnv`
-- `bench/editor/baseline.json` — benchmark regression thresholds
+- `Sources/TurboDraftAgent/ClaudePromptEngineerAdapter.swift` — Claude/Sonnet backend for prompt engineering
+- `Sources/TurboDraftAgent/CodexPromptEngineerAdapter.swift` — Codex exec backend for prompt engineering
+- `bench/editor/baseline.json` — editor benchmark regression thresholds
+- `scripts/bench_codex_prompt_engineer.py` — prompt-engineering quality benchmark (1957 lines)
+- `todos/` — persistent TODO files for tracked work items
 
 ## Gotchas
 
@@ -83,4 +88,5 @@ Communication: CLI → Unix domain socket (`~/Library/Application Support/TurboD
 - Machine load heavily distorts benchmark p95s. Check `ps -eo %cpu,command -r | head -5` before chasing noisy regressions.
 - `TurboDraftOpen` is plain C (`main.c`), not Swift. All three agent adapters share spawn helpers (`setCloExec`/`setNonBlocking`/`writeAll`) — they're intentionally inlined per-file to avoid adding a shared C shim target.
 - All agent adapters must use `CommandResolver.buildEnv(prependingToPath:)` when spawning child processes. Using raw `environ` directly skips PATH enrichment and breaks under the LaunchAgent.
+- When running `claude -p` from inside a Claude Code session (e.g. benchmarks), you must unset the `CLAUDECODE` env var or it refuses to launch. Use `CLAUDECODE= python3 scripts/...` or `env -u CLAUDECODE ...`.
 - `NSTextView.textColor` is NOT a simple stored property — it reflects the foreground color from the text storage. If `applyStyling` sets marker/heading colors via `addAttributes`, reading `textView.textColor` returns those colors, creating a feedback loop that corrupts `baseAttrs`. Always use `colorTheme.foreground` directly in `applyStyling`.
