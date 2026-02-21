@@ -23,6 +23,9 @@ docs/markdown-reference.txt
 docs/theme-preview.html
 docs/benchmarks/
 
+# Session handoff (consumed by next agent, not project docs)
+HANDOFF.md
+
 # Swift / Xcode / SwiftPM
 .build/
 .swiftpm/
