@@ -93,4 +93,37 @@ final class CodexAdapterTests: XCTestCase {
     let err = CodexPromptEngineerError.outputTooLarge
     XCTAssertEqual(err.description, "Output too large")
   }
+
+  // MARK: - ClaudePromptEngineerAdapter
+
+  func testClaudeAdapterCommandNotFound() async {
+    let adapter = ClaudePromptEngineerAdapter(command: "turbodraft_no_such_command_please")
+    do {
+      _ = try await adapter.draft(prompt: "p", instruction: "i", images: [])
+      XCTFail("Expected commandNotFound")
+    } catch let e as ClaudePromptEngineerError {
+      if case .commandNotFound = e {
+        // expected
+      } else {
+        XCTFail("Expected commandNotFound, got \(e)")
+      }
+    } catch {
+      XCTFail("Wrong error type: \(error)")
+    }
+  }
+
+  func testClaudeAdapterDraftRunsOffCooperativePool() async {
+    let adapter = ClaudePromptEngineerAdapter(command: "turbodraft_no_such_command_please")
+    do {
+      _ = try await adapter.draft(prompt: "p", instruction: "i", images: [])
+    } catch {
+      // Expected to throw commandNotFound; the test verifies the call completes.
+    }
+  }
+
+  func testClaudeAdapterErrorDescriptions() {
+    XCTAssertEqual(ClaudePromptEngineerError.commandNotFound.description, "Claude CLI not found")
+    XCTAssertEqual(ClaudePromptEngineerError.timedOut.description, "Timed out")
+    XCTAssertEqual(ClaudePromptEngineerError.outputTooLarge.description, "Output too large")
+  }
 }

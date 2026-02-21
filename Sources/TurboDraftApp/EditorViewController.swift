@@ -817,6 +817,15 @@ final class EditorViewController: NSViewController {
         reasoningSummary: agentConfig.reasoningSummary.rawValue,
         extraArgs: agentConfig.args
       )
+    case .claude:
+      return ClaudePromptEngineerAdapter(
+        command: agentConfig.command,
+        model: agentConfig.model,
+        timeoutMs: agentConfig.timeoutMs,
+        promptProfile: agentConfig.promptProfile.rawValue,
+        reasoningEffort: agentConfig.reasoningEffort.rawValue,
+        extraArgs: agentConfig.args
+      )
     }
   }
 }

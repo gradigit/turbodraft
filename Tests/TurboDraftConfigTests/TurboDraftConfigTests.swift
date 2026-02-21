@@ -40,4 +40,26 @@ final class TurboDraftConfigTests: XCTestCase {
     ).sanitized()
     XCTAssertEqual(cfg.autosaveDebounceMs, 0)
   }
+
+  func testDecodeClaudeBackend() throws {
+    let cfg = try JSONDecoder().decode(
+      TurboDraftConfig.self,
+      from: Data(#"{"agent":{"backend":"claude","model":"claude-sonnet-4-6","command":"claude"}}"#.utf8)
+    )
+    XCTAssertEqual(cfg.agent.backend, .claude)
+    XCTAssertEqual(cfg.agent.model, "claude-sonnet-4-6")
+    XCTAssertEqual(cfg.agent.command, "claude")
+  }
+
+  func testClaudeBackendRoundTrips() throws {
+    var cfg = TurboDraftConfig()
+    cfg.agent.backend = .claude
+    cfg.agent.model = "claude-sonnet-4-6"
+    cfg.agent.command = "claude"
+    let data = try JSONEncoder().encode(cfg)
+    let decoded = try JSONDecoder().decode(TurboDraftConfig.self, from: data)
+    XCTAssertEqual(decoded.agent.backend, .claude)
+    XCTAssertEqual(decoded.agent.model, "claude-sonnet-4-6")
+    XCTAssertEqual(decoded.agent.command, "claude")
+  }
 }

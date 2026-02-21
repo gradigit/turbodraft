@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     "gpt-5",
     "o3",
     "o4-mini",
+    "claude-sonnet-4-6",
   ]
   private let startHidden = CommandLine.arguments.contains("--start-hidden")
   private let terminateOnLastClose = CommandLine.arguments.contains("--terminate-on-last-close")
@@ -789,6 +790,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch v {
         case .exec: return "Exec (Spawn)"
         case .appServer: return "App Server (Warm)"
+        case .claude: return "Claude CLI"
         }
       }
     )
@@ -894,7 +896,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   @MainActor @objc private func selectCustomAgentModel(_ sender: NSMenuItem) {
     let alert = NSAlert()
     alert.messageText = "Set Model"
-    alert.informativeText = "Enter any model id supported by your Codex CLI setup."
+    alert.informativeText = "Enter any model id supported by your CLI backend (Codex or Claude)."
     alert.alertStyle = .informational
     let input = NSTextField(string: cfg.agent.model)
     input.frame = NSRect(x: 0, y: 0, width: 360, height: 24)
@@ -990,11 +992,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard let raw = sender.representedObject as? String,
           let v = TurboDraftConfig.Agent.Backend(rawValue: raw)
     else { return }
+    let oldBackend = cfg.agent.backend
     cfg.agent.backend = v
+
+    // Auto-switch command and model when crossing between Codex and Claude backends.
+    if v == .claude, oldBackend != .claude {
+      if cfg.agent.command == "codex" { cfg.agent.command = "claude" }
+      if !cfg.agent.model.hasPrefix("claude-") { cfg.agent.model = "claude-sonnet-4-6" }
+    } else if v != .claude, oldBackend == .claude {
+      if cfg.agent.command == "claude" { cfg.agent.command = "codex" }
+      if cfg.agent.model.hasPrefix("claude-") { cfg.agent.model = "gpt-5.3-codex-spark" }
+    }
+
     sender.menu?.items.forEach { $0.state = .off }
     sender.state = .on
     applyAgentConfigToAllWindows()
     try? cfg.write()
+    installMenu()
   }
 
   @MainActor @objc private func selectReasoningEffort(_ sender: NSMenuItem) {

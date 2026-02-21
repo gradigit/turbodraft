@@ -16,6 +16,7 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     public enum Backend: String, Codable, Sendable, Equatable, CaseIterable {
       case exec
       case appServer = "app_server"
+      case claude
     }
 
     public enum ReasoningEffort: String, Codable, Sendable, Equatable, CaseIterable {
