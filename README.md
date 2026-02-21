@@ -103,7 +103,7 @@ Config lives at `~/Library/Application Support/TurboDraft/config.json`.
 | `agent.enabled` | `false` | Enable prompt-engineering agent |
 | `agent.command` | `"codex"` | Path to Codex CLI |
 | `agent.model` | `"gpt-5.3-codex-spark"` | Model for prompt engineering |
-| `agent.backend` | `"exec"` | `"exec"` or `"app_server"` |
+| `agent.backend` | `"exec"` | `"exec"`, `"app_server"`, or `"claude"` |
 
 Override socket or config path:
 ```sh
@@ -116,7 +116,7 @@ TURBODRAFT_CONFIG=/path/to/config.json turbodraft --path file.md --wait
 ```sh
 swift build            # debug build
 swift build -c release # release build
-swift test             # run all 58 tests
+swift test             # run all tests
 scripts/install        # build + symlink + restart LaunchAgent
 ```
 
@@ -150,7 +150,7 @@ Baseline thresholds are in `bench/editor/baseline.json`. P95 values have headroo
 | `TurboDraftProtocol` | JSON-RPC message types |
 | `TurboDraftTransport` | Unix domain socket server/client |
 | `TurboDraftMarkdown` | Markdown syntax highlighting |
-| `TurboDraftAgent` | Codex prompt-engineering integration |
+| `TurboDraftAgent` | Prompt-engineering integration (Codex + Claude) |
 | `TurboDraftConfig` | User configuration |
 
 ## License

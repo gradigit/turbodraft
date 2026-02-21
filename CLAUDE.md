@@ -30,7 +30,7 @@ Do NOT skip this step. Do NOT just run `swift build` — use `scripts/install` s
 
 - `swift build` — debug build
 - `swift build -c release` — release build
-- `swift test` — run all tests (77 tests)
+- `swift test` — run all tests
 - `scripts/install` — build + symlink + restart LaunchAgent
 - `scripts/turbodraft-launch-agent install|uninstall|status|update|restart` — manage LaunchAgent
 - `.build/release/turbodraft-bench bench run --path <file> --warm N --cold N` — editor benchmarks
@@ -51,7 +51,7 @@ Swift Package with 10 modules:
 | `TurboDraftProtocol` | JSON-RPC message types and method definitions |
 | `TurboDraftTransport` | Unix domain socket server/client, JSON-RPC framing |
 | `TurboDraftMarkdown` | Markdown syntax highlighting for NSTextView |
-| `TurboDraftAgent` | Codex prompt-engineering agent integration |
+| `TurboDraftAgent` | Prompt-engineering agent integration (Codex + Claude adapters) |
 | `TurboDraftConfig` | User config loading/saving |
 | `TurboDraftE2EHarness` | E2E benchmark harness binary |
 

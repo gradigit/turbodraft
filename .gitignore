@@ -17,6 +17,12 @@ Thumbs.db
 # Benchmark / scratch
 tmp/
 
+# Research / reference (local-only)
+research-*.md
+docs/markdown-reference.txt
+docs/theme-preview.html
+docs/benchmarks/
+
 # Swift / Xcode / SwiftPM
 .build/
 .swiftpm/
