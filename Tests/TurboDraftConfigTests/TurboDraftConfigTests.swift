@@ -62,4 +62,26 @@ final class TurboDraftConfigTests: XCTestCase {
     XCTAssertEqual(decoded.agent.model, "claude-sonnet-4-6")
     XCTAssertEqual(decoded.agent.command, "claude")
   }
+
+  func testSanitizedRejectsUnknownAgentCommand() throws {
+    let cfg = try JSONDecoder().decode(
+      TurboDraftConfig.self,
+      from: Data(#"{"agent":{"backend":"exec","command":"./evil-wrapper"}}"#.utf8)
+    ).sanitized()
+    XCTAssertEqual(cfg.agent.command, "codex")
+  }
+
+  func testSanitizedAlignsAgentCommandWithBackend() throws {
+    let execCfg = try JSONDecoder().decode(
+      TurboDraftConfig.self,
+      from: Data(#"{"agent":{"backend":"exec","command":"claude"}}"#.utf8)
+    ).sanitized()
+    XCTAssertEqual(execCfg.agent.command, "codex")
+
+    let claudeCfg = try JSONDecoder().decode(
+      TurboDraftConfig.self,
+      from: Data(#"{"agent":{"backend":"claude","command":"codex"}}"#.utf8)
+    ).sanitized()
+    XCTAssertEqual(claudeCfg.agent.command, "claude")
+  }
 }

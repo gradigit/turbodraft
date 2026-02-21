@@ -106,4 +106,38 @@ final class MarkdownHighlighterTests: XCTestCase {
     let urls = hs.filter { $0.kind == .linkURL }.map { (text as NSString).substring(with: $0.range) }
     XCTAssertEqual(urls, ["https://openai.com/docs"])
   }
+
+  func testRangeInsideFenceKeepsFenceState() {
+    let text = """
+before
+```swift
+let x = 1
+let y = 2
+```
+after
+"""
+    let ns = text as NSString
+    let targetLine = ns.range(of: "let y = 2")
+    let hs = MarkdownHighlighter.highlights(in: text, range: targetLine)
+    XCTAssertTrue(
+      hs.contains(where: { highlight in
+        highlight.kind == .codeBlockLine &&
+          highlight.range.location == targetLine.location &&
+          highlight.range.length == targetLine.length
+      })
+    )
+  }
+
+  func testRangeAfterClosedFenceIsNotCodeBlock() {
+    let text = """
+~~~ts
+console.log("a")
+~~~
+regular line
+"""
+    let ns = text as NSString
+    let targetLine = ns.range(of: "regular line")
+    let hs = MarkdownHighlighter.highlights(in: text, range: targetLine)
+    XCTAssertFalse(hs.contains { $0.kind == .codeBlockLine })
+  }
 }
