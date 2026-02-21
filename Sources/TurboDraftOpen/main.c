@@ -11,11 +11,101 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #include <mach-o/dyld.h>
 
 extern char **environ;
+static const int kProtocolVersion = 1;
+
+static bool env_key_equals(const char *entry, const char *key) {
+  if (!entry || !key) return false;
+  const char *eq = strchr(entry, '=');
+  if (!eq) return false;
+  size_t n = (size_t)(eq - entry);
+  return strlen(key) == n && strncmp(entry, key, n) == 0;
+}
+
+static bool env_key_has_prefix(const char *entry, const char *prefix) {
+  if (!entry || !prefix) return false;
+  const char *eq = strchr(entry, '=');
+  if (!eq) return false;
+  size_t n = (size_t)(eq - entry);
+  size_t p = strlen(prefix);
+  return n >= p && strncmp(entry, prefix, p) == 0;
+}
+
+static bool should_forward_env_entry(const char *entry) {
+  if (!entry || !strchr(entry, '=')) return false;
+  const char *explicitKeys[] = {
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "LANG",
+    "TERM",
+    "TERM_PROGRAM",
+    "TERM_PROGRAM_VERSION",
+    "COLORTERM",
+    "__CFBundleIdentifier",
+    "SSH_AUTH_SOCK",
+    "XPC_FLAGS",
+    "XPC_SERVICE_NAME",
+    NULL
+  };
+  for (int i = 0; explicitKeys[i] != NULL; i++) {
+    if (env_key_equals(entry, explicitKeys[i])) return true;
+  }
+  if (env_key_has_prefix(entry, "LC_")) return true;
+  if (env_key_has_prefix(entry, "TURBODRAFT_")) return true;
+  return false;
+}
+
+static void free_env_list(char **envp) {
+  if (!envp) return;
+  for (size_t i = 0; envp[i] != NULL; i++) {
+    free(envp[i]);
+  }
+  free(envp);
+}
+
+static char **build_filtered_spawn_env(void) {
+  size_t keep = 0;
+  bool has_path = false;
+  for (size_t i = 0; environ && environ[i] != NULL; i++) {
+    const char *entry = environ[i];
+    if (!should_forward_env_entry(entry)) continue;
+    keep++;
+    if (env_key_equals(entry, "PATH")) has_path = true;
+  }
+  size_t extra = has_path ? 0 : 1;
+  char **envp = (char **)calloc(keep + extra + 1, sizeof(char *));
+  if (!envp) return NULL;
+  size_t out = 0;
+  for (size_t i = 0; environ && environ[i] != NULL; i++) {
+    const char *entry = environ[i];
+    if (!should_forward_env_entry(entry)) continue;
+    envp[out] = strdup(entry);
+    if (!envp[out]) {
+      free_env_list(envp);
+      return NULL;
+    }
+    out++;
+  }
+  if (!has_path) {
+    envp[out] = strdup("PATH=/usr/bin:/bin:/usr/sbin:/sbin");
+    if (!envp[out]) {
+      free_env_list(envp);
+      return NULL;
+    }
+    out++;
+  }
+  envp[out] = NULL;
+  return envp;
+}
 
 static void die_usage(const char *msg) {
   if (msg && msg[0] != '\0') {
@@ -289,7 +379,11 @@ static bool try_spawn_path(const char *exe_path) {
   if (access(exe_path, X_OK) != 0) return false;
   pid_t pid = 0;
   char *argv[] = { (char *)exe_path, "--start-hidden", NULL };
-  return posix_spawn(&pid, exe_path, NULL, NULL, argv, environ) == 0;
+  char **envp = build_filtered_spawn_env();
+  if (!envp) return false;
+  int rc = posix_spawn(&pid, exe_path, NULL, NULL, argv, envp);
+  free_env_list(envp);
+  return rc == 0;
 }
 
 static void launch_app_best_effort(void) {
@@ -315,7 +409,10 @@ static void launch_app_best_effort(void) {
   // Fallback to PATH.
   pid_t pid = 0;
   char *argv[] = { "turbodraft-app", "--start-hidden", NULL };
-  (void)posix_spawnp(&pid, "turbodraft-app", NULL, NULL, argv, environ);
+  char **envp = build_filtered_spawn_env();
+  if (!envp) return;
+  (void)posix_spawnp(&pid, "turbodraft-app", NULL, NULL, argv, envp);
+  free_env_list(envp);
 }
 
 static int connect_or_launch(const char *sock_path, int timeout_ms) {
@@ -583,29 +680,34 @@ static bool extract_session_id(const char *body, char **out_session_id) {
   return json_extract_string_value(body, "\"sessionId\"", out_session_id);
 }
 
+static bool wait_reason_user_closed(const char *body) {
+  if (!body) return false;
+  return strstr(body, "\"reason\":\"userClosed\"") != NULL;
+}
+
 static char *format_open_request_json(const char *path_escaped, int line, int column, const char *cwd_escaped) {
   const char *fmt = NULL;
   if (line > 0 && column > 0) {
-    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\",\"line\":%d,\"column\":%d,\"cwd\":\"%s\"}}";
+    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\",\"line\":%d,\"column\":%d,\"cwd\":\"%s\",\"protocolVersion\":%d}}";
   } else if (line > 0) {
-    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\",\"line\":%d,\"cwd\":\"%s\"}}";
+    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\",\"line\":%d,\"cwd\":\"%s\",\"protocolVersion\":%d}}";
   } else {
-    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\",\"cwd\":\"%s\"}}";
+    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\",\"cwd\":\"%s\",\"protocolVersion\":%d}}";
   }
 
   int n = (line > 0 && column > 0)
-    ? snprintf(NULL, 0, fmt, path_escaped, line, column, cwd_escaped)
-    : (line > 0 ? snprintf(NULL, 0, fmt, path_escaped, line, cwd_escaped) : snprintf(NULL, 0, fmt, path_escaped, cwd_escaped));
+    ? snprintf(NULL, 0, fmt, path_escaped, line, column, cwd_escaped, kProtocolVersion)
+    : (line > 0 ? snprintf(NULL, 0, fmt, path_escaped, line, cwd_escaped, kProtocolVersion) : snprintf(NULL, 0, fmt, path_escaped, cwd_escaped, kProtocolVersion));
   if (n < 0) return NULL;
 
   char *out = (char *)malloc((size_t)n + 1);
   if (!out) return NULL;
   if (line > 0 && column > 0) {
-    snprintf(out, (size_t)n + 1, fmt, path_escaped, line, column, cwd_escaped);
+    snprintf(out, (size_t)n + 1, fmt, path_escaped, line, column, cwd_escaped, kProtocolVersion);
   } else if (line > 0) {
-    snprintf(out, (size_t)n + 1, fmt, path_escaped, line, cwd_escaped);
+    snprintf(out, (size_t)n + 1, fmt, path_escaped, line, cwd_escaped, kProtocolVersion);
   } else {
-    snprintf(out, (size_t)n + 1, fmt, path_escaped, cwd_escaped);
+    snprintf(out, (size_t)n + 1, fmt, path_escaped, cwd_escaped, kProtocolVersion);
   }
   return out;
 }
@@ -620,6 +722,31 @@ static char *format_wait_request_json(const char *session_id, int timeout_ms) {
   return out;
 }
 
+static char *format_close_request_json(const char *session_id) {
+  const char *fmt = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"turbodraft.session.close\",\"params\":{\"sessionId\":\"%s\"}}";
+  int n = snprintf(NULL, 0, fmt, session_id);
+  if (n < 0) return NULL;
+  char *out = (char *)malloc((size_t)n + 1);
+  if (!out) return NULL;
+  snprintf(out, (size_t)n + 1, fmt, session_id);
+  return out;
+}
+
+static bool is_valid_bundle_id(const char *bundle_id) {
+  if (!bundle_id || bundle_id[0] == '\0') return false;
+  for (const char *p = bundle_id; *p; p++) {
+    unsigned char c = (unsigned char)*p;
+    if ((c >= 'a' && c <= 'z') ||
+        (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') ||
+        c == '.' || c == '-') {
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
 static void restore_terminal_focus(void) {
   const char *bundle_id = getenv("TURBODRAFT_TERMINAL_BUNDLE_ID");
   if (!bundle_id || bundle_id[0] == '\0') {
@@ -631,11 +758,23 @@ static void restore_terminal_focus(void) {
     else if (strcmp(term, "ghostty") == 0 || strcmp(term, "Ghostty") == 0) bundle_id = "com.mitchellh.ghostty";
     else return;
   }
-  char cmd[512];
-  snprintf(cmd, sizeof(cmd),
-    "osascript -e 'tell application id \"%s\" to activate' >/dev/null 2>&1 &",
-    bundle_id);
-  system(cmd);
+  if (!is_valid_bundle_id(bundle_id)) return;
+
+  char script[512];
+  int sn = snprintf(script, sizeof(script), "tell application id \"%s\" to activate", bundle_id);
+  if (sn <= 0 || sn >= (int)sizeof(script)) return;
+
+  char **envp = build_filtered_spawn_env();
+  if (!envp) return;
+
+  pid_t pid = 0;
+  char *argv[] = { "osascript", "-e", script, NULL };
+  int rc = posix_spawnp(&pid, "osascript", NULL, NULL, argv, envp);
+  free_env_list(envp);
+  if (rc != 0) return;
+
+  int status = 0;
+  while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
 }
 
 int main(int argc, char **argv) {
@@ -801,7 +940,33 @@ int main(int argc, char **argv) {
       free(socket_path);
       return 1;
     }
+    const char *wait_resp = (const char *)wait_body;
+    if (response_has_error(wait_resp)) {
+      fprintf(stderr, "error: wait returned error: %s\n", wait_resp);
+      free(wait_body);
+      free(session_id);
+      framer_free(&fr);
+      close(fd);
+      free(socket_path);
+      return 1;
+    }
+    bool user_closed = wait_reason_user_closed(wait_resp);
     free(wait_body);
+
+    if (user_closed) {
+      // Best-effort close hint for server-side session bookkeeping.
+      char *close_json = format_close_request_json(session_id);
+      if (close_json) {
+        if (send_jsonrpc(fd, close_json) == 0) {
+          uint8_t *close_body = NULL;
+          size_t close_len = 0;
+          if (framer_read_frame(fd, &fr, 500, &close_body, &close_len) == 0) {
+            free(close_body);
+          }
+        }
+        free(close_json);
+      }
+    }
 
     if (editor_mode) {
       restore_terminal_focus();

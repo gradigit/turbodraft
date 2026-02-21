@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import os
 import TurboDraftAgent
 import TurboDraftConfig
 import TurboDraftCore
@@ -13,10 +14,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var sessionsById: [String: EditorSession] = [:]
   private var windowsById: [String: EditorWindowController] = [:]
   private var sessionPathById: [String: String] = [:]
+  private var sessionLastTouchedById: [String: Date] = [:]
   private weak var focusedWindowController: EditorWindowController?
 
   private var socketServer: UnixDomainSocketServer?
   private var stdioServer: JSONRPCServerConnection?
+  private var sessionSweepTask: Task<Void, Never>?
+  private var lastSessionSweepAt = Date.distantPast
   private var cfg = TurboDraftConfig.load()
 
   private var colorThemes: [EditorColorTheme] = []
@@ -32,6 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   ]
   private let startHidden = CommandLine.arguments.contains("--start-hidden")
   private let terminateOnLastClose = CommandLine.arguments.contains("--terminate-on-last-close")
+  private static let appLog = Logger(subsystem: "com.turbodraft", category: "AppDelegate")
+  private let sessionSweepInterval: TimeInterval = 60
+  private let orphanSessionMaxAge: TimeInterval = 120
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSWindow.allowsAutomaticWindowTabbing = false
@@ -64,10 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     if !CommandLine.arguments.contains("--no-socket") {
       do {
-        // Ensure socket directory exists and is user-only.
-        let socketURL = URL(fileURLWithPath: cfg.socketPath)
-        try FileManager.default.createDirectory(at: socketURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: socketURL.deletingLastPathComponent().path)
+        try ensureSocketDirectorySecure(for: cfg.socketPath)
 
         let server = try UnixDomainSocketServer(socketPath: cfg.socketPath)
         socketServer = server
@@ -84,6 +88,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("Failed to start socket server: \(error)")
       }
     }
+
+    startSessionSweepTask()
 
     if CommandLine.arguments.contains("--stdio") {
       startStdioServer()
@@ -158,6 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func performGracefulShutdown() async {
+    stopSessionSweepTask()
+
     // Race all flushes against a 5s overall timeout to prevent quit hang.
     await withTaskGroup(of: Void.self) { group in
       group.addTask { @MainActor in
@@ -173,6 +181,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       _ = await group.next()
       group.cancelAll()
+    }
+  }
+
+  private func ensureSocketDirectorySecure(for socketPath: String) throws {
+    let socketURL = URL(fileURLWithPath: socketPath)
+    let socketDirURL = socketURL.deletingLastPathComponent()
+    try FileManager.default.createDirectory(
+      at: socketDirURL,
+      withIntermediateDirectories: true,
+      attributes: [.posixPermissions: 0o700]
+    )
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: socketDirURL.path)
+  }
+
+  private func startSessionSweepTask() {
+    stopSessionSweepTask()
+    sessionSweepTask = Task { [weak self] in
+      while !Task.isCancelled {
+        let intervalSeconds = self?.sessionSweepInterval ?? 60
+        let sleepNs = UInt64(max(1.0, intervalSeconds) * 1_000_000_000)
+        try? await Task.sleep(nanoseconds: sleepNs)
+        guard let self else { return }
+        await self.sweepOrphanSessionsIfNeeded(force: true, reason: "periodic")
+      }
+    }
+  }
+
+  private func stopSessionSweepTask() {
+    sessionSweepTask?.cancel()
+    sessionSweepTask = nil
+  }
+
+  private func sweepOrphanSessionsIfNeeded(force: Bool = false, reason: String) async {
+    let now = Date()
+    if !force, now.timeIntervalSince(lastSessionSweepAt) < sessionSweepInterval {
+      return
+    }
+    lastSessionSweepAt = now
+
+    var staleSessionIDs: [String] = []
+    for id in sessionsById.keys {
+      if windowsById[id] != nil {
+        continue
+      }
+      let touchedAt = sessionLastTouchedById[id] ?? .distantPast
+      if now.timeIntervalSince(touchedAt) >= orphanSessionMaxAge {
+        staleSessionIDs.append(id)
+      }
+    }
+
+    for id in staleSessionIDs {
+      if let session = sessionsById.removeValue(forKey: id) {
+        await session.markClosed()
+      }
+      windowsById.removeValue(forKey: id)
+      sessionPathById.removeValue(forKey: id)
+      sessionLastTouchedById.removeValue(forKey: id)
+    }
+
+    if !staleSessionIDs.isEmpty {
+      Self.appLog.info("Swept \(staleSessionIDs.count) orphaned session(s) (\(reason, privacy: .public))")
     }
   }
 
@@ -230,8 +299,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       value === wc ? key : nil
     }
     for sessionId in removedSessionIds {
+      sessionsById.removeValue(forKey: sessionId)
       windowsById.removeValue(forKey: sessionId)
       sessionPathById.removeValue(forKey: sessionId)
+      sessionLastTouchedById.removeValue(forKey: sessionId)
     }
     if focusedWindowController === wc {
       focusedWindowController = nil
@@ -262,6 +333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     sessionsById[id] = session
     windowsById[id] = window
     sessionPathById[id] = path
+    sessionLastTouchedById[id] = Date()
     focusedWindowController = window
   }
 
@@ -273,6 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       sessionsById.removeValue(forKey: id)
       windowsById.removeValue(forKey: id)
       sessionPathById.removeValue(forKey: id)
+      sessionLastTouchedById.removeValue(forKey: id)
     }
   }
 
@@ -312,6 +385,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  private func persistConfig(context: String) {
+    cfg = cfg.sanitized()
+    do {
+      try cfg.write()
+    } catch {
+      Self.appLog.error("Failed to persist config (\(context, privacy: .public)): \(String(describing: error), privacy: .public)")
+    }
+  }
+
+  private func touchSession(_ id: String) {
+    sessionLastTouchedById[id] = Date()
+  }
+
   private func handleClient(fd: Int32) {
     let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
     let conn = JSONRPCConnection(readHandle: handle, writeHandle: handle)
@@ -332,6 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private func handleRequest(_ req: JSONRPCRequest) async -> JSONRPCResponse? {
     guard let id = req.id else { return nil }
+    await sweepOrphanSessionsIfNeeded(reason: "request")
 
     // Known: encode → serialize → wrap round-trip is ~microsecond overhead per RPC (#46).
     func ok(_ value: Encodable) -> JSONRPCResponse {
@@ -347,14 +434,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     switch req.method {
     case TurboDraftMethod.hello:
-      // TODO: enforce protocolVersion mismatch — reject clients with incompatible versions (#28)
+      let params = (try? (req.params ?? .object([:])).decode(HelloParams.self))
+      let clientProtocolVersion = params?.protocolVersion
+      if let v = clientProtocolVersion, v != TurboDraftProtocolVersion.current {
+        return err(
+          JSONRPCStandardErrorCode.invalidRequest,
+          "protocolVersion mismatch: client=\(v) server=\(TurboDraftProtocolVersion.current)"
+        )
+      }
       let caps = TurboDraftCapabilities(supportsWait: true, supportsAgentDraft: cfg.agent.enabled, supportsQuit: true)
-      let res = HelloResult(protocolVersion: 1, capabilities: caps, serverPid: Int(getpid()))
+      let res = HelloResult(protocolVersion: TurboDraftProtocolVersion.current, capabilities: caps, serverPid: Int(getpid()))
       return ok(res)
 
     case TurboDraftMethod.sessionOpen:
       do {
         let params = try (req.params ?? .object([:])).decode(SessionOpenParams.self)
+        guard let clientProtocolVersion = params.protocolVersion else {
+          return err(JSONRPCStandardErrorCode.invalidRequest, "protocolVersion is required")
+        }
+        guard clientProtocolVersion == TurboDraftProtocolVersion.current else {
+          return err(
+            JSONRPCStandardErrorCode.invalidRequest,
+            "protocolVersion mismatch: client=\(clientProtocolVersion) server=\(TurboDraftProtocolVersion.current)"
+          )
+        }
         let t0 = nowMs()
         let normalizedPath = URL(fileURLWithPath: params.path).standardizedFileURL.path
         let editorSession: EditorSession
@@ -364,6 +467,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           wc = reuse.1
           if let current = await editorSession.currentInfo(),
              current.fileURL.standardizedFileURL.path == normalizedPath {
+            touchSession(current.sessionId)
             wc.focusExistingSessionWindow()
             let openMs = nowMs() - t0
             appendLatencyRecord([
@@ -396,6 +500,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           session: editorSession,
           window: wc
         )
+        touchSession(info.sessionId)
 
         // Present window asynchronously — doesn't block RPC response
         Task { @MainActor in
@@ -427,6 +532,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let editorSession = sessionsById[params.sessionId] else {
           return err(JSONRPCStandardErrorCode.invalidRequest, "Invalid sessionId")
         }
+        touchSession(params.sessionId)
         _ = try? await editorSession.applyExternalDiskChange()
         guard let info = await editorSession.currentInfo() else {
           return err(JSONRPCStandardErrorCode.invalidRequest, "No session")
@@ -442,6 +548,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let editorSession = sessionsById[params.sessionId] else {
           return err(JSONRPCStandardErrorCode.invalidRequest, "Invalid sessionId")
         }
+        touchSession(params.sessionId)
 
         if let info = await editorSession.waitUntilRevisionChange(
           baseRevision: params.baseRevision,
@@ -477,6 +584,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let editorSession = sessionsById[params.sessionId] else {
           return err(JSONRPCStandardErrorCode.invalidRequest, "Invalid sessionId")
         }
+        touchSession(params.sessionId)
         // Optimistic concurrency: reject stale saves unless force is true.
         if let baseRev = params.baseRevision, params.force != true {
           if let info = await editorSession.currentInfo(), info.diskRevision != baseRev {
@@ -495,7 +603,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return err(JSONRPCStandardErrorCode.invalidParams, "save failed: \(error)")
       }
 
-    // TODO: add sessionClose RPC and periodic GC sweep for orphaned sessions (#27)
+    case TurboDraftMethod.sessionClose:
+      do {
+        let params = try (req.params ?? .object([:])).decode(SessionCloseParams.self)
+        let removedSession = sessionsById.removeValue(forKey: params.sessionId)
+        windowsById.removeValue(forKey: params.sessionId)
+        sessionPathById.removeValue(forKey: params.sessionId)
+        sessionLastTouchedById.removeValue(forKey: params.sessionId)
+        if let removedSession {
+          await removedSession.markClosed()
+        }
+        return ok(SessionCloseResult(ok: removedSession != nil))
+      } catch {
+        return err(JSONRPCStandardErrorCode.invalidParams, "close failed: \(error)")
+      }
 
     case TurboDraftMethod.sessionWait:
       do {
@@ -503,11 +624,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let editorSession = sessionsById[params.sessionId] else {
           return err(JSONRPCStandardErrorCode.invalidRequest, "Invalid sessionId")
         }
+        touchSession(params.sessionId)
         let closed = await editorSession.waitUntilClosed(timeoutMs: params.timeoutMs)
         if closed {
           sessionsById.removeValue(forKey: params.sessionId)
           windowsById.removeValue(forKey: params.sessionId)
           sessionPathById.removeValue(forKey: params.sessionId)
+          sessionLastTouchedById.removeValue(forKey: params.sessionId)
         }
         return ok(SessionWaitResult(reason: closed ? "userClosed" : "timeout"))
       } catch {
@@ -520,6 +643,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard sessionsById[params.sessionId] != nil else {
           return err(JSONRPCStandardErrorCode.invalidRequest, "Invalid sessionId")
         }
+        touchSession(params.sessionId)
         // Collect typing latencies from the editor view controller.
         let wc = windowsById[params.sessionId]
         let latencies = wc?.typingLatencySamples ?? []
@@ -856,7 +980,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     cfg.agent.enabled.toggle()
     sender.state = cfg.agent.enabled ? .on : .off
     applyAgentConfigToAllWindows()
-    try? cfg.write()
+    persistConfig(context: "togglePromptEngineer")
   }
 
   @MainActor @objc private func improvePrompt(_ sender: NSMenuItem) {
@@ -890,7 +1014,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     sender.state = .on
     applyAgentConfigToAllWindows()
-    try? cfg.write()
+    persistConfig(context: "selectAgentModel")
   }
 
   @MainActor @objc private func selectCustomAgentModel(_ sender: NSMenuItem) {
@@ -911,7 +1035,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     cfg.agent.model = model
     sanitizeReasoningForModel(model)
     applyAgentConfigToAllWindows()
-    try? cfg.write()
+    persistConfig(context: "selectCustomAgentModel")
     installMenu()
   }
 
@@ -923,7 +1047,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     sender.menu?.items.filter { $0.tag == 901 }.forEach { $0.state = .off }
     sender.state = .on
     applyThemeToAllWindows()
-    try? cfg.write()
+    persistConfig(context: "selectThemeMode")
   }
 
   @MainActor @objc private func selectEditorMode(_ sender: NSMenuItem) {
@@ -934,7 +1058,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     sender.menu?.items.filter { $0.tag == 902 }.forEach { $0.state = .off }
     sender.state = .on
     applyEditorModeToAllWindows()
-    try? cfg.write()
+    persistConfig(context: "selectEditorMode")
   }
 
   @MainActor @objc private func selectColorTheme(_ sender: NSMenuItem) {
@@ -943,7 +1067,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     sender.menu?.items.filter { $0.tag == 903 }.forEach { $0.state = .off }
     sender.state = .on
     applyColorThemeToAllWindows()
-    try? cfg.write()
+    persistConfig(context: "selectColorTheme")
   }
 
   private func applyColorThemeToAllWindows() {
@@ -959,7 +1083,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     sender.menu?.items.filter { $0.tag == 904 }.forEach { $0.state = .off }
     sender.state = .on
     applyFontToAllWindows()
-    try? cfg.write()
+    persistConfig(context: "selectFontSize")
   }
 
   @MainActor @objc private func selectFontFamily(_ sender: NSMenuItem) {
@@ -968,7 +1092,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     sender.menu?.items.filter { $0.tag == 905 }.forEach { $0.state = .off }
     sender.state = .on
     applyFontToAllWindows()
-    try? cfg.write()
+    persistConfig(context: "selectFontFamily")
   }
 
   private func applyFontToAllWindows() {
@@ -985,7 +1109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     sender.menu?.items.forEach { $0.state = .off }
     sender.state = .on
     applyAgentConfigToAllWindows()
-    try? cfg.write()
+    persistConfig(context: "selectPromptProfile")
   }
 
   @MainActor @objc private func selectAgentBackend(_ sender: NSMenuItem) {
@@ -1007,7 +1131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     sender.menu?.items.forEach { $0.state = .off }
     sender.state = .on
     applyAgentConfigToAllWindows()
-    try? cfg.write()
+    persistConfig(context: "selectAgentBackend")
     installMenu()
   }
 
@@ -1019,7 +1143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     sender.menu?.items.forEach { $0.state = .off }
     sender.state = .on
     applyAgentConfigToAllWindows()
-    try? cfg.write()
+    persistConfig(context: "selectReasoningEffort")
   }
 
   @MainActor @objc private func selectReasoningSummary(_ sender: NSMenuItem) {
@@ -1030,7 +1154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     sender.menu?.items.forEach { $0.state = .off }
     sender.state = .on
     applyAgentConfigToAllWindows()
-    try? cfg.write()
+    persistConfig(context: "selectReasoningSummary")
   }
 
   @MainActor @objc private func selectWebSearchMode(_ sender: NSMenuItem) {
@@ -1041,7 +1165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     sender.menu?.items.forEach { $0.state = .off }
     sender.state = .on
     applyAgentConfigToAllWindows()
-    try? cfg.write()
+    persistConfig(context: "selectWebSearchMode")
   }
 
   private func cleanUpStaleTempFiles() {

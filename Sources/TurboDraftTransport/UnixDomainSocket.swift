@@ -160,11 +160,13 @@ public enum UnixDomainSocket {
     if requireSameUser {
       var euid: uid_t = 0
       var egid: gid_t = 0
-      if getpeereid(fd, &euid, &egid) == 0 {
-        if euid != getuid() {
-          close(fd)
-          throw UnixDomainSocketError.peerRejected
-        }
+      if getpeereid(fd, &euid, &egid) != 0 {
+        close(fd)
+        throw UnixDomainSocketError.peerRejected
+      }
+      if euid != getuid() {
+        close(fd)
+        throw UnixDomainSocketError.peerRejected
       }
     }
 

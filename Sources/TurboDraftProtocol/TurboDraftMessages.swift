@@ -1,5 +1,9 @@
 import Foundation
 
+public enum TurboDraftProtocolVersion {
+  public static let current = 1
+}
+
 public struct TurboDraftCapabilities: Codable, Sendable, Equatable {
   public var supportsWait: Bool
   public var supportsAgentDraft: Bool
@@ -15,10 +19,12 @@ public struct TurboDraftCapabilities: Codable, Sendable, Equatable {
 public struct HelloParams: Codable, Sendable, Equatable {
   public var client: String
   public var clientVersion: String?
+  public var protocolVersion: Int?
 
-  public init(client: String, clientVersion: String? = nil) {
+  public init(client: String, clientVersion: String? = nil, protocolVersion: Int? = TurboDraftProtocolVersion.current) {
     self.client = client
     self.clientVersion = clientVersion
+    self.protocolVersion = protocolVersion
   }
 }
 
@@ -40,13 +46,22 @@ public struct SessionOpenParams: Codable, Sendable, Equatable {
   public var column: Int?
   public var requestId: String?
   public var cwd: String?
+  public var protocolVersion: Int?
 
-  public init(path: String, line: Int? = nil, column: Int? = nil, requestId: String? = nil, cwd: String? = nil) {
+  public init(
+    path: String,
+    line: Int? = nil,
+    column: Int? = nil,
+    requestId: String? = nil,
+    cwd: String? = nil,
+    protocolVersion: Int? = TurboDraftProtocolVersion.current
+  ) {
     self.path = path
     self.line = line
     self.column = column
     self.requestId = requestId
     self.cwd = cwd
+    self.protocolVersion = protocolVersion
   }
 }
 
@@ -71,6 +86,16 @@ public struct SessionOpenResult: Codable, Sendable, Equatable {
 public struct SessionReloadParams: Codable, Sendable, Equatable {
   public var sessionId: String
   public init(sessionId: String) { self.sessionId = sessionId }
+}
+
+public struct SessionCloseParams: Codable, Sendable, Equatable {
+  public var sessionId: String
+  public init(sessionId: String) { self.sessionId = sessionId }
+}
+
+public struct SessionCloseResult: Codable, Sendable, Equatable {
+  public var ok: Bool
+  public init(ok: Bool) { self.ok = ok }
 }
 
 public struct SessionReloadResult: Codable, Sendable, Equatable {

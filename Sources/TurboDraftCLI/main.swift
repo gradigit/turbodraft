@@ -67,7 +67,10 @@ Commands:
     if useStdio {
       let (proc, conn, sessionId) = try openViaStdio(path: path, line: line, column: column)
       if wait {
-        _ = try waitViaConnection(conn, sessionId: sessionId, timeoutMs: timeoutMs)
+        let reason = try waitViaConnection(conn, sessionId: sessionId, timeoutMs: timeoutMs)
+        if reason == "userClosed" {
+          _ = try? sendSessionClose(conn, sessionId: sessionId)
+        }
         _ = try quitViaConnection(conn)
         proc.waitUntilExit()
       }
@@ -95,7 +98,10 @@ Commands:
       ])
       if wait {
         let waitStart = nowMs()
-        _ = try waitViaConnection(conn, sessionId: sessionId, timeoutMs: timeoutMs)
+        let reason = try waitViaConnection(conn, sessionId: sessionId, timeoutMs: timeoutMs)
+        if reason == "userClosed" {
+          _ = try? sendSessionClose(conn, sessionId: sessionId)
+        }
         appendOpenLatencyRecord([
           "event": "cli_wait",
           "mode": "socket",
@@ -689,13 +695,23 @@ Commands:
     let hello = JSONRPCRequest(id: .int(1), method: TurboDraftMethod.hello, params: JSONValue.object([
       "client": .string("turbodraft-cli"),
       "clientVersion": .string("dev"),
+      "protocolVersion": .int(Int64(TurboDraftProtocolVersion.current)),
     ]))
     try conn.sendJSON(hello)
     let resp = try conn.readResponse()
-    guard let result = resp.result else {
-      return HelloResult(protocolVersion: 1, capabilities: TurboDraftCapabilities(supportsWait: false, supportsAgentDraft: false, supportsQuit: false), serverPid: 0)
+    if let err = resp.error {
+      throw CLIError.connectFailed("hello error \(err.code): \(err.message)")
     }
-    return try result.decode(HelloResult.self)
+    guard let result = resp.result else {
+      throw CLIError.connectFailed("missing hello result")
+    }
+    let helloResult = try result.decode(HelloResult.self)
+    guard helloResult.protocolVersion == TurboDraftProtocolVersion.current else {
+      throw CLIError.connectFailed(
+        "protocolVersion mismatch: client=\(TurboDraftProtocolVersion.current) server=\(helloResult.protocolVersion)"
+      )
+    }
+    return helloResult
   }
 
   private func sendHello(_ conn: JSONRPCConnection) throws {
@@ -703,7 +719,10 @@ Commands:
   }
 
   private func sendSessionOpen(_ conn: JSONRPCConnection, path: String, line: Int?, column: Int?) throws -> SessionOpenResult {
-    var paramsObj: [String: JSONValue] = ["path": .string(path)]
+    var paramsObj: [String: JSONValue] = [
+      "path": .string(path),
+      "protocolVersion": .int(Int64(TurboDraftProtocolVersion.current)),
+    ]
     if let line { paramsObj["line"] = .int(Int64(line)) }
     if let column { paramsObj["column"] = .int(Int64(column)) }
     let openReq = JSONRPCRequest(id: .int(2), method: TurboDraftMethod.sessionOpen, params: .object(paramsObj))
@@ -779,6 +798,19 @@ Commands:
     }
     guard let result = resp.result else { return SessionWaitResult(reason: "unknown") }
     return try result.decode(SessionWaitResult.self)
+  }
+
+  private func sendSessionClose(_ conn: JSONRPCConnection, sessionId: String) throws -> SessionCloseResult {
+    let closeReq = JSONRPCRequest(id: .int(9), method: TurboDraftMethod.sessionClose, params: .object([
+      "sessionId": .string(sessionId),
+    ]))
+    try conn.sendJSON(closeReq)
+    let resp = try conn.readResponse()
+    if let err = resp.error {
+      throw CLIError.connectFailed("close error \(err.code): \(err.message)")
+    }
+    guard let result = resp.result else { return SessionCloseResult(ok: false) }
+    return try result.decode(SessionCloseResult.self)
   }
 
   private func quitViaConnection(_ conn: JSONRPCConnection) throws -> Bool {
