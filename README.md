@@ -2,35 +2,6 @@
 
 A native macOS editor for AI CLI tool hooks. When Claude Code or Codex CLI asks for `$EDITOR`, TurboDraft opens in ~10ms (resident) and is ready-to-type in ~50ms on the real Ctrl+G path.
 
-## Features
-
-- Performance-first editing:
-  - ~10ms resident open latency
-  - ~50ms ready-to-type latency on real Ctrl+G runs
-  - ~150ms cold-start class when the app is not resident
-- Markdown list editing:
-  - Enter at start/middle/end of list items (nested + non-nested)
-  - Shift+Enter soft line break inside list item
-  - Smart Backspace list-marker removal/outdent
-  - Tab / Shift+Tab indent-outdent
-  - Ordered-list auto-renumbering after structural edits
-  - Better task-list continuation and checkbox handling
-- Prompt-improve workflow:
-  - Undo/redo across repeated improve runs
-  - Restore behavior aligned with active working buffer expectations
-- Native find + replace:
-  - Inline find UI, replace next/all, match case, whole word, regex
-  - Selection-to-find (`⌘E`), next/previous match navigation
-- Paste and media handling:
-  - Clipboard image/file paste support
-  - `Ctrl+V` parity for terminal workflows that rely on Ctrl-based paste shortcuts
-- Install and configure:
-  - One-line bootstrap to interactive install/config/repair/uninstall wizard
-  - Agent-install runbook where the agent itself acts as the install wizard
-- Benchmarks and guardrails:
-  - Open/close API suite for CI/nightly regression tracking
-  - Real Ctrl+G benchmark mode against live Codex/Claude terminal workflows
-
 ## Why not vim/nano/VS Code?
 
 Terminal editors work. But they weren't designed for writing prompts. VS Code takes seconds to open. vim doesn't highlight Markdown the way you'd want while drafting prompts.
@@ -81,6 +52,35 @@ scripts/install --mode install --yes
 This builds release binaries, symlinks `turbodraft`, `turbodraft-app`, and `turbodraft-bench` into `~/.local/bin`, and restarts (or installs) the LaunchAgent when requested.
 
 Make sure `~/.local/bin` is on your `PATH`.
+
+## Features
+
+- Performance-first editing:
+  - ~10ms resident open latency
+  - ~50ms ready-to-type latency on real Ctrl+G runs
+  - ~150ms cold-start class when the app is not resident
+- Markdown list editing:
+  - Enter at start/middle/end of list items (nested + non-nested)
+  - Shift+Enter soft line break inside list item
+  - Smart Backspace list-marker removal/outdent
+  - Tab / Shift+Tab indent-outdent
+  - Ordered-list auto-renumbering after structural edits
+  - Better task-list continuation and checkbox handling
+- Prompt-improve workflow:
+  - Undo/redo across repeated improve runs
+  - Restore behavior aligned with active working buffer expectations
+- Native find + replace:
+  - Inline find UI, replace next/all, match case, whole word, regex
+  - Selection-to-find (`⌘E`), next/previous match navigation
+- Paste and media handling:
+  - Clipboard image/file paste support
+  - `Ctrl+V` parity for terminal workflows that rely on Ctrl-based paste shortcuts
+- Install and configure:
+  - One-line bootstrap to interactive install/config/repair/uninstall wizard
+  - Agent-install runbook where the agent itself acts as the install wizard
+- Benchmarks and guardrails:
+  - Open/close API suite for CI/nightly regression tracking
+  - Real Ctrl+G benchmark mode against live Codex/Claude terminal workflows
 
 ## Set as your editor
 
