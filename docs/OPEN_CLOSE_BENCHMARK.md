@@ -30,6 +30,11 @@ Default profile:
   - `apiCloseWaitMs` (raw `cli_wait.waitMs`, includes pre-close idle time)
   - `apiCloseWaitObservationLagMs` (`apiCloseTriggerToWaitEventMs - apiCloseTriggerToExitMs`)
 
+Interpretation note:
+- This suite measures end-to-end CLI/API lifecycle timings for regression tracking.
+- These values are not equivalent to the app’s resident window-show latency.
+- For user-facing Ctrl+G readiness, use `bench_open_close_real_cli.py`.
+
 ### Secondary (user-visible, separate runner)
 Run against a real foreground agent CLI window:
 - `uiOpenVisibleMs`: keypress to TurboDraft window visible

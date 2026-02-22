@@ -136,6 +136,11 @@ Latest benchmark freeze: **MacBook Air 13-inch (M4), 24GB RAM, macOS 26.2**.
 
 Cold-start path is currently in the **~150ms class** when TurboDraft is not resident.
 
+> Why API numbers are higher than "~10ms":
+> - `bench_open_close_suite.py` measures the full CLI/API lifecycle (connect + RPC + close/exit path), not just editor draw time.
+> - It intentionally includes open/close orchestration overhead and is meant for CI regression tracking.
+> - The "~10ms" figure refers to resident app open latency in the fast path, while real end-user Ctrl+G ready-to-type is ~50ms class.
+
 ## Markdown support
 
 TurboDraft highlights the Markdown you actually use when writing prompts:

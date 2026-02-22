@@ -35,6 +35,8 @@ docs/research/research-prompt-eval-checklist-and-engineered-format-2026-02-15.md
 # Session handoff (consumed by next agent, not project docs)
 HANDOFF.md
 AGENTS.md
+CLAUDE.md
+claude.md
 architect/
 plan.md
 plan-deepened.md
@@ -54,6 +56,14 @@ scripts/check_prompt_benchmark.py
 scripts/bench_editor_e2e_ux.py
 scripts/bench_editor_startup_trace.py
 Sources/TurboDraftE2EHarness/
+scripts/bench_ab_compare.py
+scripts/bench_editor_latency_step.py
+scripts/bench_editor_suite.py
+scripts/bench_launch_matrix.py
+scripts/bench_stats.py
+scripts/bench_text_engine_spike.sh
+scripts/codex_app_server_poc.py
+scripts/turbodraft-editor
 
 # Completed TODO artifacts (keep pending TODOs only)
 todos/*-done-*.md

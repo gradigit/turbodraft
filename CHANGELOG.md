@@ -22,7 +22,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Removed hardcoded test counts from README.md and CLAUDE.md (go stale on every test addition)
+- README/docs benchmark positioning and performance notes were updated to distinguish resident-open latency vs API-suite lifecycle latency.
+- Removed hardcoded test counts from project docs (they go stale quickly).
+
+### Removed
+
+- Legacy prompt-benchmark assets and workflow were removed (pending full benchmark-suite rebuild), while `bench/preambles/*` was kept for runtime prompt profiles.
+- Deprecated/unused scripts were removed:
+  - `bench_ab_compare.py`
+  - `bench_editor_latency_step.py`
+  - `bench_editor_suite.py`
+  - `bench_launch_matrix.py`
+  - `bench_stats.py`
+  - `bench_text_engine_spike.sh`
+  - `codex_app_server_poc.py`
+  - `turbodraft-editor`
+- Deprecated E2E harness target and scripts were removed:
+  - `Sources/TurboDraftE2EHarness/main.swift`
+  - `scripts/bench_editor_e2e_ux.py`
+  - `scripts/bench_editor_startup_trace.py`
+- Internal agent instruction files were moved out of tracked project docs (`AGENTS.md`, `CLAUDE.md` now local/ignored).
 
 ## [0.2.0] — 2026-02-19
 
