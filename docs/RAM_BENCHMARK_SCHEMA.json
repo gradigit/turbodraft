@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gradigit/turbodraft/docs/RAM_BENCHMARK_SCHEMA.json",
+  "title": "TurboDraft RAM Benchmark Report",
+  "type": "object",
+  "required": [
+    "suite",
+    "generatedAt",
+    "config",
+    "summarySteadyState",
+    "validity",
+    "gates",
+    "files"
+  ],
+  "properties": {
+    "suite": { "const": "turbodraft_ram" },
+    "generatedAt": { "type": "string" },
+    "runDir": { "type": "string" },
+    "config": {
+      "type": "object",
+      "required": ["cycles", "warmup", "retries", "fixture"],
+      "properties": {
+        "cycles": { "type": "integer", "minimum": 1 },
+        "warmup": { "type": "integer", "minimum": 0 },
+        "retries": { "type": "integer", "minimum": 0 },
+        "openTimeoutS": { "type": "number", "minimum": 0 },
+        "closeTimeoutS": { "type": "number", "minimum": 0 },
+        "interCycleDelayS": { "type": "number", "minimum": 0 },
+        "idleSettleMs": { "type": "number", "minimum": 0 },
+        "postCloseSettleMs": { "type": "number", "minimum": 0 },
+        "sampleMs": { "type": "number", "minimum": 0.1 },
+        "saveIterations": { "type": "integer", "minimum": 1 },
+        "payloadBytes": { "type": "integer", "minimum": 128 },
+        "cleanSlate": { "type": "boolean" },
+        "fixture": { "type": "string" },
+        "injectTransientFailureCycle": { "type": "integer", "minimum": 0 },
+        "enforceGates": { "type": "boolean" },
+        "thresholdsMiB": {
+          "type": "object",
+          "properties": {
+            "peakDeltaP95": { "type": "number" },
+            "postCloseResidualP95": { "type": "number" },
+            "slopePerCycle": { "type": "number" }
+          }
+        }
+      }
+    },
+    "summarySteadyState": {
+      "type": "object",
+      "required": [
+        "idleResidentMiB",
+        "peakResidentMiB",
+        "peakDeltaResidentMiB",
+        "postCloseResidualMiB"
+      ]
+    },
+    "outliers": { "type": "object" },
+    "gates": {
+      "type": "object",
+      "required": ["pass", "checks"],
+      "properties": {
+        "pass": { "type": "boolean" },
+        "checks": { "type": "object" }
+      }
+    },
+    "validity": {
+      "type": "object",
+      "required": [
+        "runValid",
+        "reasons",
+        "steadyStateCycleCount",
+        "timestampOrderingOk",
+        "primarySampleCountOk"
+      ],
+      "properties": {
+        "runValid": { "type": "boolean" },
+        "reasons": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "unrecoveredFailures": { "type": "integer", "minimum": 0 },
+        "steadyStateCycleCount": { "type": "integer", "minimum": 0 },
+        "timestampOrderingOk": { "type": "boolean" },
+        "primarySampleCountOk": { "type": "boolean" },
+        "optionalProbeCoverage": { "type": "object" },
+        "transientFailureInjected": { "type": "boolean" },
+        "transientFailureRecovered": { "type": "boolean" }
+      }
+    },
+    "compare": { "type": "object" },
+    "files": {
+      "type": "object",
+      "required": ["cycles"],
+      "properties": {
+        "cycles": { "type": "string" }
+      }
+    }
+  }
+}

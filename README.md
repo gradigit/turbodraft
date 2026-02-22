@@ -81,6 +81,7 @@ Make sure `~/.local/bin` is on your `PATH`.
 - Benchmarks and guardrails:
   - Open/close API suite for CI/nightly regression tracking
   - Real Ctrl+G benchmark mode against live Codex/Claude terminal workflows
+  - RAM regression suite with CI/nightly memory gates (delta/residual/slope)
 
 ## Set as your editor
 
@@ -140,6 +141,14 @@ Cold-start path is currently in the **~150ms class** when TurboDraft is not resi
 > - `bench_open_close_suite.py` measures the full CLI/API lifecycle (connect + RPC + close/exit path), not just editor draw time.
 > - It intentionally includes open/close orchestration overhead and is meant for CI regression tracking.
 > - The "~10ms" figure refers to ultra-fast resident internals; practical ready-to-type latency is in the ~50ms class.
+
+### RAM suite (22-cycle profile, steady-state n=20)
+
+| Metric | Median (MiB) | P95 (MiB) |
+|--------|-------------:|----------:|
+| Peak delta (peak-idle) | 14.2 | 25.7 |
+| Post-close residual | 9.9 | 25.7 |
+| Memory slope (MiB/cycle) | -0.08 | - |
 
 ## Markdown support
 
@@ -248,6 +257,13 @@ turbodraft --path /tmp/prompt.md --debug-ready-latency
 ```
 `bench_open_close_real_cli.py` enforces a default readiness gate: fail when p95 > 80ms.
 Methodology + schema: `docs/OPEN_CLOSE_BENCHMARK.md`
+
+RAM benchmark suite:
+```sh
+python3 scripts/bench_ram_suite.py --cycles 20 --warmup 1 --retries 1 --enforce-gates
+scripts/bench_ram_nightly.sh
+```
+Methodology + schema: `docs/RAM_BENCHMARK.md`
 
 Baseline thresholds are in `bench/editor/baseline.json`. P95 values have headroom for CI variance.
 

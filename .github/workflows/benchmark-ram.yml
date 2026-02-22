@@ -1,0 +1,37 @@
+name: benchmark-ram
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 9 * * *"
+
+jobs:
+  ram-suite:
+    runs-on: macos-14
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build release binaries
+        run: swift build -c release
+
+      - name: Run RAM benchmark (CI gate profile)
+        run: |
+          python3 scripts/bench_ram_suite.py \
+            --cycles 20 \
+            --warmup 1 \
+            --retries 1 \
+            --enforce-gates \
+            --max-peak-delta-p95-mib 32 \
+            --max-post-close-residual-p95-mib 30 \
+            --max-memory-slope-mib-per-cycle 0.8
+
+      - name: Upload RAM benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ram-benchmark
+          path: |
+            tmp/bench_ram_*/report.json
+            tmp/bench_ram_*/cycles.jsonl

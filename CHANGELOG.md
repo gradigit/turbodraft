@@ -7,7 +7,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- _Nothing yet._
+- RAM benchmark suite: `scripts/bench_ram_suite.py` with deterministic workload cycles, per-cycle JSONL output, run validity checks, outlier labeling, transient-failure injection support, compare/trend output, and optional CI gate enforcement.
+- RAM nightly helper: `scripts/bench_ram_nightly.sh`.
+- RAM benchmark docs + schema + freeze record:
+  - `docs/RAM_BENCHMARK.md`
+  - `docs/RAM_BENCHMARK_SCHEMA.json`
+  - `docs/RAM_BENCHMARK_FREEZE_2026-02-22.md`
+- New CI workflow: `.github/workflows/benchmark-ram.yml`.
+- `HistoryStoreTests` coverage for duplicate-dedupe, count pruning, byte-budget pruning, and stats accounting.
+
+### Changed
+
+- `HistoryStore` now supports byte-budgeted in-memory pruning and consecutive duplicate snapshot dedupe.
+- `EditorSession` now uses tighter bounded history/recovery defaults (count, bytes, recovery load window) to limit resident-memory growth.
+- `BenchMetricsResult` now includes optional diagnostics (`historySnapshotCount`, `historySnapshotBytes`, styler cache counters) used by the RAM benchmark suite.
+- README/release-prep docs now include RAM benchmark methodology, commands, and thresholds.
 
 ## [0.3.0] — 2026-02-22
 
