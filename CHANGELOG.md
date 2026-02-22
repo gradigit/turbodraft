@@ -15,12 +15,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Task strikethrough**: completed task checkboxes (`- [x]`) render with strikethrough styling
 - Unique IDs for image placeholders, `@refs` prepended at top of prompt text
 - Shared POSIX spawn helpers extracted into `ProcessHelpers.swift`
-- Benchmark suite overhaul TODO with full audit findings (todos/003)
 
 ### Fixed
 
 - Styling feedback loop: `applyStyling` now uses `colorTheme.foreground` directly instead of reading `textView.textColor` (which reflects text storage attributes, not the base color)
-- Benchmark fixture corruption: restored `dictation_flush_mode.md`, removed misplaced top-level baseline, fixed stale `profile_set.txt` reference
 
 ### Changed
 
@@ -60,7 +58,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Dead nvm alias resolution**: removed broken `~/.nvm/alias/default` lookup (contains alias strings, not directories)
 - **fnm base directory**: now checks all 3 known locations (`~/.local/share/fnm`, `~/.fnm`, `~/Library/Application Support/fnm`)
 - **`saveTempImage` silent failure**: write errors now return `nil` instead of a URL to a nonexistent file
-- **Broken MCP disable flags**: removed from `bench_codex_prompt_engineer.py` (4 occurrences) and `codex_app_server_poc.py`
 
 ### Changed
 

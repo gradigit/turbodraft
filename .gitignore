@@ -28,6 +28,9 @@ docs/EVALUATION_REPORT.md
 docs/performance-review-2026-02-21-phase1-4.md
 docs/phase-1-4-execution-report-2026-02-21.md
 docs/production-readiness-review-2026-02-20.md
+docs/research/promptpad-baseline-review-checklist.md
+docs/research/research-prompt-evaluation-2026-02-14.md
+docs/research/research-prompt-eval-checklist-and-engineered-format-2026-02-15.md
 
 # Session handoff (consumed by next agent, not project docs)
 HANDOFF.md
