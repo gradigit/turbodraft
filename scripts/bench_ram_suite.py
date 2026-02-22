@@ -373,6 +373,23 @@ def run_cycle_attempt(
         return CycleAttemptResult(False, True, "injected_transient_failure", cycle)
 
     telemetry_offset = telemetry_path.stat().st_size if telemetry_path.exists() else 0
+    session_id: Optional[str] = None
+    proc: Optional[subprocess.Popen[str]] = None
+
+    def best_effort_attempt_cleanup() -> None:
+        nonlocal session_id, proc
+        if proc is not None:
+            try:
+                if proc.poll() is None:
+                    proc.kill()
+                proc.wait(timeout=0.5)
+            except Exception:
+                pass
+        if session_id:
+            try:
+                _ = rpc_session_close(socket_path, session_id, timeout_s=min(1.5, max(0.3, close_timeout_s)))
+            except Exception:
+                pass
 
     try:
         try:
@@ -532,9 +549,11 @@ def run_cycle_attempt(
             cycle["stderrTail"] = stderr[-300:]
 
         if proc.returncode != 0:
+            best_effort_attempt_cleanup()
             cycle["ok"] = False
             return CycleAttemptResult(False, True, f"open_wait_exit_{proc.returncode}", cycle)
         if not cycle["validation"]["ordering_ok"]:
+            best_effort_attempt_cleanup()
             cycle["ok"] = False
             return CycleAttemptResult(False, True, "timestamp_ordering_invalid", cycle)
 
@@ -544,14 +563,14 @@ def run_cycle_attempt(
     except subprocess.TimeoutExpired as ex:
         try:
             proc = ex.__dict__.get("process")
-            if proc:
-                proc.kill()
         except Exception:
             pass
+        best_effort_attempt_cleanup()
         cycle["ok"] = False
         cycle["error"] = f"timeout:{ex}"
         return CycleAttemptResult(False, True, "timeout", cycle)
     except Exception as ex:
+        best_effort_attempt_cleanup()
         cycle["ok"] = False
         cycle["error"] = str(ex)
         return CycleAttemptResult(False, True, "exception", cycle)
