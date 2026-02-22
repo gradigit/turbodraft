@@ -2,10 +2,6 @@
 
 A native macOS editor for AI CLI tool hooks. When Claude Code or Codex CLI asks for `$EDITOR`, TurboDraft opens in ~10ms (resident) and is ready-to-type in ~50ms on the real Ctrl+G path.
 
-## GitHub repo description (About)
-
-Edit prompts at the speed of thought. Engineer prompts with ease in TurboDraft.
-
 ## Features
 
 - Performance-first editing:
