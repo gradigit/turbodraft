@@ -2,6 +2,31 @@
 
 A native macOS editor for AI CLI tool hooks. When Claude Code or Codex CLI asks for `$EDITOR`, TurboDraft opens in 10ms and gives you a Markdown editor that actually makes sense for writing prompts.
 
+## What’s new in this build
+
+- Full Markdown list editing pass:
+  - Enter at start/middle/end of list items (nested + non-nested)
+  - Shift+Enter soft line break inside list item
+  - Smart Backspace list-marker removal/outdent
+  - Tab / Shift+Tab indent-outdent
+  - Ordered-list auto-renumbering after structural edits
+  - Better task-list continuation and checkbox handling
+- Prompt-improve workflow stability:
+  - Undo/redo across repeated improve runs
+  - Restore behavior aligned with active working buffer expectations
+- Native find + replace workflow:
+  - Inline find UI, replace next/all, match case, whole word, regex
+  - Selection-to-find (`⌘E`), next/previous match navigation
+- Image and paste handling upgrades:
+  - Clipboard image/file paste support
+  - `Ctrl+V` parity for terminal workflows that rely on Ctrl-based paste shortcuts
+- Installer improvements:
+  - One-line bootstrap to interactive install/config/repair/uninstall wizard
+  - Agent-install runbook and ask-first guidance for AI setup flows
+- Benchmarking upgrades:
+  - Open/close API suite for CI/nightly regression tracking
+  - Real Ctrl+G benchmark mode against live Codex/Claude terminal workflows
+
 ## Why not vim/nano/VS Code?
 
 Terminal editors work. But they weren't designed for writing prompts. VS Code takes seconds to open. vim doesn't highlight Markdown the way you'd want while drafting prompts.
@@ -59,6 +84,12 @@ export VISUAL=turbodraft
 ```
 
 That's it. Claude Code's `Ctrl+G` and Codex CLI's editor hooks will now open TurboDraft.
+
+### Claude Code companion tool: claude-pager
+
+If you use Claude Code and want to keep session context visible during editor handoff (instead of the usual blank terminal view while `Ctrl+G` is active), use the sister tool **claude-pager**:
+
+- https://github.com/gradigit/claude-pager
 
 ### Agentic install (repo copy + ask an agent to set up)
 
@@ -131,6 +162,8 @@ Tables, footnotes, and full CommonMark/GFM edge cases are out of scope. This is 
 - `⌥⌘F` Replace
 - `⌘G` / `⇧⌘G` Find next / previous
 - `⌘E` Use selection for find
+- `Esc` Close find/replace UI
+- `Ctrl+V` Clipboard paste parity (including image/file clipboard content)
 
 ## How it works
 

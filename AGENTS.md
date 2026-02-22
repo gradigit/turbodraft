@@ -48,6 +48,8 @@ When you update setup/install docs, you MUST update all linked companion docs in
 - `.build/release/turbodraft-bench bench run --path <file> --warm N --cold N` — editor benchmarks
 - `.build/release/turbodraft-bench bench check --baseline bench/editor/baseline.json --results <file>` — check baselines
 - `python3 scripts/bench_editor_e2e_ux.py --warm N --cold N` — end-to-end UX benchmark (needs Accessibility permissions)
+- `python3 scripts/bench_open_close_suite.py --cycles N --warmup N --retries N` — API open/close suite (CI-safe)
+- `PYTHONPATH=. python3 -m scripts.bench_open_close_real_cli --cycles N --warmup N --trigger-mode cgevent` — real Ctrl+G benchmark against live CLI window (default gate: p95 ≤ 80ms)
 - `pkill -9 -f turbodraft-app && rm -f ~/Library/Application\ Support/TurboDraft/rpc.sock` — kill stale processes + remove socket before benchmarks
 - `CLAUDECODE= python3 scripts/bench_codex_prompt_engineer.py --draft <file> --models <model> --efforts <effort> -n <runs> --backend exec --save-outputs <dir>` — prompt-engineering quality benchmark
 
@@ -97,6 +99,7 @@ Communication: CLI → Unix domain socket (`~/Library/Application Support/TurboD
 - Cold start (~170ms) is dominated by process startup (fork+exec+dyld+AppKit). Only the LaunchAgent eliminates it — early socket bind and kqueue don't help because the bottleneck is process bootstrap, not socket detection.
 - Before benchmarks, kill stale `turbodraft-app` processes and remove the socket. Stale processes cause the CLI to connect to an old binary.
 - Bench lockfile (`~/Library/Application Support/TurboDraft/bench.lock`) can get stuck if a run is interrupted — remove manually.
+- Telemetry JSONL files may be replaced/truncated by fallback writes; benchmark readers must reset offsets if file size shrinks.
 - Machine load heavily distorts benchmark p95s. Check `ps -eo %cpu,command -r | head -5` before chasing noisy regressions.
 - `TurboDraftOpen` is plain C (`main.c`), not Swift. All three agent adapters share spawn helpers (`setCloExec`/`setNonBlocking`/`writeAll`) — they're intentionally inlined per-file to avoid adding a shared C shim target.
 - All agent adapters must use `CommandResolver.buildEnv(prependingToPath:)` when spawning child processes. Using raw `environ` directly skips PATH enrichment and breaks under the LaunchAgent.
