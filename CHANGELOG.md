@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- _Nothing yet._
+
+## [0.3.0] — 2026-02-22
+
+### Added
+
 - **Claude/Sonnet backend**: `ClaudePromptEngineerAdapter` invokes `claude -p` with `--output-format text`, `--effort` mapping, and `--tools ""`. New `Backend.claude` config option with auto-detection when model name contains "claude" or "sonnet".
 - Backend menu in app menu bar (Codex exec / Codex app-server / Claude)
 - **Image drag-and-drop and paste**: images pasted or dragged into the editor are saved as temp files and attached to the prompt-engineer context as `[Image #N]` placeholders with `@image-ref` annotations
@@ -93,3 +99,5 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 [0.2.0]: https://github.com/gradigit/turbodraft/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gradigit/turbodraft/releases/tag/v0.1.0
+[0.3.0]: https://github.com/gradigit/turbodraft/compare/v0.2.0...v0.3.0
+[unreleased]: https://github.com/gradigit/turbodraft/compare/v0.3.0...HEAD
