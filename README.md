@@ -142,13 +142,20 @@ Cold-start path is currently in the **~150ms class** when TurboDraft is not resi
 > - It intentionally includes open/close orchestration overhead and is meant for CI regression tracking.
 > - The "~10ms" figure refers to ultra-fast resident internals; practical ready-to-type latency is in the ~50ms class.
 
-### RAM suite (22-cycle profile, steady-state n=20)
+### RAM suite (20-cycle profile, steady-state n=18)
 
 | Metric | Median (MiB) | P95 (MiB) |
 |--------|-------------:|----------:|
-| Peak delta (peak-idle) | 14.2 | 25.7 |
-| Post-close residual | 9.9 | 25.7 |
-| Memory slope (MiB/cycle) | -0.08 | - |
+| Peak delta (peak-idle) | 10.5 | 23.4 |
+| Post-close residual | 9.8 | 23.5 |
+| Memory slope (MiB/cycle) | 0.09 | - |
+
+Current RAM regression gates (CI/nightly):
+- Peak delta p95 ≤ 32 MiB
+- Post-close residual p95 ≤ 30 MiB
+- Memory slope ≤ 0.8 MiB/cycle
+
+All RAM headline metrics exclude warmup cycles.
 
 ## Markdown support
 
