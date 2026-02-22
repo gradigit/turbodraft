@@ -736,7 +736,7 @@ def main() -> int:
     ap.add_argument("--clean-slate", action="store_true", default=False)
     ap.add_argument("--no-clean-slate", action="store_false", dest="clean_slate")
     ap.add_argument("--inject-transient-failure-cycle", type=int, default=0, help="For validation: force first attempt failure for this cycle")
-    ap.add_argument("--fixture", default="bench/fixtures/dictation_flush_mode.md")
+    ap.add_argument("--fixture", default="bench/preambles/core.md")
     ap.add_argument("--out-dir", default="")
     ap.add_argument("--compare", default="", help="Optional previous report JSON for trend deltas")
     args = ap.parse_args()
