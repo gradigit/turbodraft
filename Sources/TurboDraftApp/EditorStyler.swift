@@ -18,6 +18,9 @@ final class MarkdownStyler {
   private var cacheOrder: [CacheKey] = []
   private let cacheLimit = 512
 
+  var cacheEntryCount: Int { cacheOrder.count }
+  var cacheCapacity: Int { cacheLimit }
+
   var theme: EditorColorTheme = .defaultTheme
 
   private(set) var baseFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)

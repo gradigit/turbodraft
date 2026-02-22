@@ -165,10 +165,27 @@ public struct BenchMetricsResult: Codable, Sendable {
   public var typingLatencySamples: [Double]
   public var memoryResidentBytes: Int64
   public var sessionOpenToReadyMs: Double?
-  public init(typingLatencySamples: [Double], memoryResidentBytes: Int64, sessionOpenToReadyMs: Double? = nil) {
+  public var historySnapshotCount: Int?
+  public var historySnapshotBytes: Int64?
+  public var stylerCacheEntryCount: Int?
+  public var stylerCacheLimit: Int?
+
+  public init(
+    typingLatencySamples: [Double],
+    memoryResidentBytes: Int64,
+    sessionOpenToReadyMs: Double? = nil,
+    historySnapshotCount: Int? = nil,
+    historySnapshotBytes: Int64? = nil,
+    stylerCacheEntryCount: Int? = nil,
+    stylerCacheLimit: Int? = nil
+  ) {
     self.typingLatencySamples = typingLatencySamples
     self.memoryResidentBytes = memoryResidentBytes
     self.sessionOpenToReadyMs = sessionOpenToReadyMs
+    self.historySnapshotCount = historySnapshotCount
+    self.historySnapshotBytes = historySnapshotBytes
+    self.stylerCacheEntryCount = stylerCacheEntryCount
+    self.stylerCacheLimit = stylerCacheLimit
   }
 }
 

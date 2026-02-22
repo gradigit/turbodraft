@@ -688,7 +688,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case TurboDraftMethod.benchMetrics:
       do {
         let params = try (req.params ?? .object([:])).decode(BenchMetricsParams.self)
-        guard sessionsById[params.sessionId] != nil else {
+        guard let editorSession = sessionsById[params.sessionId] else {
           return err(JSONRPCStandardErrorCode.invalidRequest, "Invalid sessionId")
         }
         touchSession(params.sessionId)
@@ -696,12 +696,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let wc = windowsById[params.sessionId]
         let latencies = wc?.typingLatencySamples ?? []
         let openToReadyMs = wc?.sessionOpenToReadyMs
+        let historyStats = await editorSession.historyStats()
         // Query process memory via mach_task_info.
         let memBytes = processResidentBytes()
         return ok(BenchMetricsResult(
           typingLatencySamples: latencies,
           memoryResidentBytes: memBytes,
-          sessionOpenToReadyMs: openToReadyMs
+          sessionOpenToReadyMs: openToReadyMs,
+          historySnapshotCount: historyStats.snapshotCount,
+          historySnapshotBytes: Int64(historyStats.totalBytes),
+          stylerCacheEntryCount: wc?.stylerCacheEntryCount,
+          stylerCacheLimit: wc?.stylerCacheLimit
         ))
       } catch {
         return err(JSONRPCStandardErrorCode.invalidParams, "benchMetrics failed: \(error)")

@@ -179,6 +179,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     editorVC.sessionOpenToReadyMs
   }
 
+  var stylerCacheEntryCount: Int {
+    editorVC.stylerCacheEntryCount
+  }
+
+  var stylerCacheLimit: Int {
+    editorVC.stylerCacheLimit
+  }
+
   func flushAutosaveNow(reason: String = "forced_flush") async {
     await editorVC.flushAutosaveNow(reason: reason)
   }

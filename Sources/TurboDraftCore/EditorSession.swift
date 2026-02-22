@@ -32,6 +32,10 @@ public struct SessionInfo: Sendable, Equatable {
 }
 
 public actor EditorSession {
+  private static let historyMaxCount = 32
+  private static let historyMaxBytes = 4_000_000
+  private static let recoveryLoadCount = 16
+
   private struct RevisionWaiter {
     let baseRevision: String
     let continuation: CheckedContinuation<SessionInfo?, Never>
@@ -43,7 +47,10 @@ public actor EditorSession {
   private var content: String = ""
   private var diskRevision: String = Revision.sha256(text: "")
   private var isDirty: Bool = false
-  private var history = HistoryStore(maxCount: 64)
+  private var history = HistoryStore(
+    maxCount: EditorSession.historyMaxCount,
+    maxBytes: EditorSession.historyMaxBytes
+  )
   private let recoveryStore = RecoveryStore()
   private var conflictSnapshotId: String?
   private var bannerMessage: String?
@@ -68,7 +75,11 @@ public actor EditorSession {
     // PERF: combined load+append in single read-write cycle (Tier 2),
     // write dispatched to background queue (Tier 3).
     let openSnap = HistorySnapshot(reason: "open_buffer", content: text)
-    let recovered = recoveryStore.loadAndAppend(for: fileURL, snapshot: openSnap, loadMaxCount: 48)
+    let recovered = recoveryStore.loadAndAppend(
+      for: fileURL,
+      snapshot: openSnap,
+      loadMaxCount: EditorSession.recoveryLoadCount
+    )
 
     // All failable operations succeeded — now mutate instance state.
 
@@ -86,8 +97,11 @@ public actor EditorSession {
     self.isClosed = false
     self.cwd = cwd
 
-    self.history = HistoryStore(maxCount: 64)
-    for snap in recovered.suffix(48) {
+    self.history = HistoryStore(
+      maxCount: EditorSession.historyMaxCount,
+      maxBytes: EditorSession.historyMaxBytes
+    )
+    for snap in recovered.suffix(EditorSession.recoveryLoadCount) {
       self.history.append(snap)
     }
 
@@ -210,7 +224,10 @@ public actor EditorSession {
   }
 
   public func resetForRecycle() {
-    history = HistoryStore(maxCount: 64)
+    history = HistoryStore(
+      maxCount: EditorSession.historyMaxCount,
+      maxBytes: EditorSession.historyMaxBytes
+    )
     content = ""
     isDirty = false
     conflictSnapshotId = nil
@@ -224,6 +241,10 @@ public actor EditorSession {
     waiters.removeAll()
     for w in ws { w.resume() }
     clearRevisionWaiters(with: nil)
+  }
+
+  public func historyStats() -> HistoryStoreStats {
+    history.stats()
   }
 
   public func waitUntilRevisionChange(baseRevision: String, timeoutMs: Int?) async -> SessionInfo? {

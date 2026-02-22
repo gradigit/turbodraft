@@ -86,6 +86,8 @@ final class EditorViewController: NSViewController {
 
   var typingLatencySamples: [Double] { _typingLatencies }
   var sessionOpenToReadyMs: Double? { sessionOpenToReadyMsValue }
+  var stylerCacheEntryCount: Int { styler.cacheEntryCount }
+  var stylerCacheLimit: Int { styler.cacheCapacity }
 
   private enum SaveState {
     case saved
