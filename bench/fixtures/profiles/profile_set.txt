@@ -1,6 +1,0 @@
-bench/fixtures/dictation_flush_mode.md
-bench/fixtures/profiles/run_on_promptpad_vision.md
-bench/fixtures/profiles/simple_high_work_app_not_opening.md
-bench/fixtures/profiles/bug_heavy_agent_clipboard_fail.md
-bench/fixtures/profiles/question_heavy_workflow_research.md
-bench/fixtures/profiles/simple_server_feasibility.md

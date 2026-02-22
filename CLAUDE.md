@@ -35,15 +35,17 @@ Do NOT skip this step. Do NOT just run `swift build` — use `scripts/install` s
 - `scripts/turbodraft-launch-agent install|uninstall|status|update|restart` — manage LaunchAgent
 - `.build/release/turbodraft-bench bench run --path <file> --warm N --cold N` — editor benchmarks
 - `.build/release/turbodraft-bench bench check --baseline bench/editor/baseline.json --results <file>` — check baselines
-- `python3 scripts/bench_editor_e2e_ux.py --warm N --cold N` — end-to-end UX benchmark (needs Accessibility permissions)
+- `python3 scripts/test_editor_find_replace_e2e.py --keep-fixture` — AX find/replace E2E test
+- `python3 scripts/test_editor_undo_redo_e2e.py` — AX undo/redo E2E test
 - `python3 scripts/bench_open_close_suite.py --cycles N --warmup N --retries N` — API open/close suite (CI-safe)
 - `PYTHONPATH=. python3 -m scripts.bench_open_close_real_cli --cycles N --warmup N --trigger-mode cgevent` — real Ctrl+G benchmark against live CLI window (default gate: p95 ≤ 80ms)
 - `pkill -9 -f turbodraft-app && rm -f ~/Library/Application\ Support/TurboDraft/rpc.sock` — kill stale processes + remove socket before benchmarks
-- `CLAUDECODE= python3 scripts/bench_codex_prompt_engineer.py --draft <file> --models <model> --efforts <effort> -n <runs> --backend exec --save-outputs <dir>` — prompt-engineering quality benchmark
+
+Prompt-quality benchmark scripts/workflows are temporarily removed pending a full rebuild from scratch.
 
 ## Architecture
 
-Swift Package with 10 modules:
+Swift Package with 9 modules:
 
 | Module | Purpose |
 |--------|---------|
@@ -56,7 +58,6 @@ Swift Package with 10 modules:
 | `TurboDraftMarkdown` | Markdown syntax highlighting for NSTextView |
 | `TurboDraftAgent` | Prompt-engineering agent integration (Codex + Claude adapters) |
 | `TurboDraftConfig` | User config loading/saving |
-| `TurboDraftE2EHarness` | E2E benchmark harness binary |
 
 Binaries: `turbodraft` (C, main CLI / `$VISUAL`), `turbodraft-app` (Swift/AppKit GUI), `turbodraft-bench` (Swift, dev benchmarks).
 
@@ -76,7 +77,6 @@ Communication: CLI → Unix domain socket (`~/Library/Application Support/TurboD
 - `Sources/TurboDraftAgent/ClaudePromptEngineerAdapter.swift` — Claude/Sonnet backend for prompt engineering
 - `Sources/TurboDraftAgent/CodexPromptEngineerAdapter.swift` — Codex exec backend for prompt engineering
 - `bench/editor/baseline.json` — editor benchmark regression thresholds
-- `scripts/bench_codex_prompt_engineer.py` — prompt-engineering quality benchmark (1957 lines)
 - `todos/` — persistent TODO files for tracked work items
 
 ## Gotchas
@@ -84,7 +84,7 @@ Communication: CLI → Unix domain socket (`~/Library/Application Support/TurboD
 - `NSNumber(value: 1)` matches Swift `as Bool` pattern due to ObjC bridging. Use `CFGetTypeID(n) == CFBooleanGetTypeID()` to distinguish booleans from integers in `JSONValue.fromJSONObject`.
 - `terminate(nil)` enters `NSModalPanelRunLoopMode` which does NOT drain Swift concurrency Tasks. Do async cleanup BEFORE calling `terminate`, not inside `applicationWillTerminate` or `applicationShouldTerminate`.
 - Benchmark baselines are machine-load sensitive. P95 thresholds need CI headroom — don't set tight values from dev-machine runs.
-- Cold start (~170ms) is dominated by process startup (fork+exec+dyld+AppKit). Only the LaunchAgent eliminates it — early socket bind and kqueue don't help because the bottleneck is process bootstrap, not socket detection.
+- Cold start (~150ms class) is dominated by process startup (fork+exec+dyld+AppKit). Only the LaunchAgent eliminates it — early socket bind and kqueue don't help because the bottleneck is process bootstrap, not socket detection.
 - Before benchmarks, kill stale `turbodraft-app` processes and remove the socket. Stale processes cause the CLI to connect to an old binary.
 - Bench lockfile (`~/Library/Application Support/TurboDraft/bench.lock`) can get stuck if a run is interrupted — remove manually.
 - Telemetry JSONL files may be replaced/truncated by fallback writes; benchmark readers must reset offsets if file size shrinks.

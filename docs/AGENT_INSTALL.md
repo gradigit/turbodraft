@@ -2,7 +2,7 @@
 
 Use this when an AI agent is asked to install or reconfigure TurboDraft in a local cloned repo.
 
-## 1) Ask-first workflow (required)
+## 1) Agent must run as an interactive wizard (required)
 
 Before any install/config/uninstall command:
 
@@ -20,7 +20,8 @@ Before any install/config/uninstall command:
    - update PATH
    - set VISUAL
 
-If your environment has a dedicated question/choice tool, use it. Otherwise ask in chat.
+If your environment has a dedicated question/choice tool, use it (`AskUserQuestion`, `Question`, etc.). Otherwise ask in chat.
+Never assume `--yes` unless the user explicitly requests non-interactive automation.
 
 ## 2) Command recipes
 

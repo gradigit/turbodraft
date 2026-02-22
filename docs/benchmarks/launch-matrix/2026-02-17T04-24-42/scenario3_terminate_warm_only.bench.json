@@ -1,1 +1,0 @@
-{"timestamp":"2026-02-16T19:25:48Z","osVersion":"Version 26.2 (Build 25C56)","warmN":6,"coldN":0,"metrics":{"warm_type_p95_ms":0.1305,"warm_open_roundtrip_p95_ms":4.6485,"warm_agent_reflect_p95_ms":6.869292,"warm_save_roundtrip_p95_ms":0.958958,"warm_ctrl_g_to_editable_p95_ms":8.253292}}

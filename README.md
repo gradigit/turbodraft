@@ -1,29 +1,37 @@
 # TurboDraft
 
-A native macOS editor for AI CLI tool hooks. When Claude Code or Codex CLI asks for `$EDITOR`, TurboDraft opens in 10ms and gives you a Markdown editor that actually makes sense for writing prompts.
+A native macOS editor for AI CLI tool hooks. When Claude Code or Codex CLI asks for `$EDITOR`, TurboDraft opens in ~10ms (resident) and is ready-to-type in ~50ms on the real Ctrl+G path.
 
-## What’s new in this build
+## GitHub repo description (About)
 
-- Full Markdown list editing pass:
+Edit prompts at the speed of thought. Engineer prompts with ease in TurboDraft.
+
+## Features
+
+- Performance-first editing:
+  - ~10ms resident open latency
+  - ~50ms ready-to-type latency on real Ctrl+G runs
+  - ~150ms cold-start class when the app is not resident
+- Markdown list editing:
   - Enter at start/middle/end of list items (nested + non-nested)
   - Shift+Enter soft line break inside list item
   - Smart Backspace list-marker removal/outdent
   - Tab / Shift+Tab indent-outdent
   - Ordered-list auto-renumbering after structural edits
   - Better task-list continuation and checkbox handling
-- Prompt-improve workflow stability:
+- Prompt-improve workflow:
   - Undo/redo across repeated improve runs
   - Restore behavior aligned with active working buffer expectations
-- Native find + replace workflow:
+- Native find + replace:
   - Inline find UI, replace next/all, match case, whole word, regex
   - Selection-to-find (`⌘E`), next/previous match navigation
-- Image and paste handling upgrades:
+- Paste and media handling:
   - Clipboard image/file paste support
   - `Ctrl+V` parity for terminal workflows that rely on Ctrl-based paste shortcuts
-- Installer improvements:
+- Install and configure:
   - One-line bootstrap to interactive install/config/repair/uninstall wizard
-  - Agent-install runbook and ask-first guidance for AI setup flows
-- Benchmarking upgrades:
+  - Agent-install runbook where the agent itself acts as the install wizard
+- Benchmarks and guardrails:
   - Open/close API suite for CI/nightly regression tracking
   - Real Ctrl+G benchmark mode against live Codex/Claude terminal workflows
 
@@ -48,6 +56,7 @@ Please install and configure TurboDraft for me from:
 https://github.com/gradigit/turbodraft
 
 Use the AGENT INSTALL SECTION in README.md.
+Use your AskUserQuestion/Question tool to run this like an interactive install wizard.
 Ask me confirmation questions before changing launch agent or shell config.
 Then report commands run, files changed, and how to rollback.
 ```
@@ -91,21 +100,11 @@ If you use Claude Code and want to keep session context visible during editor ha
 
 - https://github.com/gradigit/claude-pager
 
-### Agentic install (repo copy + ask an agent to set up)
-
-If an AI agent is setting up the repo, tell it to:
-1. run `scripts/install --mode install --yes`
-2. run `scripts/turbodraft-launch-agent install`
-3. ensure `VISUAL=turbodraft` and `~/.local/bin` are configured in your shell
-
-Detailed runbook: `docs/AGENT_INSTALL.md`
-Wizard flow diagrams: `docs/INSTALL_WIZARD_FLOW.md`
-
 `turbodraft` accepts positional file paths, `+N` line jump syntax, and `--line N`/`--column N` flags. It blocks until you close the editor tab, then returns focus to your terminal.
 
 ## LaunchAgent (recommended)
 
-Keep `turbodraft-app` resident so opens are instant (~10ms) instead of cold-starting (~170ms):
+Keep `turbodraft-app` resident so opens are instant (~10ms) instead of cold-starting (~150ms):
 
 ```sh
 scripts/turbodraft-launch-agent install
@@ -119,17 +118,27 @@ scripts/turbodraft-launch-agent uninstall
 
 ## Performance
 
-Measured on M1 Max, macOS 14. The LaunchAgent warm path is what matters day-to-day.
+Latest benchmark freeze: **MacBook Air 13-inch (M4), 24GB RAM, macOS 26.2**.
 
-| Metric | P50 | P95 |
-|--------|-----|-----|
-| Warm open (LaunchAgent resident) | ~10ms | <50ms |
-| Cold start (process launch) | ~170ms | ~200ms |
-| Typing latency (keystroke to display) | <0.1ms | <0.1ms |
-| Markdown highlight pass | <2ms | <5ms |
-| Save round-trip | <1ms | <1ms |
+### Real Ctrl+G path (steady-state n=50)
 
-Cold start is mostly `fork+exec+dyld+AppKit` bootstrap. The LaunchAgent skips all of that.
+| Metric | Median (ms) | P95 (ms) |
+|--------|-------------:|---------:|
+| Trigger dispatch overhead | 2.5 | 2.6 |
+| Keypress → window visible | 53.4 | 70.5 |
+| Keypress → ready-to-type | 57.3 | 71.5 |
+| Post-dispatch → ready-to-type | 54.7 | 68.9 |
+| Close command → window disappear | 109.0 | 113.3 |
+
+### API suite (40-cycle profile, steady-state n=38)
+
+| Metric | Median (ms) | P95 (ms) |
+|--------|-------------:|---------:|
+| API open total | 208.9 | 217.4 |
+| API close trigger → CLI exit | 137.7 | 161.7 |
+| API cycle wall | 366.0 | 399.9 |
+
+Cold-start path is currently in the **~150ms class** when TurboDraft is not resident.
 
 ## Markdown support
 
@@ -226,13 +235,13 @@ swift build -c release
 
 End-to-end UX benchmark (requires Accessibility permission):
 ```sh
-python3 scripts/bench_editor_e2e_ux.py --cold 5 --warm 20
+python3 scripts/test_editor_find_replace_e2e.py --keep-fixture
+python3 scripts/test_editor_undo_redo_e2e.py
 ```
 
-Open/close benchmark suite (API primary, optional UI probe):
+Open/close benchmark suite:
 ```sh
 python3 scripts/bench_open_close_suite.py --cycles 20 --warmup 1 --retries 2
-python3 scripts/bench_open_close_suite.py --cycles 20 --warmup 1 --retries 2 --user-visible --ui-cycles 20
 python3 scripts/bench_open_close_real_cli.py --cycles 20 --warmup 1 --poll-ms 2
 turbodraft --path /tmp/prompt.md --debug-ready-latency
 ```
@@ -261,9 +270,11 @@ Baseline thresholds are in `bench/editor/baseline.json`. P95 values have headroo
 <!-- AGENT-INSTALL-START -->
 If you are an AI agent reading this repository, follow this section exactly.
 
-### Ask-first contract (required)
+### Act as an interactive install/config wizard (required)
 
-Before running install/config/uninstall actions, ask the user short confirmation questions using your question tool (for example `AskUserQuestion`, `Question`, or your environment’s equivalent). Ask for:
+Before running install/config/uninstall actions, you must ask the user short confirmation questions using your question tool (`AskUserQuestion`, `Question`, or equivalent). Do not skip this.
+
+Collect these choices first:
 
 1. mode: `install`, `update`, `configure`, `repair`, or `uninstall`
 2. LaunchAgent behavior: `install`, `restart`, `skip`, or `uninstall`
@@ -271,39 +282,45 @@ Before running install/config/uninstall actions, ask the user short confirmation
    - add `PATH` entry
    - set `VISUAL=turbodraft`
 
-Never assume `--yes` unless user explicitly asks for non-interactive automation.
+Never assume `--yes` unless the user explicitly requests non-interactive automation.
 
 ### Agent command mapping
 
-- guided flow:
+- guided wizard (default):
   ```sh
   scripts/install
   ```
-- explicit non-interactive install/update:
+- non-interactive install/update:
   ```sh
   scripts/install --mode install --yes
   ```
-- explicit non-interactive repair:
+- non-interactive repair:
   ```sh
   scripts/install --mode repair --yes
   ```
-- explicit configure choices:
+- configure with explicit choices:
   ```sh
   scripts/install --mode configure --yes --launch-agent <install|restart|skip|uninstall> --set-path <yes|no> --set-visual <yes|no>
   ```
 
-### Required verification + report
+### Required verification
 
-After running commands, verify:
-1. `turbodraft --help`
-2. `scripts/turbodraft-launch-agent status`
-3. shell config matches user choices
+After running install/config/repair, verify:
+1. `turbodraft --help` works
+2. `scripts/turbodraft-launch-agent status` matches requested state
+3. shell config matches requested `PATH` / `VISUAL` choices
 
-Then report:
+### Required report back to user
+
+Report all of the following:
 - commands run
 - files changed
 - final status
 - rollback/uninstall command
+
+Reference docs for agents:
+- `docs/AGENT_INSTALL.md`
+- `docs/INSTALL_WIZARD_FLOW.md`
 <!-- AGENT-INSTALL-END -->
 
 </details>

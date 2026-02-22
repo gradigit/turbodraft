@@ -8,6 +8,8 @@ Thumbs.db
 *.swp
 *.swo
 *~
+__pycache__/
+*.pyc
 
 # Environment
 .env
@@ -22,9 +24,37 @@ research-*.md
 docs/markdown-reference.txt
 docs/theme-preview.html
 docs/benchmarks/
+docs/EVALUATION_REPORT.md
+docs/performance-review-2026-02-21-phase1-4.md
+docs/phase-1-4-execution-report-2026-02-21.md
+docs/production-readiness-review-2026-02-20.md
 
 # Session handoff (consumed by next agent, not project docs)
 HANDOFF.md
+AGENTS.md
+architect/
+plan.md
+plan-deepened.md
+
+# Prompt benchmark suite (temporarily removed for overhaul)
+bench/prompt/
+bench/baselines/
+bench/fixtures/profiles/
+bench/fixtures/prompt_engineering_draft.md
+bench/judge_schema.json
+bench/judge_pairwise_schema.json
+scripts/bench_codex_prompt_engineer.py
+scripts/bench_prompt_engineer_matrix.py
+scripts/bench_prompt_suite.py
+scripts/check_prompt_benchmark.py
+.github/workflows/benchmark-prompt-quality.yml
+scripts/bench_editor_e2e_ux.py
+scripts/bench_editor_startup_trace.py
+Sources/TurboDraftE2EHarness/
+
+# Completed TODO artifacts (keep pending TODOs only)
+todos/*-done-*.md
+todos/*-completed-*.md
 
 # Swift / Xcode / SwiftPM
 .build/

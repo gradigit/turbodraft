@@ -275,21 +275,14 @@ def kill_turbodraft(socket_path: pathlib.Path, app_bin: pathlib.Path) -> None:
     time.sleep(0.08)
 
 
-def preconditions(repo: pathlib.Path, turbodraft_bin: pathlib.Path, app_bin: pathlib.Path, harness_bin: pathlib.Path, need_ui: bool) -> Dict[str, Any]:
+def preconditions(repo: pathlib.Path, turbodraft_bin: pathlib.Path, app_bin: pathlib.Path) -> Dict[str, Any]:
     problems: List[str] = []
     if not turbodraft_bin.exists():
         problems.append(f"missing binary: {turbodraft_bin}")
     if not app_bin.exists():
         problems.append(f"missing binary: {app_bin}")
-    if need_ui and not harness_bin.exists():
-        problems.append(f"missing binary: {harness_bin}")
 
     ok_status, status_out = shell_ok(f"cd {shlex.quote(str(repo))} && scripts/turbodraft-launch-agent status", timeout_s=10.0)
-
-    if need_ui:
-        cp = run_osascript('tell application "System Events" to count processes', timeout_s=6.0)
-        if cp.returncode != 0:
-            problems.append("System Events/Accessibility precondition failed")
 
     if problems:
         raise SystemExit("precondition failed: " + "; ".join(problems))
@@ -658,7 +651,7 @@ def build_metadata(repo: pathlib.Path, args: argparse.Namespace, binaries: Dict[
     git_ok, git_rev = shell_ok(f"cd {shlex.quote(str(repo))} && git rev-parse --short HEAD", timeout_s=4.0)
     app_hash_ok, app_hash = shell_ok(f"shasum -a 256 {shlex.quote(str(binaries['app']))} | awk '{{print $1}}'", timeout_s=4.0)
 
-    return {
+    out = {
         "timestamp": now_iso(),
         "hostname": platform.node(),
         "machine": platform.machine(),
@@ -669,7 +662,6 @@ def build_metadata(repo: pathlib.Path, args: argparse.Namespace, binaries: Dict[
         "gitRevision": git_rev if git_ok else None,
         "appBinary": str(binaries["app"]),
         "benchBinary": str(binaries["bench"]),
-        "harnessBinary": str(binaries["harness"]),
         "appBinarySha256": app_hash if app_hash_ok else None,
         "args": vars(args),
         "environment": {
@@ -679,6 +671,9 @@ def build_metadata(repo: pathlib.Path, args: argparse.Namespace, binaries: Dict[
         },
         "precheck": precheck,
     }
+    if "harness" in binaries:
+        out["harnessBinary"] = str(binaries["harness"])
+    return out
 
 
 def compare_with_previous(current: Dict[str, Any], previous_path: Optional[pathlib.Path], keys: List[str]) -> Dict[str, Any]:
@@ -716,7 +711,7 @@ def compare_with_previous(current: Dict[str, Any], previous_path: Optional[pathl
 # ---------- main ----------
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="TurboDraft production open/close benchmark suite (API primary, UI optional)")
+    ap = argparse.ArgumentParser(description="TurboDraft production open/close benchmark suite (API primary)")
     ap.add_argument("--cycles", type=int, default=20)
     ap.add_argument("--warmup", type=int, default=1)
     ap.add_argument("--retries", type=int, default=2, help="Per-cycle retries for recoverable failures")
@@ -725,14 +720,10 @@ def main() -> int:
     ap.add_argument("--inter-cycle-delay-s", type=float, default=0.20)
     ap.add_argument("--clean-slate", action="store_true", default=True)
     ap.add_argument("--no-clean-slate", action="store_false", dest="clean_slate")
-    ap.add_argument("--user-visible", action="store_true", help="Enable optional user-visible readiness probe (AX required)")
-    ap.add_argument("--ui-cycles", type=int, default=0, help="UI probe cycles (default: match cycles when --user-visible)")
-    ap.add_argument("--autosave-settle-s", type=float, default=0.20)
     ap.add_argument("--inject-transient-failure-cycle", type=int, default=0, help="For validation: force first attempt failure for this cycle")
     ap.add_argument("--fixture", default="bench/fixtures/dictation_flush_mode.md")
     ap.add_argument("--out-dir", default="")
     ap.add_argument("--compare", default="", help="Optional previous report JSON for trend deltas")
-    ap.add_argument("--harness-process-name", default="turbodraft-e2e-harness")
     args = ap.parse_args()
 
     if args.cycles <= 0:
@@ -743,7 +734,6 @@ def main() -> int:
     repo = pathlib.Path(__file__).resolve().parents[1]
     bench_bin = repo / ".build" / "release" / "turbodraft-bench"
     app_bin = repo / ".build" / "release" / "turbodraft-app"
-    harness_bin = repo / ".build" / "release" / "turbodraft-e2e-harness"
     socket_path = pathlib.Path.home() / "Library" / "Application Support" / "TurboDraft" / "turbodraft.sock"
     telemetry_path = pathlib.Path.home() / "Library" / "Application Support" / "TurboDraft" / "telemetry" / "editor-open.jsonl"
 
@@ -758,34 +748,7 @@ def main() -> int:
     fixture = out_dir / "open-close-fixture.md"
     fixture.write_text(fixture_src.read_text(encoding="utf-8"), encoding="utf-8")
 
-    ui_cycles = args.ui_cycles if args.ui_cycles > 0 else (args.cycles if args.user_visible else 0)
-
-    precheck = preconditions(repo, bench_bin, app_bin, harness_bin, need_ui=args.user_visible)
-
-    harness_proc: Optional[subprocess.Popen] = None
-    harness_log = None
-    harness_err = None
-    harness_offset = 0
-    harness_jsonl = out_dir / "ui-harness.jsonl"
-
-    if args.user_visible:
-        env = os.environ.copy()
-        env["TURBODRAFT_BIN"] = str(bench_bin)
-        env["TURBODRAFT_E2E_FILE"] = str(fixture)
-        env["TURBODRAFT_E2E_LOG"] = str(harness_jsonl)
-        env["TURBODRAFT_E2E_MODE"] = "roundtrip"
-        harness_log = open(out_dir / "harness_stdout.log", "w")
-        harness_err = open(out_dir / "harness_stderr.log", "w")
-        harness_proc = subprocess.Popen([str(harness_bin)], cwd=str(repo), env=env, stdout=harness_log, stderr=harness_err)
-        # readiness
-        deadline = time.time() + 4.0
-        while time.time() < deadline:
-            if harness_proc.poll() is not None:
-                raise SystemExit(f"harness exited early rc={harness_proc.returncode}")
-            if harness_jsonl.exists():
-                break
-            time.sleep(0.05)
-        time.sleep(0.35)
+    precheck = preconditions(repo, bench_bin, app_bin)
 
     cycles: List[Dict[str, Any]] = []
     failures: List[Dict[str, Any]] = []
@@ -833,26 +796,6 @@ def main() -> int:
                 final_cycle["warmup"] = warmup
                 final_cycle["uiProbe"] = None
 
-                # optional UI probe for matching cycle index.
-                if args.user_visible and idx <= ui_cycles and harness_proc is not None and harness_proc.poll() is None:
-                    ui_probe, harness_offset = collect_ui_probe_cycle(
-                        cycle_idx=idx,
-                        attempt_idx=attempt,
-                        harness_process_name=args.harness_process_name,
-                        harness_log_path=harness_jsonl,
-                        harness_offset=harness_offset,
-                        open_timeout_s=float(args.open_timeout_s),
-                        close_timeout_s=float(args.close_timeout_s),
-                        autosave_settle_s=float(args.autosave_settle_s),
-                        record_timeout_s=max(6.0, float(args.open_timeout_s + args.close_timeout_s)),
-                    )
-                    final_cycle["uiProbe"] = {
-                        "ok": ui_probe.ok,
-                        "openVisibleMs": ui_probe.open_visible_ms,
-                        "closeCommandToDisappearMs": ui_probe.close_command_to_disappear_ms,
-                        "error": ui_probe.error,
-                    }
-
                 if res.success:
                     cycle_success = True
                     if transient_failure_injected and idx == args.inject_transient_failure_cycle and attempt > 1:
@@ -878,18 +821,8 @@ def main() -> int:
                 cycles.append(final_cycle)
 
             time.sleep(max(0.0, float(args.inter_cycle_delay_s)))
-
     finally:
-        if harness_proc is not None:
-            harness_proc.terminate()
-            try:
-                harness_proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                harness_proc.kill()
-        if harness_log:
-            harness_log.close()
-        if harness_err:
-            harness_err.close()
+        pass
 
     # validation & summaries
     successful = [c for c in cycles if c.get("ok")]
@@ -965,7 +898,7 @@ def main() -> int:
         "metadata": build_metadata(
             repo,
             args,
-            binaries={"bench": bench_bin, "app": app_bin, "harness": harness_bin},
+            binaries={"bench": bench_bin, "app": app_bin},
             precheck=precheck,
         ),
         "config": {
@@ -976,8 +909,6 @@ def main() -> int:
             "closeTimeoutS": args.close_timeout_s,
             "interCycleDelayS": args.inter_cycle_delay_s,
             "cleanSlate": args.clean_slate,
-            "userVisible": args.user_visible,
-            "uiCycles": ui_cycles,
             "fixture": str(fixture),
             "socketPath": str(socket_path),
             "telemetryPath": str(telemetry_path),
@@ -993,7 +924,7 @@ def main() -> int:
         "runValid": run_valid,
         "optionalProbeCoverage": {
             "userVisible": {
-                "enabled": bool(args.user_visible),
+                "enabled": False,
                 "attempted": ui_attempted,
                 "ok": ui_ok,
                 "coverage": ui_coverage,
@@ -1001,12 +932,12 @@ def main() -> int:
         },
         "method": {
             "primary": "API-level from CLI open --wait process + RPC app.quit close trigger",
-            "secondary": "optional AX probe for keypress->window visible and close-command->window disappear",
+            "secondary": "use scripts/bench_open_close_real_cli.py for user-visible probe",
             "headlineExcludesWarmup": True,
             "outlierMethod": "iqr_1.5",
             "notes": [
                 "visual settle analysis is optional and not a primary KPI",
-                "API metrics are suitable for CI/nightly; UI probe needs Accessibility permissions",
+                "API metrics are suitable for CI/nightly",
             ],
         },
     }
@@ -1015,7 +946,7 @@ def main() -> int:
     report["trend"] = compare_with_previous(
         current=report,
         previous_path=compare_path,
-        keys=["apiOpenTotalMs", "apiCloseTriggerToExitMs", "apiCycleWallMs", "ui_open_visible_ms", "ui_close_cmd_to_disappear_ms"],
+        keys=["apiOpenTotalMs", "apiCloseTriggerToExitMs", "apiCycleWallMs"],
     )
 
     out_json = out_dir / "report.json"
@@ -1043,10 +974,6 @@ def main() -> int:
     print_table("Auxiliary: close trigger->wait event observed (ms)", summary_steady.get("apiCloseTriggerToWaitEventMs") or {})
     print_table("Auxiliary: cli_wait payload waitMs (ms)", summary_steady.get("apiCloseWaitMs") or {})
     print_table("Auxiliary: wait-event observation lag (ms)", summary_steady.get("apiCloseWaitObservationLagMs") or {})
-
-    if args.user_visible:
-        print_table("Optional UI: keypress->window visible (ms)", summary_steady.get("ui_open_visible_ms") or {})
-        print_table("Optional UI: close cmd->window disappear (ms)", summary_steady.get("ui_close_cmd_to_disappear_ms") or {})
 
     return 0 if run_valid else 2
 

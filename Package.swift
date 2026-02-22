@@ -33,7 +33,6 @@ let package = Package(
     .executable(name: "turbodraft-bench", targets: ["TurboDraftCLI"]),
     .executable(name: "turbodraft", targets: ["TurboDraftOpen"]),
     .executable(name: "turbodraft-app", targets: ["TurboDraftApp"]),
-    .executable(name: "turbodraft-e2e-harness", targets: ["TurboDraftE2EHarness"]),
   ],
   dependencies: includeCodeEditSpike
     ? [
@@ -74,9 +73,6 @@ let package = Package(
     .executableTarget(
       name: "TurboDraftApp",
       dependencies: turboDraftAppDependencies
-    ),
-    .executableTarget(
-      name: "TurboDraftE2EHarness"
     ),
     .testTarget(
       name: "TurboDraftProtocolTests",

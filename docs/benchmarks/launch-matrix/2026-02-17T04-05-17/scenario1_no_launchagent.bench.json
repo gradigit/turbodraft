@@ -1,1 +1,0 @@
-{"coldN":2,"metrics":{"warm_open_roundtrip_p95_ms":10.227125,"warm_type_p95_ms":0.014916,"warm_agent_reflect_p95_ms":1443.980542,"cold_open_roundtrip_p95_ms":182.117084,"warm_save_roundtrip_p95_ms":1.030667,"warm_ctrl_g_to_editable_p95_ms":8.407333},"osVersion":"Version 26.2 (Build 25C56)","timestamp":"2026-02-16T19:06:43Z","warmN":8}

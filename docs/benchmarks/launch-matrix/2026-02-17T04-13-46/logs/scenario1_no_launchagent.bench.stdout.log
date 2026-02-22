@@ -1,6 +1,0 @@
-warm_ctrl_g_to_editable_p95_ms=8.26
-warm_open_roundtrip_p95_ms=3.01
-warm_type_p95_ms=0.07
-warm_save_roundtrip_p95_ms=0.77
-warm_agent_reflect_p95_ms=13.24
-cold_open_roundtrip_p95_ms=200.04

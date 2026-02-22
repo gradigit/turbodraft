@@ -14,7 +14,7 @@ Default profile:
 - retries per cycle: `2`
 - clean slate per cycle: enabled
 - primary probe: API-level (always enabled)
-- secondary probe: user-visible (optional via `--user-visible`)
+- secondary probe: real-agent-CLI user-visible probe (`bench_open_close_real_cli.py`)
 
 ## What is measured
 
@@ -30,10 +30,11 @@ Default profile:
   - `apiCloseWaitMs` (raw `cli_wait.waitMs`, includes pre-close idle time)
   - `apiCloseWaitObservationLagMs` (`apiCloseTriggerToWaitEventMs - apiCloseTriggerToExitMs`)
 
-### Secondary (optional user-visible)
-Enabled with `--user-visible` (requires Accessibility/Automation permissions):
-- `ui_open_visible_ms`: keypress to TurboDraft window becoming visible/frontmost
-- `ui_close_cmd_to_disappear_ms`: close command to TurboDraft disappearing
+### Secondary (user-visible, separate runner)
+Run against a real foreground agent CLI window:
+- `uiOpenVisibleMs`: keypress to TurboDraft window visible
+- `uiOpenReadyMs`: keypress to editor ready-to-type
+- `uiCloseDisappearMs`: close command to TurboDraft disappearance
 
 ## Reliability contract
 
@@ -59,11 +60,6 @@ JSON format is described by:
 ### Local default
 ```bash
 python3 scripts/bench_open_close_suite.py --cycles 20 --warmup 1 --retries 2
-```
-
-### Local with user-visible probe
-```bash
-python3 scripts/bench_open_close_suite.py --cycles 20 --warmup 1 --retries 2 --user-visible --ui-cycles 20
 ```
 
 ### Real agent CLI probe (no harness)
@@ -107,7 +103,7 @@ python3 scripts/bench_open_close_suite.py --cycles 6 --warmup 1 --retries 2 --in
 ## Methodology and caveats
 
 - API probe is primary KPI and intended for CI/nightly regression tracking.
-- User-visible probe is secondary because it depends on AX permissions and desktop focus state.
+- User-visible probe is secondary and uses a separate real-CLI runner.
 - `apiCloseWaitMs` is retained only as auxiliary telemetry context; headline close KPI is `apiCloseTriggerToExitMs`.
 - Keep machine load stable when comparing runs.
 - Trend/regression deltas are computed if `--compare` points to a previous report.

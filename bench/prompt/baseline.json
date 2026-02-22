@@ -1,6 +1,0 @@
-{
-  "min_exec_quality_pass_rate": 0.85,
-  "min_exec_pairwise_win_rate": 0.55,
-  "min_app_quality_pass_rate": 0.85,
-  "min_app_pairwise_win_rate": 0.55
-}
