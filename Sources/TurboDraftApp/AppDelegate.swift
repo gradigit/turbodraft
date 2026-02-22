@@ -654,14 +654,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case TurboDraftMethod.sessionClose:
       do {
         let params = try (req.params ?? .object([:])).decode(SessionCloseParams.self)
-        let removedSession = sessionsById.removeValue(forKey: params.sessionId)
-        windowsById.removeValue(forKey: params.sessionId)
-        sessionPathById.removeValue(forKey: params.sessionId)
-        sessionLastTouchedById.removeValue(forKey: params.sessionId)
-        if let removedSession {
-          await removedSession.markClosed()
+        guard let editorSession = sessionsById[params.sessionId] else {
+          return ok(SessionCloseResult(ok: false))
         }
-        return ok(SessionCloseResult(ok: removedSession != nil))
+        touchSession(params.sessionId)
+
+        if let wc = windowsById[params.sessionId], wc.window != nil {
+          wc.window?.performClose(nil)
+        } else {
+          sessionsById.removeValue(forKey: params.sessionId)
+          windowsById.removeValue(forKey: params.sessionId)
+          sessionPathById.removeValue(forKey: params.sessionId)
+          sessionLastTouchedById.removeValue(forKey: params.sessionId)
+          await editorSession.markClosed()
+        }
+        return ok(SessionCloseResult(ok: true))
       } catch {
         return err(JSONRPCStandardErrorCode.invalidParams, "close failed: \(error)")
       }
