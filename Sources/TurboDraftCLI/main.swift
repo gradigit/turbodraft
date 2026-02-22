@@ -103,6 +103,7 @@ Commands:
       appendOpenLatencyRecord([
         "event": "cli_open",
         "mode": "socket",
+        "sessionId": sessionId,
         "connectMs": connectMs,
         "rpcOpenMs": rpcMs,
         "totalMs": totalMs,

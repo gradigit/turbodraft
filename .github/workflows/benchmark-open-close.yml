@@ -21,8 +21,7 @@ jobs:
           python3 scripts/bench_open_close_suite.py \
             --cycles 20 \
             --warmup 1 \
-            --retries 2 \
-            --no-clean-slate
+            --retries 2
 
       - name: Upload benchmark artifacts
         if: always()

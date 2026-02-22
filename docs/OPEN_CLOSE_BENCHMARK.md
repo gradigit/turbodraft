@@ -12,7 +12,8 @@ Default profile:
 - cycles: `20`
 - warmup excluded from headlines: `1`
 - retries per cycle: `2`
-- clean slate per cycle: enabled
+- inter-cycle delay: `0.10s`
+- clean slate per cycle: disabled (resident steady-state)
 - primary probe: API-level (always enabled)
 - secondary probe: real-agent-CLI user-visible probe (`bench_open_close_real_cli.py`)
 
@@ -20,7 +21,7 @@ Default profile:
 
 ### Primary (API-level, CI-safe)
 - `apiOpenTotalMs`: trigger to open RPC completion (external API latency)
-- `apiCloseTriggerToExitMs`: close trigger (`app.quit` RPC) to `open --wait` process exit
+- `apiCloseTriggerToExitMs`: close trigger (`session.close` RPC) to `open --wait` process exit
 - `apiCycleWallMs`: total cycle wall latency
 - internal subcomponents when available:
   - `apiOpenConnectMs`
@@ -91,7 +92,6 @@ python3 scripts/bench_open_close_suite.py \
   --cycles 20 \
   --warmup 1 \
   --retries 2 \
-  --no-clean-slate \
   --compare tmp/open-close-prev/report.json
 ```
 

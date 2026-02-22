@@ -23,6 +23,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - README/docs benchmark positioning and performance notes were updated to distinguish resident-open latency vs API-suite lifecycle latency.
+- Open/close benchmark suite now defaults to resident steady-state runs (clean-slate disabled), uses `session.close` as the primary close trigger, and shortens default inter-cycle delay to 0.1s for tighter CLI/API parity.
 - Removed hardcoded test counts from project docs (they go stale quickly).
 
 ### Removed

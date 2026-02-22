@@ -260,6 +260,13 @@ def send_app_quit(sock_path: pathlib.Path, timeout_s: float) -> float:
     return (time.perf_counter() - t0) * 1000.0
 
 
+def send_session_close(sock_path: pathlib.Path, session_id: str, timeout_s: float) -> float:
+    t0 = time.perf_counter()
+    with JSONRPCSocketClient(sock_path, timeout_s=timeout_s) as cli:
+        _ = cli.request(9002, "turbodraft.session.close", params={"sessionId": session_id})
+    return (time.perf_counter() - t0) * 1000.0
+
+
 # ---------- cleanup / preconditions ----------
 
 def kill_turbodraft(socket_path: pathlib.Path, app_bin: pathlib.Path) -> None:
@@ -489,9 +496,17 @@ def run_api_cycle_attempt(
         cycle["openTelemetry"] = open_evt
         cycle["timestamps"]["open_event_received_ns"] = time.perf_counter_ns()
 
-        # Close trigger via RPC app.quit.
+        # Close trigger via RPC session.close when possible (keeps app resident).
+        # Fallback to app.quit for backward compatibility if session id telemetry
+        # is unavailable.
         close_trigger_ns = time.perf_counter_ns()
-        close_rpc_ms = send_app_quit(socket_path, timeout_s=max(1.0, close_timeout_s))
+        session_id = open_evt.get("sessionId")
+        if isinstance(session_id, str) and session_id:
+            close_rpc_ms = send_session_close(socket_path, session_id=session_id, timeout_s=max(1.0, close_timeout_s))
+            cycle["closeMethod"] = "sessionClose"
+        else:
+            close_rpc_ms = send_app_quit(socket_path, timeout_s=max(1.0, close_timeout_s))
+            cycle["closeMethod"] = "appQuit"
         cycle["timestamps"]["close_trigger_ns"] = close_trigger_ns
         cycle["closeRpcRoundtripMs"] = close_rpc_ms
 
@@ -717,8 +732,8 @@ def main() -> int:
     ap.add_argument("--retries", type=int, default=2, help="Per-cycle retries for recoverable failures")
     ap.add_argument("--open-timeout-s", type=float, default=12.0)
     ap.add_argument("--close-timeout-s", type=float, default=10.0)
-    ap.add_argument("--inter-cycle-delay-s", type=float, default=0.20)
-    ap.add_argument("--clean-slate", action="store_true", default=True)
+    ap.add_argument("--inter-cycle-delay-s", type=float, default=0.10)
+    ap.add_argument("--clean-slate", action="store_true", default=False)
     ap.add_argument("--no-clean-slate", action="store_false", dest="clean_slate")
     ap.add_argument("--inject-transient-failure-cycle", type=int, default=0, help="For validation: force first attempt failure for this cycle")
     ap.add_argument("--fixture", default="bench/fixtures/dictation_flush_mode.md")
@@ -931,7 +946,7 @@ def main() -> int:
             }
         },
         "method": {
-            "primary": "API-level from CLI open --wait process + RPC app.quit close trigger",
+            "primary": "API-level from CLI open --wait process + RPC session.close close trigger",
             "secondary": "use scripts/bench_open_close_real_cli.py for user-visible probe",
             "headlineExcludesWarmup": True,
             "outlierMethod": "iqr_1.5",
@@ -970,7 +985,7 @@ def main() -> int:
     print_table("Primary API: cycle wall (ms)", summary_steady.get("apiCycleWallMs") or {})
     print_table("Internal component: connect (ms)", summary_steady.get("apiOpenConnectMs") or {})
     print_table("Internal component: rpc open (ms)", summary_steady.get("apiOpenRpcMs") or {})
-    print_table("Internal component: app.quit rpc (ms)", summary_steady.get("closeRpcRoundtripMs") or {})
+    print_table("Internal component: close rpc (ms)", summary_steady.get("closeRpcRoundtripMs") or {})
     print_table("Auxiliary: close trigger->wait event observed (ms)", summary_steady.get("apiCloseTriggerToWaitEventMs") or {})
     print_table("Auxiliary: cli_wait payload waitMs (ms)", summary_steady.get("apiCloseWaitMs") or {})
     print_table("Auxiliary: wait-event observation lag (ms)", summary_steady.get("apiCloseWaitObservationLagMs") or {})

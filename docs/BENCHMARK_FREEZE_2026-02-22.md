@@ -37,12 +37,14 @@ PYTHONPATH=. python3 -m scripts.bench_open_close_real_cli \
 - Primary close KPI: `apiCloseTriggerToExitMs`
 - Warmup excluded
 - Retries enabled for recoverable cycle failures
-- Clean-slate per cycle enabled
+- Clean-slate per cycle disabled (resident steady-state)
+- Close trigger switched to `session.close` (keeps app resident)
+- Inter-cycle delay: `0.1s`
 
 Freeze commands:
 ```bash
-python3 scripts/bench_open_close_suite.py --cycles 20 --warmup 1 --retries 2 --out-dir tmp/review-freeze-api20
-python3 scripts/bench_open_close_suite.py --cycles 40 --warmup 2 --retries 2 --out-dir tmp/review-freeze-api40
+python3 scripts/bench_open_close_suite.py --cycles 20 --warmup 1 --retries 2 --out-dir tmp/review-freeze-api20-v2
+python3 scripts/bench_open_close_suite.py --cycles 42 --warmup 2 --retries 2 --out-dir tmp/review-freeze-api42-v2
 ```
 
 ---
@@ -62,40 +64,40 @@ Source: `tmp/bench_open_close_real_cli_20260222-120339/report.json`
 | Close command → window disappear | 108.98 | 113.30 |
 
 ### 2) API suite, 20-cycle profile (steady-state n=19, run valid)
-Source: `tmp/review-freeze-api20/report.json`
+Source: `tmp/review-freeze-api20-v2/report.json`
 
 | Metric | Median (ms) | p95 (ms) |
 |---|---:|---:|
-| API open total | 210.13 | 219.28 |
-| API close trigger → CLI exit | 134.35 | 154.71 |
-| API cycle wall | 364.02 | 385.68 |
-| API connect component | 202.86 | 211.66 |
-| API open RPC component | 7.24 | 26.83 |
-| app.quit RPC component | 58.42 | 80.29 |
+| API open total | 66.0 | 78.3 |
+| API close trigger → CLI exit | 9.3 | 26.1 |
+| API cycle wall | 111.8 | 131.4 |
+| API connect component | 0.0 | 0.1 |
+| API open RPC component | 65.9 | 78.2 |
+| close RPC component | 5.1 | 22.2 |
 
-### 3) API suite, 40-cycle profile (steady-state n=38, run valid)
-Source: `tmp/review-freeze-api40/report.json`
+### 3) API suite, 42-cycle profile (steady-state n=40, run valid)
+Source: `tmp/review-freeze-api42-v2/report.json`
 
 | Metric | Median (ms) | p95 (ms) |
 |---|---:|---:|
-| API open total | 208.94 | 217.39 |
-| API close trigger → CLI exit | 137.66 | 161.72 |
-| API cycle wall | 365.98 | 399.92 |
-| API connect component | 202.85 | 207.77 |
-| API open RPC component | 6.25 | 20.00 |
-| app.quit RPC component | 64.27 | 85.70 |
+| API open total | 66.8 | 82.5 |
+| API close trigger → CLI exit | 6.7 | 28.0 |
+| API cycle wall | 110.7 | 130.8 |
+| API connect component | 0.0 | 0.1 |
+| API open RPC component | 66.7 | 82.4 |
+| close RPC component | 3.2 | 16.1 |
 
 ---
 
 ## Freeze Interpretation
 - Real user-path Ctrl+G readiness is in the ~55 ms median / ~69 ms p95 class when measured with low-overhead trigger mode (`cgevent`).
-- API suite is stable across 20-cycle and 40-cycle profiles (medians are consistent).
+- API suite is now in the same latency class as real Ctrl+G readiness (open median ~67ms, p95 low-80ms class).
+- API measurements now avoid app-quit churn and isolate resident steady-state behavior.
 - For ongoing CI/nightly, use 20-cycle profile.
-- For release/freeze decisions, use 40-cycle profile (or repeated 20-cycle runs).
+- For release/freeze decisions, use 42-cycle profile (or repeated 20-cycle runs).
 
 ## Gate Policy (locked)
 - Real CLI benchmark gate target:
   - metric: `uiOpenReadyPostDispatchMs`
   - threshold: `p95 <= 80 ms`
 - This is now the default gate in `bench_open_close_real_cli.py`.
-

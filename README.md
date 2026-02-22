@@ -126,20 +126,20 @@ Latest benchmark freeze: **MacBook Air 13-inch (M4), 24GB RAM, macOS 26.2**.
 | Post-dispatch → ready-to-type | 54.7 | 68.9 |
 | Close command → window disappear | 109.0 | 113.3 |
 
-### API suite (40-cycle profile, steady-state n=38)
+### API suite (42-cycle profile, steady-state n=40)
 
 | Metric | Median (ms) | P95 (ms) |
 |--------|-------------:|---------:|
-| API open total | 208.9 | 217.4 |
-| API close trigger → CLI exit | 137.7 | 161.7 |
-| API cycle wall | 366.0 | 399.9 |
+| API open total | 66.8 | 82.5 |
+| API close trigger → CLI exit | 6.7 | 28.0 |
+| API cycle wall | 110.7 | 130.8 |
 
 Cold-start path is currently in the **~150ms class** when TurboDraft is not resident.
 
 > Why API numbers are higher than "~10ms":
 > - `bench_open_close_suite.py` measures the full CLI/API lifecycle (connect + RPC + close/exit path), not just editor draw time.
 > - It intentionally includes open/close orchestration overhead and is meant for CI regression tracking.
-> - The "~10ms" figure refers to resident app open latency in the fast path, while real end-user Ctrl+G ready-to-type is ~50ms class.
+> - The "~10ms" figure refers to ultra-fast resident internals; practical ready-to-type latency is in the ~50ms class.
 
 ## Markdown support
 
