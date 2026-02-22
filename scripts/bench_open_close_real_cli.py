@@ -149,6 +149,23 @@ def send_cmd_w() -> None:
     post_key(K_W, Quartz.kCGEventFlagMaskCommand)
 
 
+def send_cmd_w_via_osascript(target_process_name: str = "turbodraft-app") -> Tuple[bool, str]:
+    safe = apple_escape(target_process_name)
+    script = f'''
+tell application "System Events"
+  if not (exists process "{safe}") then error "process not found: {safe}"
+  tell process "{safe}"
+    set frontmost to true
+    keystroke "w" using command down
+  end tell
+end tell
+'''
+    cp = run_osascript(script, timeout_s=4.0)
+    if cp.returncode == 0:
+        return True, ""
+    return False, (cp.stderr.strip() or cp.stdout.strip() or "osascript_close_failed")
+
+
 def send_typing_probe() -> None:
     # Best-effort probe that the editor is accepting input.
     post_key(K_X, 0)
@@ -274,6 +291,19 @@ def send_app_quit(sock_path: pathlib.Path, timeout_s: float = 2.0) -> bool:
         return False
 
 
+def cleanup_stale_windows(socket_path: pathlib.Path, poll_s: float, timeout_s: float = 2.5) -> bool:
+    if not is_turbodraft_window_open():
+        return True
+    _ = send_app_quit(socket_path, timeout_s=min(2.0, timeout_s))
+    if wait_for(lambda: not is_turbodraft_window_open(), timeout_s=timeout_s, poll_s=poll_s):
+        return True
+    send_cmd_w()
+    if wait_for(lambda: not is_turbodraft_window_open(), timeout_s=timeout_s, poll_s=poll_s):
+        return True
+    _ok, _err = send_cmd_w_via_osascript("turbodraft-app")
+    return wait_for(lambda: not is_turbodraft_window_open(), timeout_s=timeout_s, poll_s=poll_s)
+
+
 # ---------- telemetry ----------
 
 def wait_for_new_jsonl(path: pathlib.Path, offset: int, timeout_s: float, predicate) -> Tuple[Optional[Dict[str, Any]], int]:
@@ -386,9 +416,10 @@ def main() -> int:
         c: Dict[str, Any] = {"cycle": idx, "warmup": warmup, "startedAt": now_iso()}
         try:
             if is_turbodraft_window_open():
-                # Try to recover stale window from previous cycle.
-                _ = send_app_quit(socket_path, timeout_s=2.0)
-                _ = wait_for(lambda: not is_turbodraft_window_open(), timeout_s=2.0, poll_s=poll_s)
+                recovered = cleanup_stale_windows(socket_path, poll_s=poll_s, timeout_s=2.5)
+                c["staleWindowRecovered"] = recovered
+                if not recovered:
+                    raise RuntimeError("stale_window_recovery_failed")
 
             front_before = frontmost_app_name()
             c["frontmostBefore"] = front_before
@@ -485,9 +516,12 @@ def main() -> int:
         except Exception as ex:
             c["ok"] = False
             c["error"] = str(ex)
+            c["cleanupAfterError"] = cleanup_stale_windows(socket_path, poll_s=poll_s, timeout_s=2.5)
             failures.append({"cycle": idx, "error": str(ex)})
         cycles.append(c)
         time.sleep(max(0.0, float(args.inter_cycle_delay_s)))
+
+    post_run_cleanup_ok = cleanup_stale_windows(socket_path, poll_s=poll_s, timeout_s=2.5)
 
     successful = [c for c in cycles if c.get("ok")]
     steady = [c for c in successful if not c.get("warmup")]
@@ -538,6 +572,7 @@ def main() -> int:
             "successful_cycle_count": len(successful),
             "total_cycle_count": len(cycles),
             "unrecovered_failures": len([c for c in cycles if not c.get("ok")]),
+            "post_run_cleanup_ok": post_run_cleanup_ok,
             "gate_metric": gate_metric,
             "gate_metric_p95_ms": gate_p95,
             "gate_max_ready_p95_ms": gate_threshold,
