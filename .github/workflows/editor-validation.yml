@@ -1,0 +1,25 @@
+name: editor-validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "Sources/**"
+      - "Tests/**"
+      - "scripts/**"
+      - "Package.swift"
+      - ".github/workflows/editor-validation.yml"
+
+jobs:
+  validate-editor:
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build release binaries
+        run: swift build -c release
+
+      - name: Run phased editor validation (without AX automation)
+        run: scripts/run_editor_validation.sh

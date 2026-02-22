@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "turbodraft://benchmarks/open-close/report.schema.json",
+  "title": "TurboDraft Open/Close Benchmark Report",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "suite",
+    "metadata",
+    "config",
+    "cycles",
+    "summary",
+    "validation",
+    "runValid"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "suite": { "const": "turbodraft_open_close" },
+    "metadata": { "type": "object" },
+    "config": {
+      "type": "object",
+      "required": ["cycles", "warmup", "retries"],
+      "properties": {
+        "cycles": { "type": "integer", "minimum": 1 },
+        "warmup": { "type": "integer", "minimum": 0 },
+        "retries": { "type": "integer", "minimum": 0 },
+        "userVisible": { "type": "boolean" }
+      }
+    },
+    "cycles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["cycle", "attempt", "ok", "warmup"],
+        "properties": {
+          "cycle": { "type": "integer", "minimum": 1 },
+          "attempt": { "type": "integer", "minimum": 1 },
+          "ok": { "type": "boolean" },
+          "warmup": { "type": "boolean" },
+          "apiOpenTotalMs": { "type": ["number", "null"] },
+          "apiCloseTriggerToExitMs": { "type": ["number", "null"] },
+          "apiCloseTriggerToWaitEventMs": { "type": ["number", "null"] },
+          "apiCloseWaitMs": { "type": ["number", "null"] },
+          "apiCloseWaitObservationLagMs": { "type": ["number", "null"] },
+          "apiOpenConnectMs": { "type": ["number", "null"] },
+          "apiOpenRpcMs": { "type": ["number", "null"] },
+          "closeRpcRoundtripMs": { "type": ["number", "null"] },
+          "ui_open_visible_ms": { "type": ["number", "null"] },
+          "ui_close_cmd_to_disappear_ms": { "type": ["number", "null"] }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["allCycles", "steadyState", "outliers"],
+      "properties": {
+        "allCycles": { "type": "object" },
+        "steadyState": { "type": "object" },
+        "outliers": { "type": "object" }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": [
+        "timestamp_ordering_ok",
+        "primary_sample_count_ok",
+        "steady_state_cycle_count",
+        "unrecovered_failures"
+      ],
+      "properties": {
+        "timestamp_ordering_ok": { "type": "boolean" },
+        "primary_sample_count_ok": { "type": "boolean" },
+        "steady_state_cycle_count": { "type": "integer", "minimum": 0 },
+        "unrecovered_failures": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "runValid": { "type": "boolean" },
+    "optionalProbeCoverage": { "type": "object" },
+    "trend": { "type": "object" }
+  },
+  "additionalProperties": true
+}

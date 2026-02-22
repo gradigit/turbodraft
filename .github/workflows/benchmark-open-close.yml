@@ -1,0 +1,34 @@
+name: benchmark-open-close
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * *"
+
+jobs:
+  open-close-api:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build release binaries
+        run: swift build -c release
+
+      - name: Run open/close benchmark (API primary, CI-safe)
+        run: |
+          python3 scripts/bench_open_close_suite.py \
+            --cycles 20 \
+            --warmup 1 \
+            --retries 2 \
+            --no-clean-slate
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-close-benchmark
+          path: |
+            tmp/bench_open_close_*/report.json
+            tmp/bench_open_close_*/cycles.jsonl

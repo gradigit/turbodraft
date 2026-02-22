@@ -4,18 +4,61 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
 bin_dir="${TURBODRAFT_BIN_DIR:-$HOME/.local/bin}"
+launch_agent_script="$repo_root/scripts/turbodraft-launch-agent"
+launch_label="${TURBODRAFT_LAUNCH_AGENT_LABEL:-com.turbodraft.app}"
+launch_plist="${HOME}/Library/LaunchAgents/${launch_label}.plist"
 
-# ── Build ────────────────────────────────────────────────────────────────────
+mode=""
+yes=false
+launch_action="auto"   # auto|install|restart|skip|uninstall
+shell_action="auto"    # auto|yes|no
+visual_action="auto"   # auto|yes|no
 
-echo "Building release..."
-(cd "$repo_root" && swift build -c release)
-echo "Build complete."
+usage() {
+  cat <<'EOF'
+TurboDraft install / update / configure wizard.
 
-# ── Symlink binaries ────────────────────────────────────────────────────────
+Usage:
+  scripts/install [options]
 
-mkdir -p "$bin_dir"
+Options:
+  --mode <install|update|configure|repair|uninstall>
+  --yes, -y                Non-interactive mode (safe defaults)
+  --bin-dir <path>         Install symlinks into custom bin directory
+  --launch-agent <auto|install|restart|skip|uninstall>
+  --set-path <auto|yes|no> Configure PATH in shell rc
+  --set-visual <auto|yes|no> Configure VISUAL=turbodraft in shell rc
+  -h, --help               Show this help
+EOF
+}
 
-link() {
+prompt_user() {
+  local prompt="$1"
+  local out_var="$2"
+  if [[ ! -t 0 ]]; then
+    echo "This action needs interactive input. Re-run with --yes or explicit non-interactive flags." >&2
+    exit 2
+  fi
+  local reply
+  read -r -p "$prompt" reply
+  printf -v "$out_var" '%s' "$reply"
+}
+
+is_installed() {
+  [[ -L "$bin_dir/turbodraft" || -x "$bin_dir/turbodraft" ]]
+}
+
+is_launch_agent_installed() {
+  [[ -f "$launch_plist" ]]
+}
+
+build_release() {
+  echo "Building release..."
+  (cd "$repo_root" && swift build -c release)
+  echo "Build complete."
+}
+
+link_binary() {
   local name="$1"
   local src="$repo_root/.build/release/$name"
   local dst="$bin_dir/$name"
@@ -27,49 +70,294 @@ link() {
   echo "  $dst -> $src"
 }
 
-echo "Linking binaries to $bin_dir:"
-link turbodraft
-link turbodraft-app
-link turbodraft-bench
+link_binaries() {
+  mkdir -p "$bin_dir"
+  echo "Linking binaries to $bin_dir:"
+  link_binary turbodraft
+  link_binary turbodraft-app
+  link_binary turbodraft-bench
 
-# ── Clean up old binary names ─────────────────────────────────────────────
+  for old_name in turbodraft-open turbodraft-editor; do
+    local old_link="$bin_dir/$old_name"
+    if [[ -L "$old_link" || -e "$old_link" ]]; then
+      rm -f "$old_link"
+      echo "  removed stale $old_link"
+    fi
+  done
+}
 
-for old_name in turbodraft-open turbodraft-editor; do
-  old_link="$bin_dir/$old_name"
-  if [[ -L "$old_link" || -e "$old_link" ]]; then
-    rm -f "$old_link"
-    echo "  removed stale $old_link"
+restart_launch_agent_if_installed() {
+  local uid
+  uid="$(id -u)"
+  if is_launch_agent_installed; then
+    echo "Restarting LaunchAgent..."
+    launchctl kickstart -k "gui/${uid}/${launch_label}" 2>/dev/null && echo "  Restarted." || echo "  Restart failed."
+  else
+    echo "LaunchAgent not installed."
   fi
+}
+
+set_shell_var_if_missing() {
+  local rc_file="$1"
+  local line="$2"
+  local marker="$3"
+  [[ -n "$rc_file" ]] || return 0
+  mkdir -p "$(dirname "$rc_file")"
+  touch "$rc_file"
+  if grep -Fq "$marker" "$rc_file"; then
+    echo "  $rc_file already has $marker"
+  else
+    printf '\n%s\n' "$line" >>"$rc_file"
+    echo "  updated $rc_file"
+  fi
+}
+
+resolve_shell_rc_file() {
+  local shell_name
+  shell_name="$(basename "${SHELL:-zsh}")"
+  case "$shell_name" in
+    zsh) echo "$HOME/.zshrc" ;;
+    bash) echo "$HOME/.bashrc" ;;
+    fish) echo "$HOME/.config/fish/config.fish" ;;
+    *) echo "$HOME/.profile" ;;
+  esac
+}
+
+configure_shell_settings() {
+  local rc_file shell_name
+  rc_file="$(resolve_shell_rc_file)"
+  shell_name="$(basename "${SHELL:-zsh}")"
+
+  if [[ "$shell_action" == "yes" ]]; then
+    if [[ "$shell_name" == "fish" ]]; then
+      set_shell_var_if_missing "$rc_file" "fish_add_path $bin_dir" "fish_add_path $bin_dir"
+    else
+      set_shell_var_if_missing "$rc_file" "export PATH=\"$bin_dir:\$PATH\"" "PATH=\"$bin_dir:\$PATH\""
+    fi
+  fi
+
+  if [[ "$visual_action" == "yes" ]]; then
+    if [[ "$shell_name" == "fish" ]]; then
+      set_shell_var_if_missing "$rc_file" "set -Ux VISUAL turbodraft" "VISUAL turbodraft"
+    else
+      set_shell_var_if_missing "$rc_file" "export VISUAL=turbodraft" "VISUAL=turbodraft"
+    fi
+  fi
+}
+
+verify_install() {
+  echo
+  if command -v turbodraft >/dev/null 2>&1; then
+    echo "Done. turbodraft is on your PATH."
+  else
+    echo "Done. Add $bin_dir to your PATH to use turbodraft."
+  fi
+  echo "Try: turbodraft --help"
+}
+
+run_launch_agent_action() {
+  case "$launch_action" in
+    auto)
+      if is_launch_agent_installed; then
+        restart_launch_agent_if_installed
+      elif [[ "$yes" == false ]]; then
+        prompt_user "Install LaunchAgent for warm-start mode? [Y/n] " yn
+        if [[ -z "$yn" || "$yn" =~ ^[Yy]$ ]]; then
+          "$launch_agent_script" install
+        fi
+      fi
+      ;;
+    install)
+      "$launch_agent_script" install
+      ;;
+    restart)
+      if is_launch_agent_installed; then
+        "$launch_agent_script" restart
+      else
+        "$launch_agent_script" install
+      fi
+      ;;
+    uninstall)
+      if is_launch_agent_installed; then
+        "$launch_agent_script" uninstall
+      fi
+      ;;
+    skip)
+      ;;
+    *)
+      echo "Unknown --launch-agent value: $launch_action" >&2
+      exit 2
+      ;;
+  esac
+}
+
+prompt_mode_if_needed() {
+  if [[ -n "$mode" ]]; then
+    return
+  fi
+
+  if [[ "$yes" == true ]]; then
+    if is_installed; then
+      mode="update"
+    else
+      mode="install"
+    fi
+    return
+  fi
+
+  echo "TurboDraft setup wizard"
+  echo "1) Install / Update (build + link)"
+  echo "2) Configure shell and defaults"
+  echo "3) Repair install (relink + restart LaunchAgent)"
+  echo "4) Uninstall"
+  echo "5) Exit"
+  prompt_user "Choose an option [1-5]: " choice
+  case "$choice" in
+    1) mode="install" ;;
+    2) mode="configure" ;;
+    3) mode="repair" ;;
+    4) mode="uninstall" ;;
+    5) mode="exit" ;;
+    *) echo "Invalid choice."; exit 2 ;;
+  esac
+}
+
+do_install_or_update() {
+  build_release
+  link_binaries
+  run_launch_agent_action
+
+  if [[ "$yes" == false ]]; then
+    prompt_user "Configure PATH in shell rc now? [Y/n] " yn_path
+    if [[ -z "$yn_path" || "$yn_path" =~ ^[Yy]$ ]]; then
+      shell_action="yes"
+    fi
+    prompt_user "Set VISUAL=turbodraft in shell rc now? [Y/n] " yn_visual
+    if [[ -z "$yn_visual" || "$yn_visual" =~ ^[Yy]$ ]]; then
+      visual_action="yes"
+    fi
+  fi
+
+  configure_shell_settings
+  verify_install
+}
+
+do_repair() {
+  build_release
+  link_binaries
+  if [[ "$launch_action" == "auto" ]]; then
+    launch_action="restart"
+  fi
+  run_launch_agent_action
+  verify_install
+}
+
+do_configure() {
+  if [[ "$yes" == false ]]; then
+    prompt_user "Configure PATH in shell rc? [Y/n] " yn_path
+    shell_action=$([[ -z "$yn_path" || "$yn_path" =~ ^[Yy]$ ]] && echo "yes" || echo "no")
+    prompt_user "Set VISUAL=turbodraft in shell rc? [Y/n] " yn_visual
+    visual_action=$([[ -z "$yn_visual" || "$yn_visual" =~ ^[Yy]$ ]] && echo "yes" || echo "no")
+
+    if [[ "$launch_action" == "auto" ]]; then
+      echo "LaunchAgent: 1) install/update  2) restart  3) skip  4) uninstall"
+      prompt_user "Choose LaunchAgent action [1-4]: " la
+      case "$la" in
+        1) launch_action="install" ;;
+        2) launch_action="restart" ;;
+        3) launch_action="skip" ;;
+        4) launch_action="uninstall" ;;
+        *) launch_action="skip" ;;
+      esac
+    fi
+  fi
+
+  configure_shell_settings
+  run_launch_agent_action
+  verify_install
+}
+
+do_uninstall() {
+  if [[ "$yes" == false ]]; then
+    prompt_user "Uninstall TurboDraft symlinks from $bin_dir? [y/N] " yn
+    [[ "$yn" =~ ^[Yy]$ ]] || { echo "Canceled."; return; }
+  fi
+
+  rm -f "$bin_dir/turbodraft" "$bin_dir/turbodraft-app" "$bin_dir/turbodraft-bench"
+  rm -f "$bin_dir/turbodraft-open" "$bin_dir/turbodraft-editor"
+  echo "Removed TurboDraft symlinks from $bin_dir"
+
+  if [[ "$launch_action" == "auto" ]]; then
+    launch_action="uninstall"
+  fi
+  run_launch_agent_action
+  echo "Uninstall complete."
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --mode)
+      [[ $# -ge 2 ]] || { echo "missing value for --mode" >&2; exit 2; }
+      mode="$2"
+      shift 2
+      ;;
+    --yes|-y)
+      yes=true
+      shift
+      ;;
+    --bin-dir)
+      [[ $# -ge 2 ]] || { echo "missing value for --bin-dir" >&2; exit 2; }
+      bin_dir="$2"
+      shift 2
+      ;;
+    --launch-agent)
+      [[ $# -ge 2 ]] || { echo "missing value for --launch-agent" >&2; exit 2; }
+      launch_action="$2"
+      shift 2
+      ;;
+    --set-path)
+      [[ $# -ge 2 ]] || { echo "missing value for --set-path" >&2; exit 2; }
+      shell_action="$2"
+      shift 2
+      ;;
+    --set-visual)
+      [[ $# -ge 2 ]] || { echo "missing value for --set-visual" >&2; exit 2; }
+      visual_action="$2"
+      shift 2
+      ;;
+    -h|--help|help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown arg: $1" >&2
+      usage
+      exit 2
+      ;;
+  esac
 done
 
-# ── Restart Launch Agent if installed ───────────────────────────────────────
+prompt_mode_if_needed
 
-label="${TURBODRAFT_LAUNCH_AGENT_LABEL:-com.turbodraft.app}"
-plist_path="${HOME}/Library/LaunchAgents/${label}.plist"
-uid="$(id -u)"
-
-if [[ -f "$plist_path" ]]; then
-  echo "Restarting LaunchAgent..."
-  launchctl kickstart -k "gui/${uid}/${label}" 2>/dev/null && echo "  Restarted." || echo "  Restart failed (may need: scripts/turbodraft-launch-agent install)"
-else
-  echo ""
-  echo "LaunchAgent not installed. For warm-start mode (recommended):"
-  echo "  scripts/turbodraft-launch-agent install"
-fi
-
-# ── Verify ──────────────────────────────────────────────────────────────────
-
-echo ""
-if command -v turbodraft >/dev/null 2>&1; then
-  echo "Done. turbodraft is on your PATH."
-  echo ""
-  echo "Set as your editor:"
-  echo "  fish:  set -Ux VISUAL turbodraft"
-  echo "  bash:  export VISUAL=turbodraft"
-  echo "  zsh:   export VISUAL=turbodraft"
-else
-  echo "Done. Add $bin_dir to your PATH:"
-  echo "  fish:  fish_add_path $bin_dir"
-  echo "  bash:  echo 'export PATH=\"$bin_dir:\$PATH\"' >> ~/.bashrc"
-  echo "  zsh:   echo 'export PATH=\"$bin_dir:\$PATH\"' >> ~/.zshrc"
-fi
+case "$mode" in
+  install|update)
+    do_install_or_update
+    ;;
+  configure)
+    do_configure
+    ;;
+  repair)
+    do_repair
+    ;;
+  uninstall)
+    do_uninstall
+    ;;
+  exit)
+    echo "No changes made."
+    ;;
+  *)
+    echo "Unsupported mode: $mode" >&2
+    usage
+    exit 2
+    ;;
+esac

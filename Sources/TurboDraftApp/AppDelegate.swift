@@ -54,6 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSWindow.allowsAutomaticWindowTabbing = false
+    // Lower tooltip hover delay for snappier in-editor discoverability.
+    UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 180])
     cleanUpStaleTempFiles()
     colorThemes = EditorColorTheme.allThemes()
 
@@ -693,11 +695,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Collect typing latencies from the editor view controller.
         let wc = windowsById[params.sessionId]
         let latencies = wc?.typingLatencySamples ?? []
+        let openToReadyMs = wc?.sessionOpenToReadyMs
         // Query process memory via mach_task_info.
         let memBytes = processResidentBytes()
         return ok(BenchMetricsResult(
           typingLatencySamples: latencies,
-          memoryResidentBytes: memBytes
+          memoryResidentBytes: memBytes,
+          sessionOpenToReadyMs: openToReadyMs
         ))
       } catch {
         return err(JSONRPCStandardErrorCode.invalidParams, "benchMetrics failed: \(error)")
@@ -758,6 +762,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     main.addItem(fileItem)
     let fileMenu = NSMenu(title: "File")
     fileItem.submenu = fileMenu
+    let submitClose = NSMenuItem(title: "Submit and Close", action: #selector(submitAndClose(_:)), keyEquivalent: "\r")
+    submitClose.keyEquivalentModifierMask = [.command]
+    submitClose.target = self
+    fileMenu.addItem(submitClose)
     fileMenu.addItem(responderItem("Close Window", #selector(NSWindow.performClose(_:)), "w"))
 
     // Edit menu
@@ -774,6 +782,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     editMenu.addItem(responderItem("Copy", #selector(NSText.copy(_:)), "c"))
     editMenu.addItem(responderItem("Paste", #selector(NSText.paste(_:)), "v"))
     editMenu.addItem(responderItem("Select All", #selector(NSText.selectAll(_:)), "a"))
+    editMenu.addItem(.separator())
+    let find = NSMenuItem(title: "Find…", action: #selector(showFind(_:)), keyEquivalent: "f")
+    find.target = self
+    find.keyEquivalentModifierMask = [.command]
+    editMenu.addItem(find)
+    let findNext = NSMenuItem(title: "Find Next", action: #selector(findNext(_:)), keyEquivalent: "g")
+    findNext.target = self
+    findNext.keyEquivalentModifierMask = [.command]
+    editMenu.addItem(findNext)
+    let findPrev = NSMenuItem(title: "Find Previous", action: #selector(findPrevious(_:)), keyEquivalent: "g")
+    findPrev.target = self
+    findPrev.keyEquivalentModifierMask = [.command, .shift]
+    editMenu.addItem(findPrev)
+    let useSelection = NSMenuItem(title: "Use Selection for Find", action: #selector(useSelectionForFind(_:)), keyEquivalent: "e")
+    useSelection.target = self
+    useSelection.keyEquivalentModifierMask = [.command]
+    editMenu.addItem(useSelection)
+    let replace = NSMenuItem(title: "Replace…", action: #selector(showReplace(_:)), keyEquivalent: "f")
+    replace.target = self
+    replace.keyEquivalentModifierMask = [.command, .option]
+    editMenu.addItem(replace)
+    let replaceNext = NSMenuItem(title: "Replace Next", action: #selector(replaceNext(_:)), keyEquivalent: "")
+    replaceNext.target = self
+    editMenu.addItem(replaceNext)
+    let replaceAll = NSMenuItem(title: "Replace All", action: #selector(replaceAll(_:)), keyEquivalent: "")
+    replaceAll.target = self
+    editMenu.addItem(replaceAll)
 
     // View menu
     let viewItem = NSMenuItem()
@@ -891,7 +926,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let improve = NSMenuItem(title: "Improve Prompt", action: #selector(improvePrompt(_:)), keyEquivalent: "r")
     improve.target = self
-    improve.keyEquivalentModifierMask = [.command, .shift]
+    improve.keyEquivalentModifierMask = [.command]
     improve.isEnabled = true
     agentMenu.addItem(improve)
 
@@ -1031,6 +1066,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   @MainActor @objc private func improvePrompt(_ sender: NSMenuItem) {
     activeWindowController()?.runPromptEngineer()
+  }
+
+  @MainActor @objc private func showFind(_ sender: NSMenuItem) {
+    activeWindowController()?.showFind(replace: false)
+  }
+
+  @MainActor @objc private func showReplace(_ sender: NSMenuItem) {
+    activeWindowController()?.showFind(replace: true)
+  }
+
+  @MainActor @objc private func findNext(_ sender: NSMenuItem) {
+    activeWindowController()?.findNext()
+  }
+
+  @MainActor @objc private func findPrevious(_ sender: NSMenuItem) {
+    activeWindowController()?.findPrevious()
+  }
+
+  @MainActor @objc private func useSelectionForFind(_ sender: NSMenuItem) {
+    activeWindowController()?.useSelectionForFind()
+  }
+
+  @MainActor @objc private func replaceNext(_ sender: NSMenuItem) {
+    activeWindowController()?.replaceNext()
+  }
+
+  @MainActor @objc private func replaceAll(_ sender: NSMenuItem) {
+    activeWindowController()?.replaceAll()
+  }
+
+  @MainActor @objc private func submitAndClose(_ sender: NSMenuItem) {
+    activeWindowController()?.window?.performClose(nil)
   }
 
   @MainActor @objc private func restorePreviousBuffer(_ sender: NSMenuItem) {

@@ -111,7 +111,7 @@ static void die_usage(const char *msg) {
   if (msg && msg[0] != '\0') {
     fprintf(stderr, "error: %s\n", msg);
   }
-  fprintf(stderr, "usage: turbodraft [--path] <file> [+line] [--line N] [--column N] [--wait] [--timeout-ms N] [--socket-path <path>]\n");
+  fprintf(stderr, "usage: turbodraft [--path] <file> [+line] [--line N] [--column N] [--wait] [--timeout-ms N] [--socket-path <path>] [--debug-ready-latency] [--debug-ready-timeout-ms N]\n");
   exit(2);
 }
 
@@ -685,6 +685,24 @@ static bool wait_reason_user_closed(const char *body) {
   return strstr(body, "\"reason\":\"userClosed\"") != NULL;
 }
 
+static bool json_extract_number_value(const char *json, const char *key, double *out_value) {
+  if (!json || !key || !out_value) return false;
+  const char *p = strstr(json, key);
+  if (!p) return false;
+  p += strlen(key);
+  p = strchr(p, ':');
+  if (!p) return false;
+  p++;
+  while (*p && isspace((unsigned char)*p)) p++;
+  if (strncmp(p, "null", 4) == 0) return false;
+  errno = 0;
+  char *end = NULL;
+  double v = strtod(p, &end);
+  if (end == p || errno != 0) return false;
+  *out_value = v;
+  return true;
+}
+
 static char *format_open_request_json(const char *path_escaped, int line, int column, const char *cwd_escaped) {
   const char *fmt = NULL;
   if (line > 0 && column > 0) {
@@ -724,6 +742,16 @@ static char *format_wait_request_json(const char *session_id, int timeout_ms) {
 
 static char *format_close_request_json(const char *session_id) {
   const char *fmt = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"turbodraft.session.close\",\"params\":{\"sessionId\":\"%s\"}}";
+  int n = snprintf(NULL, 0, fmt, session_id);
+  if (n < 0) return NULL;
+  char *out = (char *)malloc((size_t)n + 1);
+  if (!out) return NULL;
+  snprintf(out, (size_t)n + 1, fmt, session_id);
+  return out;
+}
+
+static char *format_bench_metrics_request_json(const char *session_id) {
+  const char *fmt = "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"turbodraft.bench.metrics\",\"params\":{\"sessionId\":\"%s\"}}";
   int n = snprintf(NULL, 0, fmt, session_id);
   if (n < 0) return NULL;
   char *out = (char *)malloc((size_t)n + 1);
@@ -786,6 +814,8 @@ int main(int argc, char **argv) {
   bool wait_explicit = false;
   int timeout_ms = 600000;
   bool timeout_explicit = false;
+  bool debug_ready_latency = false;
+  int debug_ready_timeout_ms = 2500;
   char *socket_path_override = NULL;
 
   for (int i = 1; i < argc; i++) {
@@ -807,6 +837,12 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--wait") == 0) {
       wait = true;
       wait_explicit = true;
+    } else if (strcmp(a, "--debug-ready-latency") == 0) {
+      debug_ready_latency = true;
+    } else if (strcmp(a, "--debug-ready-timeout-ms") == 0) {
+      if (i + 1 >= argc) die_usage("missing value for --debug-ready-timeout-ms");
+      debug_ready_timeout_ms = atoi(argv[++i]);
+      if (debug_ready_timeout_ms < 50) debug_ready_timeout_ms = 50;
     } else if (strcmp(a, "--socket-path") == 0) {
       if (i + 1 >= argc) die_usage("missing value for --socket-path");
       socket_path_override = dup_str(argv[++i]);
@@ -898,6 +934,8 @@ int main(int argc, char **argv) {
   }
 
   char *session_id = NULL;
+  double server_open_ms = -1.0;
+  (void)json_extract_number_value(resp, "\"serverOpenMs\"", &server_open_ms);
   if (!extract_session_id(resp, &session_id) || !session_id) {
     fprintf(stderr, "error: failed to parse sessionId\n");
     free(body);
@@ -907,6 +945,54 @@ int main(int argc, char **argv) {
     return 1;
   }
   free(body);
+
+  if (debug_ready_latency) {
+    int64_t probe_deadline = now_mono_ms() + debug_ready_timeout_ms;
+    bool got_ready = false;
+    double ready_ms = -1.0;
+    int probe_attempts = 0;
+
+    while (now_mono_ms() < probe_deadline) {
+      probe_attempts++;
+      char *bench_json = format_bench_metrics_request_json(session_id);
+      if (!bench_json) break;
+      if (send_jsonrpc(fd, bench_json) != 0) {
+        free(bench_json);
+        break;
+      }
+      free(bench_json);
+
+      uint8_t *bench_body = NULL;
+      size_t bench_len = 0;
+      if (framer_read_frame(fd, &fr, 800, &bench_body, &bench_len) != 0) {
+        break;
+      }
+
+      const char *bench_resp = (const char *)bench_body;
+      if (!response_has_error(bench_resp) &&
+          json_extract_number_value(bench_resp, "\"sessionOpenToReadyMs\"", &ready_ms)) {
+        got_ready = true;
+        free(bench_body);
+        break;
+      }
+      free(bench_body);
+      usleep(8 * 1000);
+    }
+
+    if (got_ready) {
+      if (server_open_ms >= 0.0) {
+        fprintf(stderr, "debug_ready_latency_ms=%.2f debug_server_open_ms=%.2f debug_probe_attempts=%d\n", ready_ms, server_open_ms, probe_attempts);
+      } else {
+        fprintf(stderr, "debug_ready_latency_ms=%.2f debug_probe_attempts=%d\n", ready_ms, probe_attempts);
+      }
+    } else {
+      if (server_open_ms >= 0.0) {
+        fprintf(stderr, "debug_ready_latency_ms=NA debug_server_open_ms=%.2f debug_probe_attempts=%d debug_ready_timeout_ms=%d\n", server_open_ms, probe_attempts, debug_ready_timeout_ms);
+      } else {
+        fprintf(stderr, "debug_ready_latency_ms=NA debug_probe_attempts=%d debug_ready_timeout_ms=%d\n", probe_attempts, debug_ready_timeout_ms);
+      }
+    }
+  }
 
   if (wait) {
     char *wait_json = format_wait_request_json(session_id, timeout_ms);

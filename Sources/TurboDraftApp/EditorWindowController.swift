@@ -135,6 +135,30 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     editorVC.runPromptEngineer()
   }
 
+  func showFind(replace: Bool) {
+    editorVC.showFind(replace: replace)
+  }
+
+  func findNext() {
+    editorVC.findNext()
+  }
+
+  func findPrevious() {
+    editorVC.findPrevious()
+  }
+
+  func useSelectionForFind() {
+    editorVC.useSelectionForFind()
+  }
+
+  func replaceNext() {
+    editorVC.replaceNext()
+  }
+
+  func replaceAll() {
+    editorVC.replaceAll()
+  }
+
   func focusExistingSessionWindow() {
     if !NSApp.isActive {
       NSApp.activate(ignoringOtherApps: true)
@@ -149,6 +173,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
   var typingLatencySamples: [Double] {
     editorVC.typingLatencySamples
+  }
+
+  var sessionOpenToReadyMs: Double? {
+    editorVC.sessionOpenToReadyMs
   }
 
   func flushAutosaveNow(reason: String = "forced_flush") async {

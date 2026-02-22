@@ -106,5 +106,9 @@ let package = Package(
       name: "TurboDraftIntegrationTests",
       dependencies: ["TurboDraftCore", "TurboDraftTransport"]
     ),
+    .testTarget(
+      name: "TurboDraftAppTests",
+      dependencies: ["TurboDraftApp", "TurboDraftCore", "TurboDraftConfig"]
+    ),
   ]
 )

@@ -26,6 +26,18 @@ The user has a LaunchAgent (`com.turbodraft.app`) keeping `turbodraft-app` resid
 
 Do NOT skip this step. Do NOT just run `swift build` — use `scripts/install` so the running agent gets restarted too.
 
+Treat this as a hard rule for user experience: when you finish a change, the user should be able to press Ctrl+G immediately and get the latest binary without any manual rebuild/restart steps.
+
+## Documentation Sync Rules
+
+When you update setup/install docs, you MUST update all linked companion docs in the same change so agent and human instructions stay consistent.
+
+- If `README.md` install/agent-install text changes, also update:
+  - `docs/AGENT_INSTALL.md`
+  - `docs/INSTALL_WIZARD_FLOW.md` (if flow/flags changed)
+  - `scripts/install --help` text (if CLI flags/behavior changed)
+- If install wizard behavior changes in `scripts/install`, update both README and agent docs in the same PR/commit.
+
 ## Commands
 
 - `swift build` — debug build
