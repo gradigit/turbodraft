@@ -90,8 +90,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let server = try UnixDomainSocketServer(socketPath: cfg.socketPath)
         socketServer = server
         server.start { [weak self] clientFD in
-          Task { @MainActor in
-            self?.handleClient(fd: clientFD)
+          guard let self else { return }
+          Task { @MainActor [self, clientFD] in
+            self.handleClient(fd: clientFD)
           }
         }
       } catch {
