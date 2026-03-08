@@ -929,14 +929,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     fontFamilyParent.submenu = fontFamilyMenu
     viewMenu.addItem(fontFamilyParent)
 
-    // Agent menu
+    // Drafting menu
     let agentItem = NSMenuItem()
-    agentItem.title = "Agent"
+    agentItem.title = "Drafting"
     main.addItem(agentItem)
-    let agentMenu = NSMenu(title: "Agent")
+    let agentMenu = NSMenu(title: "Drafting")
     agentItem.submenu = agentMenu
 
-    let enable = NSMenuItem(title: "Enable Prompt Engineer", action: #selector(togglePromptEngineer(_:)), keyEquivalent: "")
+    let enable = NSMenuItem(title: "Enable Drafting Agent", action: #selector(togglePromptEngineer(_:)), keyEquivalent: "")
     enable.target = self
     enable.state = cfg.agent.enabled ? .on : .off
     agentMenu.addItem(enable)

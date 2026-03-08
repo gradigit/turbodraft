@@ -5,6 +5,9 @@ Thumbs.db
 # Editors
 .idea/
 .vscode/
+.codex/
+.claude/settings.local.json
+.claude/hooks/
 *.swp
 *.swo
 *~
