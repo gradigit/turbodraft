@@ -159,11 +159,15 @@ Safely recover the stranded full sidebar-chat implementation from `wip/local-sna
 - [x] Q3: Produce a careful port plan for the sidebar-chat recovery (recommended slices, risks, acceptance criteria)
 - [x] Q4: Recover the sidebar shell + chat surface onto the current branch without queue behavior changes yet
 - [x] Q5: Review/test recovered sidebar behavior, including no window-resize regression
-- [ ] Q6: Add optional external queue metadata handshake and session attachment model
-- [ ] Q7: Implement queue tab/file-sync on top of the recovered right-panel host
+- [x] Q6a: Fix authoritative `session.close` / `session.wait` semantics so Ctrl+Q only resolves after the target session UI is actually gone
+- [x] Q6b: Freeze Claude Pager queue contract + metadata compatibility matrix before shared queue write/sync work
+- [x] Q6c: Add optional external queue metadata handshake and session attachment plumbing
+- [x] Q7: Implement shared queue file model with round-trip-safe reader/writer/watcher behavior
+- [x] Q8: Implement queue tab UI on top of the recovered right-panel host
 
 ### Recovery constraints
 - Do **not** assume the missing sidebar was never built; preserve prior work from `5dc675b` on `wip/local-snapshot-2026-02-28`.
 - Do **not** blindly cherry-pick the full snapshot diff without audit.
 - Keep TurboDraft agent-agnostic; Claude Pager queue UI must be optional and metadata-driven.
 - Recovered panel resizing must never resize the entire app window.
+- Do **not** write shared queue files until the line contract and unknown-field preservation policy are frozen.

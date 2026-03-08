@@ -11,6 +11,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
   private var config: TurboDraftConfig
   private let editorVC: EditorViewController
   private var didBecomeActiveObserver: NSObjectProtocol?
+  private var closeTask: Task<Void, Never>?
   var onClosed: (() -> Void)?
   var onBecameMain: (() -> Void)?
 
@@ -66,25 +67,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
   }
 
   func windowShouldClose(_ sender: NSWindow) -> Bool {
-    Task { @MainActor [weak self] in
-      guard let self else { return }
-      // Race flush against a 3s timeout to prevent close hang.
-      await withTaskGroup(of: Void.self) { group in
-        group.addTask { @MainActor [weak self] in
-          guard let self else { return }
-          await self.editorVC.flushAutosaveNow(reason: "window_close")
-          await self.session.markClosed()
-        }
-        group.addTask {
-          try? await Task.sleep(nanoseconds: 3_000_000_000)
-        }
-        _ = await group.next()
-        group.cancelAll()
-      }
-      self.editorVC.prepareForIdlePool()
-      self.window?.orderOut(nil)
-      self.onClosed?()
-    }
+    beginCloseSequence(reason: "window_close")
     return false
   }
 
@@ -167,6 +150,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     editorVC.openDraftingChatFromMenu()
   }
 
+  func requestSessionClose() {
+    beginCloseSequence(reason: "session_close_rpc")
+  }
+
+  func setExternalQueueAttachment(_ attachment: ExternalQueueAttachment?) {
+    editorVC.setExternalQueueAttachment(attachment)
+  }
+
   func focusExistingSessionWindow() {
     if !NSApp.isActive {
       NSApp.activate(ignoringOtherApps: true)
@@ -197,6 +188,43 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
   func flushAutosaveNow(reason: String = "forced_flush") async {
     await editorVC.flushAutosaveNow(reason: reason)
+  }
+
+  private func beginCloseSequence(reason: String) {
+    guard closeTask == nil else { return }
+    closeTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+
+      self.window?.orderOut(nil)
+      await self.session.markClosed()
+
+      let flushTask = Task { @MainActor [weak self] in
+        guard let self else { return }
+        await self.editorVC.flushAutosaveNow(reason: reason)
+      }
+
+      let flushFinished = await withTaskGroup(of: Bool.self) { group in
+        group.addTask {
+          _ = await flushTask.result
+          return true
+        }
+        group.addTask {
+          try? await Task.sleep(nanoseconds: 3_000_000_000)
+          return false
+        }
+        let finished = await group.next() ?? true
+        group.cancelAll()
+        return finished
+      }
+
+      if !flushFinished {
+        flushTask.cancel()
+      }
+
+      self.editorVC.prepareForIdlePool()
+      self.onClosed?()
+      self.closeTask = nil
+    }
   }
 
   func presentSession(_ info: SessionInfo, line: Int?, column: Int?) async {

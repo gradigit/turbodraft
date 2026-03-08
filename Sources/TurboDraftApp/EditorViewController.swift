@@ -32,11 +32,17 @@ final class EditorViewController: NSViewController {
   private let openStyleDebouncer = AsyncDebouncer()
   private let fullOpenStyleDebouncer = AsyncDebouncer()
   private let watcherDebouncer = AsyncDebouncer()
+  private let queueWatcherDebouncer = AsyncDebouncer()
   private var autosaveMaxFlushTask: Task<Void, Never>?
   private var autosavePending = false
   private var autosaveInFlight = false
 
   private var watcher: DirectoryWatcher?
+  private var queueWatcher: DirectoryWatcher?
+  private var queueLoadTask: Task<Void, Never>?
+  private var queueSaveTask: Task<Void, Never>?
+  private var queueLoadGeneration = 0
+  private var queueSaveGeneration = 0
   private var isApplyingProgrammaticUpdate = false
 
   private let findContainer = NSVisualEffectView()
@@ -68,10 +74,14 @@ final class EditorViewController: NSViewController {
   private let agentRow = NSStackView()
   private let agentButton = NSButton(title: "Improve Prompt", target: nil, action: nil)
   private let chatButton = NSButton(title: "Chat Refine", target: nil, action: nil)
+  private let queueButton = NSButton(title: "Queue", target: nil, action: nil)
   private let saveStatus = NSTextField(labelWithString: "Saved")
   private let draftingSidebar = NSVisualEffectView()
   private let draftingSidebarResizeHandle = SidebarResizeHandleView()
   private let draftingSidebarStack = NSStackView()
+  private let draftingSidebarModeControl = NSSegmentedControl(labels: ["Chat", "Queue"], trackingMode: .selectOne, target: nil, action: nil)
+  private let draftingChatContentStack = NSStackView()
+  private let queueContentStack = NSStackView()
   private let draftingChatTitle = NSTextField(labelWithString: "Drafting Chat")
   private let draftingChatSubtitle = NSTextField(labelWithString: "Chat with drafting_agent, or add notes and improve.")
   private let draftingChatScroll = NSScrollView()
@@ -94,6 +104,18 @@ final class EditorViewController: NSViewController {
   private let draftingContextView = NSTextView()
   private let draftingDiffScroll = NSScrollView()
   private let draftingDiffView = NSTextView()
+  private let queueTitle = NSTextField(labelWithString: "Queued Prompts")
+  private let queueSubtitle = NSTextField(labelWithString: "Shared Claude Pager session queue")
+  private let queueTableScroll = NSScrollView()
+  private let queueTableView = NSTableView()
+  private let queueEditorScroll = NSScrollView()
+  private let queueEditor = NSTextView()
+  private let queueStatusLabel = NSTextField(labelWithString: "No shared queue attached.")
+  private let queueNewButton = NSButton(title: "New", target: nil, action: nil)
+  private let queueDeleteButton = NSButton(title: "Delete", target: nil, action: nil)
+  private let queueReloadButton = NSButton(title: "Reload", target: nil, action: nil)
+  private let queueSaveButton = NSButton(title: "Save Queue", target: nil, action: nil)
+  private let queueCloseButton = NSButton(title: "Close", target: nil, action: nil)
   private let draftingChatInputMinHeight: CGFloat = 72
   private let draftingChatInputMaxHeight: CGFloat = 140
   private var draftingChatMessages: [String] = []
@@ -107,6 +129,7 @@ final class EditorViewController: NSViewController {
   private var draftingLastDiffPreview = ""
   private var draftingSidebarSuggestedDraft: String?
   private var draftingSidebarVisible = false
+  private var draftingSidebarMode: DraftingSidebarMode = .chat
   private var draftingSidebarPreferredWidth: CGFloat = 360
   private var mainStackTrailingConstraint: NSLayoutConstraint?
   private var draftingSidebarWidthConstraint: NSLayoutConstraint?
@@ -115,14 +138,33 @@ final class EditorViewController: NSViewController {
   private var draftingChatInputHeightConstraint: NSLayoutConstraint?
   private var draftingContextHeightConstraint: NSLayoutConstraint?
   private var draftingDiffHeightConstraint: NSLayoutConstraint?
+  private var queueEditorHeightConstraint: NSLayoutConstraint?
   private var agentAdapter: AgentAdapting?
   private var draftingSidebarChatAdapter: AgentSidebarChatAdapting?
   private var agentRunning = false
   private var draftingChatRunning = false
   private var sessionCwd: String?
+  private var externalQueueAttachment: ExternalQueueAttachment?
+  private var queueItems: [SharedQueueItem] = []
+  private var queueSelectedLocalID: String?
+  private var queueFingerprint: String?
+  private var queueObservedDiskState = QueueDiskState(absent: true, fileSize: nil, modifiedAt: nil)
+  private var queueDirty = false
+  private var isApplyingQueueEditorUpdate = false
   private var attachedImages: [String: URL] = [:]
   private var imageConversionTask: Task<Void, Never>?
   private var _typingLatencies: [Double] = []
+
+  private enum DraftingSidebarMode: Int {
+    case chat = 0
+    case queue = 1
+  }
+
+  private struct QueueDiskState: Equatable {
+    var absent: Bool
+    var fileSize: Int?
+    var modifiedAt: Date?
+  }
   private var sessionOpenStartNs: UInt64?
   private var sessionOpenToReadyMsValue: Double?
   private let imagePlaceholderRegex = try! NSRegularExpression(pattern: #"\[image-([a-f0-9]{8})\]"#)
@@ -218,9 +260,11 @@ final class EditorViewController: NSViewController {
     openStyleDebouncer.cancel()
     fullOpenStyleDebouncer.cancel()
     watcherDebouncer.cancel()
+    queueWatcherDebouncer.cancel()
     autosaveMaxFlushTask?.cancel()
     findFeedbackTask?.cancel()
     watcher?.stop()
+    queueWatcher?.stop()
     for url in attachedImages.values { try? FileManager.default.removeItem(at: url) }
     NotificationCenter.default.removeObserver(self)
   }
@@ -510,6 +554,12 @@ final class EditorViewController: NSViewController {
     chatButton.refusesFirstResponder = true
     agentRow.addArrangedSubview(chatButton)
     chatButton.setContentHuggingPriority(.required, for: .horizontal)
+    queueButton.target = self
+    queueButton.action = #selector(openQueuePanel)
+    queueButton.refusesFirstResponder = true
+    queueButton.isHidden = true
+    agentRow.addArrangedSubview(queueButton)
+    queueButton.setContentHuggingPriority(.required, for: .horizontal)
 
     draftingSidebar.material = .hudWindow
     draftingSidebar.blendingMode = .withinWindow
@@ -537,6 +587,14 @@ final class EditorViewController: NSViewController {
     draftingSidebarStack.spacing = 8
     draftingSidebarStack.edgeInsets = NSEdgeInsets(top: 14, left: 12, bottom: 12, right: 12)
     draftingSidebarStack.translatesAutoresizingMaskIntoConstraints = false
+
+    draftingSidebarModeControl.target = self
+    draftingSidebarModeControl.action = #selector(draftingSidebarModeChanged(_:))
+    draftingSidebarModeControl.selectedSegment = DraftingSidebarMode.chat.rawValue
+    draftingSidebarModeControl.segmentStyle = .rounded
+    draftingSidebarModeControl.controlSize = .small
+    draftingSidebarModeControl.isHidden = true
+    draftingSidebarModeControl.setContentHuggingPriority(.required, for: .vertical)
 
     draftingChatTitle.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
     draftingChatSubtitle.font = NSFont.systemFont(ofSize: 11, weight: .regular)
@@ -703,6 +761,75 @@ final class EditorViewController: NSViewController {
     draftingDiffScroll.layer?.borderWidth = 0.8
     draftingDiffScroll.isHidden = true
 
+    queueTitle.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+    queueSubtitle.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+    queueSubtitle.lineBreakMode = .byWordWrapping
+    queueSubtitle.maximumNumberOfLines = 0
+
+    let queueColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("prompt"))
+    queueColumn.title = "Prompt"
+    queueTableView.addTableColumn(queueColumn)
+    queueTableView.headerView = nil
+    queueTableView.usesAlternatingRowBackgroundColors = false
+    queueTableView.selectionHighlightStyle = .regular
+    queueTableView.allowsEmptySelection = true
+    queueTableView.delegate = self
+    queueTableView.dataSource = self
+    queueTableView.target = self
+    queueTableView.action = #selector(queueSelectionDidChange(_:))
+    queueTableView.rowHeight = 28
+
+    queueTableScroll.drawsBackground = false
+    queueTableScroll.borderType = .noBorder
+    queueTableScroll.hasVerticalScroller = true
+    queueTableScroll.documentView = queueTableView
+    applyModernScrollerStyle(to: queueTableScroll)
+    queueTableScroll.wantsLayer = true
+    queueTableScroll.layer?.cornerRadius = 6
+    queueTableScroll.layer?.borderWidth = 0.8
+
+    queueEditor.isEditable = true
+    queueEditor.isSelectable = true
+    queueEditor.drawsBackground = false
+    queueEditor.isVerticallyResizable = true
+    queueEditor.isHorizontallyResizable = false
+    queueEditor.textContainerInset = NSSize(width: 6, height: 6)
+    queueEditor.textContainer?.widthTracksTextView = true
+    queueEditor.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+    queueEditor.string = ""
+
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleTextDidChange(_:)),
+      name: NSText.didChangeNotification,
+      object: queueEditor
+    )
+
+    queueEditorScroll.drawsBackground = false
+    queueEditorScroll.borderType = .noBorder
+    queueEditorScroll.hasVerticalScroller = true
+    queueEditorScroll.documentView = queueEditor
+    applyModernScrollerStyle(to: queueEditorScroll)
+    queueEditorScroll.wantsLayer = true
+    queueEditorScroll.layer?.cornerRadius = 6
+    queueEditorScroll.layer?.borderWidth = 0.8
+
+    queueStatusLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+    queueStatusLabel.lineBreakMode = .byTruncatingTail
+    queueStatusLabel.maximumNumberOfLines = 2
+
+    for button in [queueNewButton, queueDeleteButton, queueReloadButton, queueSaveButton, queueCloseButton] {
+      button.target = self
+      button.controlSize = .small
+      button.bezelStyle = .texturedRounded
+      button.refusesFirstResponder = true
+    }
+    queueNewButton.action = #selector(queueNewAction(_:))
+    queueDeleteButton.action = #selector(queueDeleteAction(_:))
+    queueReloadButton.action = #selector(queueReloadAction(_:))
+    queueSaveButton.action = #selector(queueSaveAction(_:))
+    queueCloseButton.action = #selector(draftingChatCloseAction(_:))
+
     let draftingUtilityRow = NSStackView(
       views: [
         NSTextField(labelWithString: "Type"),
@@ -730,17 +857,47 @@ final class EditorViewController: NSViewController {
     draftingButtonsRow.alignment = .centerY
     draftingButtonsRow.distribution = .fillProportionally
 
-    draftingSidebarStack.addArrangedSubview(draftingChatTitle)
-    draftingSidebarStack.addArrangedSubview(draftingChatSubtitle)
-    draftingSidebarStack.addArrangedSubview(draftingChatScroll)
-    draftingSidebarStack.addArrangedSubview(draftingContextScroll)
-    draftingSidebarStack.addArrangedSubview(draftingDiffScroll)
-    draftingSidebarStack.addArrangedSubview(draftingChatInputScroll)
-    draftingSidebarStack.addArrangedSubview(draftingChatAttachmentRow)
-    draftingSidebarStack.addArrangedSubview(draftingUtilityRow)
-    draftingSidebarStack.addArrangedSubview(draftingButtonsRow)
+    draftingChatContentStack.orientation = .vertical
+    draftingChatContentStack.spacing = 8
+    draftingChatContentStack.translatesAutoresizingMaskIntoConstraints = false
+    draftingChatContentStack.addArrangedSubview(draftingChatTitle)
+    draftingChatContentStack.addArrangedSubview(draftingChatSubtitle)
+    draftingChatContentStack.addArrangedSubview(draftingChatScroll)
+    draftingChatContentStack.addArrangedSubview(draftingContextScroll)
+    draftingChatContentStack.addArrangedSubview(draftingDiffScroll)
+    draftingChatContentStack.addArrangedSubview(draftingChatInputScroll)
+    draftingChatContentStack.addArrangedSubview(draftingChatAttachmentRow)
+    draftingChatContentStack.addArrangedSubview(draftingUtilityRow)
+    draftingChatContentStack.addArrangedSubview(draftingButtonsRow)
     draftingChatScroll.setContentHuggingPriority(.defaultLow, for: .vertical)
     draftingChatScroll.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+
+    queueContentStack.orientation = .vertical
+    queueContentStack.spacing = 8
+    queueContentStack.translatesAutoresizingMaskIntoConstraints = false
+    queueContentStack.isHidden = true
+
+    let queueButtonsRow = NSStackView(
+      views: [queueNewButton, queueDeleteButton, queueReloadButton, queueSaveButton, queueCloseButton]
+    )
+    queueButtonsRow.orientation = .horizontal
+    queueButtonsRow.spacing = 8
+    queueButtonsRow.alignment = .centerY
+    queueButtonsRow.distribution = .fillProportionally
+
+    queueContentStack.addArrangedSubview(queueTitle)
+    queueContentStack.addArrangedSubview(queueSubtitle)
+    queueContentStack.addArrangedSubview(queueTableScroll)
+    queueContentStack.addArrangedSubview(queueEditorScroll)
+    queueContentStack.addArrangedSubview(queueStatusLabel)
+    queueContentStack.addArrangedSubview(queueButtonsRow)
+    queueTableScroll.setContentHuggingPriority(.defaultLow, for: .vertical)
+    queueTableScroll.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+    queueEditorHeightConstraint = queueEditorScroll.heightAnchor.constraint(equalToConstant: 180)
+
+    draftingSidebarStack.addArrangedSubview(draftingSidebarModeControl)
+    draftingSidebarStack.addArrangedSubview(draftingChatContentStack)
+    draftingSidebarStack.addArrangedSubview(queueContentStack)
     draftingSidebar.addSubview(draftingSidebarStack)
     draftingChatInputHeightConstraint = draftingChatInputScroll.heightAnchor.constraint(equalToConstant: draftingChatInputMinHeight)
     draftingContextHeightConstraint = draftingContextScroll.heightAnchor.constraint(equalToConstant: 0)
@@ -749,6 +906,8 @@ final class EditorViewController: NSViewController {
     draftingChatScrollMinHeightConstraint.priority = .defaultLow
     let draftingChatInputMinHeightConstraint = draftingChatInputScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: draftingChatInputMinHeight)
     draftingChatInputMinHeightConstraint.priority = .defaultLow
+    let queueTableMinHeightConstraint = queueTableScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 120)
+    queueTableMinHeightConstraint.priority = .defaultLow
 
     NSLayoutConstraint.activate([
       draftingSidebarStack.leadingAnchor.constraint(equalTo: draftingSidebar.leadingAnchor),
@@ -761,6 +920,8 @@ final class EditorViewController: NSViewController {
       draftingChatInputMinHeightConstraint,
       draftingChatInputScroll.heightAnchor.constraint(lessThanOrEqualToConstant: draftingChatInputMaxHeight),
       draftingChatInputHeightConstraint!,
+      queueTableMinHeightConstraint,
+      queueEditorHeightConstraint!,
     ])
 
     let stack = NSStackView()
@@ -811,6 +972,7 @@ final class EditorViewController: NSViewController {
 
     applyTheme()
     updateDraftingChatInputHeight()
+    updateDraftingSidebarModeControls()
     updateDraftingSidebarControlState()
   }
 
@@ -983,6 +1145,27 @@ final class EditorViewController: NSViewController {
   func prepareForIdlePool() {
     watcher?.stop()
     watcher = nil
+    queueWatcher?.stop()
+    queueWatcher = nil
+    queueWatcherDebouncer.cancel()
+    queueLoadTask?.cancel()
+    queueLoadTask = nil
+    queueSaveTask?.cancel()
+    queueSaveTask = nil
+    externalQueueAttachment = nil
+    queueItems.removeAll()
+    queueSelectedLocalID = nil
+    queueFingerprint = nil
+    queueObservedDiskState = QueueDiskState(absent: true, fileSize: nil, modifiedAt: nil)
+    queueDirty = false
+    isApplyingQueueEditorUpdate = true
+    queueEditor.string = ""
+    isApplyingQueueEditorUpdate = false
+    queueSubtitle.stringValue = "Shared Claude Pager session queue"
+    queueStatusLabel.stringValue = "No shared queue attached."
+    queueTableView.reloadData()
+    updateDraftingSidebarModeControls()
+    updateDraftingSidebarControlState()
     textView.undoManager?.removeAllActions()
     _typingLatencies.removeAll()
     sessionCwd = nil
@@ -1002,6 +1185,7 @@ final class EditorViewController: NSViewController {
     autosaveDebouncer.cancel()
     autosaveMaxFlushTask?.cancel()
     autosaveMaxFlushTask = nil
+    if Task.isCancelled { return }
 
     // On window/app close, wait for any pending image conversion, then copy
     // images to the clipboard so the user can Ctrl+V in the invoking CLI.
@@ -1016,12 +1200,15 @@ final class EditorViewController: NSViewController {
         }
         imageConversionTask = nil
       }
+      if Task.isCancelled { return }
       await appendImageReferencesForClose()
     }
 
+    if Task.isCancelled { return }
     if !autosavePending, let info = await session.currentInfo(), info.isDirty {
       autosavePending = true
     }
+    if Task.isCancelled { return }
     await runAutosave(reason: reason)
   }
 
@@ -1153,11 +1340,89 @@ final class EditorViewController: NSViewController {
   }
 
   @objc private func openDraftingChat() {
-    guard agentConfig.chatPanelEnabled else {
+    guard isChatSidebarAvailable() else {
       NSSound.beep()
       return
     }
+    setDraftingSidebarMode(.chat)
     setDraftingSidebarVisible(true, focusInput: true)
+  }
+
+  @objc private func openQueuePanel() {
+    guard isQueueSidebarAvailable() else {
+      NSSound.beep()
+      return
+    }
+    setDraftingSidebarMode(.queue)
+    setDraftingSidebarVisible(true, focusInput: false)
+    if selectedQueueIndex() != nil {
+      view.window?.makeFirstResponder(queueEditor)
+    } else {
+      view.window?.makeFirstResponder(queueTableView)
+    }
+  }
+
+  private func isChatSidebarAvailable() -> Bool {
+    agentConfig.enabled && agentConfig.chatPanelEnabled
+  }
+
+  private func isQueueSidebarAvailable() -> Bool {
+    externalQueueAttachment?.isSupportedFormat == true
+  }
+
+  private func normalizedDraftingSidebarMode(_ requested: DraftingSidebarMode) -> DraftingSidebarMode? {
+    switch requested {
+    case .chat where isChatSidebarAvailable():
+      return .chat
+    case .queue where isQueueSidebarAvailable():
+      return .queue
+    default:
+      if isChatSidebarAvailable() { return .chat }
+      if isQueueSidebarAvailable() { return .queue }
+      return nil
+    }
+  }
+
+  private func setDraftingSidebarMode(_ mode: DraftingSidebarMode) {
+    guard let resolved = normalizedDraftingSidebarMode(mode) else {
+      draftingSidebarMode = .chat
+      draftingChatContentStack.isHidden = true
+      queueContentStack.isHidden = true
+      draftingSidebarModeControl.isHidden = true
+      return
+    }
+    draftingSidebarMode = resolved
+    draftingSidebarModeControl.selectedSegment = resolved.rawValue
+    draftingChatContentStack.isHidden = (resolved != .chat)
+    queueContentStack.isHidden = (resolved != .queue)
+    if resolved == .chat, draftingSidebarVisible, draftingChatMessages.isEmpty {
+      appendDraftingChatTranscript("system: drafting sidebar ready")
+    }
+    updateDraftingSidebarModeControls()
+    updateDraftingSidebarControlState()
+  }
+
+  private func updateDraftingSidebarModeControls() {
+    let chatAvailable = isChatSidebarAvailable()
+    let queueAvailable = isQueueSidebarAvailable()
+    chatButton.isHidden = !chatAvailable
+    queueButton.isHidden = !queueAvailable
+    draftingSidebarModeControl.isHidden = !(chatAvailable && queueAvailable)
+    draftingSidebarModeControl.setEnabled(chatAvailable, forSegment: DraftingSidebarMode.chat.rawValue)
+    draftingSidebarModeControl.setEnabled(queueAvailable, forSegment: DraftingSidebarMode.queue.rawValue)
+
+    if let resolved = normalizedDraftingSidebarMode(draftingSidebarMode) {
+      draftingSidebarMode = resolved
+      draftingSidebarModeControl.selectedSegment = resolved.rawValue
+      draftingChatContentStack.isHidden = (resolved != .chat)
+      queueContentStack.isHidden = (resolved != .queue)
+    } else {
+      draftingChatContentStack.isHidden = true
+      queueContentStack.isHidden = true
+      if draftingSidebarVisible {
+        setDraftingSidebarVisible(false)
+      }
+    }
   }
 
   private func selectedDraftingAnnotationType() -> DraftingAnnotationType {
@@ -1252,26 +1517,29 @@ final class EditorViewController: NSViewController {
 
   private func setDraftingSidebarVisible(_ visible: Bool, focusInput: Bool = false) {
     guard draftingSidebarVisible != visible || focusInput else { return }
+    guard !visible || normalizedDraftingSidebarMode(draftingSidebarMode) != nil else { return }
     draftingSidebarVisible = visible
 
     if visible {
-      if draftingChatMessages.isEmpty {
+      if draftingSidebarMode == .chat, draftingChatMessages.isEmpty {
         appendDraftingChatTranscript("system: drafting sidebar ready")
       }
       draftingSidebar.isHidden = false
     } else {
-      draftingStreamingLineIndex = nil
-      draftingContextVisible = false
-      draftingDiffVisible = false
-      draftingContextScroll.isHidden = true
-      draftingDiffScroll.isHidden = true
-      draftingContextHeightConstraint?.constant = 0
-      draftingDiffHeightConstraint?.constant = 0
-      draftingChatContextButton.title = "Context"
-      draftingChatDiffButton.title = "Diff"
-      clearDraftingSidebarPendingAttachments()
-      (agentAdapter as? AgentSidebarChatAdapting)?.resetChatSession()
-      draftingSidebarChatAdapter?.resetChatSession()
+      if draftingSidebarMode == .chat {
+        draftingStreamingLineIndex = nil
+        draftingContextVisible = false
+        draftingDiffVisible = false
+        draftingContextScroll.isHidden = true
+        draftingDiffScroll.isHidden = true
+        draftingContextHeightConstraint?.constant = 0
+        draftingDiffHeightConstraint?.constant = 0
+        draftingChatContextButton.title = "Context"
+        draftingChatDiffButton.title = "Diff"
+        clearDraftingSidebarPendingAttachments()
+        (agentAdapter as? AgentSidebarChatAdapting)?.resetChatSession()
+        draftingSidebarChatAdapter?.resetChatSession()
+      }
       endDraftingSidebarResize()
     }
 
@@ -1297,8 +1565,14 @@ final class EditorViewController: NSViewController {
       if !visible {
         self.draftingSidebar.isHidden = true
       }
-      if focusInput, visible {
+      if focusInput, visible, self.draftingSidebarMode == .chat {
         self.view.window?.makeFirstResponder(self.draftingChatInput)
+      } else if visible, self.draftingSidebarMode == .queue {
+        if self.selectedQueueIndex() != nil {
+          self.view.window?.makeFirstResponder(self.queueEditor)
+        } else {
+          self.view.window?.makeFirstResponder(self.queueTableView)
+        }
       } else if !visible {
         self.view.window?.makeFirstResponder(self.textView)
       }
@@ -1453,6 +1727,14 @@ final class EditorViewController: NSViewController {
     draftingChatDiffButton.isEnabled = true
     draftingChatApplySuggestionButton.isEnabled = !busy && draftingSidebarSuggestedDraft != nil
     draftingChatClearAttachmentsButton.isEnabled = !busy && !draftingSidebarPendingAttachmentDisplay.isEmpty
+    let queueAttached = isQueueSidebarAvailable()
+    let hasSelection = selectedQueueIndex() != nil
+    queueButton.isEnabled = queueAttached
+    queueNewButton.isEnabled = queueAttached
+    queueDeleteButton.isEnabled = queueAttached && hasSelection
+    queueReloadButton.isEnabled = queueAttached
+    queueSaveButton.isEnabled = queueAttached && queueDirty
+    queueEditor.isEditable = queueAttached && hasSelection
   }
 
   private func updateDraftingChatInputHeight() {
@@ -1839,6 +2121,20 @@ final class EditorViewController: NSViewController {
     draftingDiffView.textColor = t.foreground
     draftingDiffScroll.layer?.backgroundColor = t.background.withAlphaComponent(0.42).cgColor
     draftingDiffScroll.layer?.borderColor = t.secondaryText.withAlphaComponent(0.38).cgColor
+    queueTitle.textColor = t.foreground
+    queueSubtitle.textColor = t.secondaryText
+    queueStatusLabel.textColor = t.secondaryText
+    queueEditor.textColor = t.foreground
+    queueEditor.insertionPointColor = t.caret
+    queueEditorScroll.layer?.backgroundColor = t.background.withAlphaComponent(0.42).cgColor
+    queueEditorScroll.layer?.borderColor = t.secondaryText.withAlphaComponent(0.38).cgColor
+    queueTableScroll.layer?.backgroundColor = t.background.withAlphaComponent(0.42).cgColor
+    queueTableScroll.layer?.borderColor = t.secondaryText.withAlphaComponent(0.38).cgColor
+    queueNewButton.contentTintColor = t.link
+    queueDeleteButton.contentTintColor = t.secondaryText.withAlphaComponent(0.95)
+    queueReloadButton.contentTintColor = t.link
+    queueSaveButton.contentTintColor = t.link
+    queueCloseButton.contentTintColor = t.secondaryText.withAlphaComponent(0.95)
     draftingChatAttachmentSummary.textColor = t.secondaryText
     draftingChatAttachButton.contentTintColor = t.link
     draftingChatClearAttachmentsButton.contentTintColor = t.secondaryText.withAlphaComponent(0.95)
@@ -1875,6 +2171,7 @@ final class EditorViewController: NSViewController {
     draftingChatInput.font = NSFont.monospacedSystemFont(ofSize: sidebarSize, weight: .regular)
     draftingContextView.font = NSFont.monospacedSystemFont(ofSize: max(11, sidebarSize - 1), weight: .regular)
     draftingDiffView.font = NSFont.monospacedSystemFont(ofSize: max(11, sidebarSize - 1), weight: .regular)
+    queueEditor.font = NSFont.monospacedSystemFont(ofSize: sidebarSize, weight: .regular)
     let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
     if fullRange.length > 0 {
       applyStyling(forChangedRange: fullRange)
@@ -1996,6 +2293,415 @@ final class EditorViewController: NSViewController {
     }
   }
 
+  func setExternalQueueAttachment(_ attachment: ExternalQueueAttachment?) {
+    let oldPath = externalQueueAttachment?.queuePath
+    queueLoadTask?.cancel()
+    queueLoadTask = nil
+    queueSaveTask?.cancel()
+    queueSaveTask = nil
+    queueWatcherDebouncer.cancel()
+    externalQueueAttachment = attachment
+    if oldPath != attachment?.queuePath {
+      queueDirty = false
+      queueFingerprint = nil
+      queueObservedDiskState = QueueDiskState(absent: true, fileSize: nil, modifiedAt: nil)
+    }
+
+    refreshQueueAttachmentPresentation()
+
+    if let attachment {
+      guard attachment.isSupportedFormat else {
+        queueWatcher?.stop()
+        queueWatcher = nil
+        queueItems.removeAll()
+        queueSelectedLocalID = nil
+        queueFingerprint = nil
+        queueDirty = false
+        isApplyingQueueEditorUpdate = true
+        queueEditor.string = ""
+        isApplyingQueueEditorUpdate = false
+        queueTableView.reloadData()
+        queueStatusLabel.stringValue = unsupportedQueueStatus(for: attachment)
+        if draftingSidebarMode == .queue {
+          if isChatSidebarAvailable() {
+            setDraftingSidebarMode(.chat)
+          } else {
+            setDraftingSidebarVisible(false)
+          }
+        }
+        updateDraftingSidebarModeControls()
+        updateDraftingSidebarControlState()
+        return
+      }
+      attachQueueWatcher(for: attachment)
+      reloadQueueFromDisk(force: true, reason: "queue attached")
+      if draftingSidebarVisible, draftingSidebarMode == .queue {
+        setDraftingSidebarMode(.queue)
+      }
+    } else {
+      queueWatcher?.stop()
+      queueWatcher = nil
+      queueItems.removeAll()
+      queueSelectedLocalID = nil
+      queueFingerprint = nil
+      queueObservedDiskState = QueueDiskState(absent: true, fileSize: nil, modifiedAt: nil)
+      queueDirty = false
+      isApplyingQueueEditorUpdate = true
+      queueEditor.string = ""
+      isApplyingQueueEditorUpdate = false
+      queueTableView.reloadData()
+      queueStatusLabel.stringValue = "No shared queue attached."
+      if draftingSidebarMode == .queue {
+        if isChatSidebarAvailable() {
+          setDraftingSidebarMode(.chat)
+        } else {
+          setDraftingSidebarVisible(false)
+        }
+      }
+    }
+    updateDraftingSidebarModeControls()
+    updateDraftingSidebarControlState()
+  }
+
+  @objc private func draftingSidebarModeChanged(_ sender: NSSegmentedControl) {
+    guard let mode = DraftingSidebarMode(rawValue: sender.selectedSegment) else { return }
+    guard normalizedDraftingSidebarMode(mode) != nil else {
+      NSSound.beep()
+      updateDraftingSidebarModeControls()
+      return
+    }
+    setDraftingSidebarMode(mode)
+    if draftingSidebarVisible {
+      setDraftingSidebarVisible(true, focusInput: mode == .chat)
+    }
+  }
+
+  @objc private func queueSelectionDidChange(_ sender: Any?) {
+    let row = queueTableView.selectedRow
+    if row >= 0, row < queueItems.count {
+      selectQueueItem(localID: queueItems[row].localID, focusEditor: false)
+    } else {
+      selectQueueItem(localID: nil, focusEditor: false)
+    }
+  }
+
+  @objc private func queueNewAction(_ sender: Any?) {
+    guard isQueueSidebarAvailable() else {
+      NSSound.beep()
+      return
+    }
+    commitQueueEditorToSelection()
+    let item = SharedQueueItem.newItem()
+    queueItems.append(item)
+    queueDirty = true
+    queueTableView.reloadData()
+    selectQueueItem(localID: item.localID, focusEditor: true)
+    queueStatusLabel.stringValue = "Added queued prompt. Save to persist."
+    updateDraftingSidebarControlState()
+  }
+
+  @objc private func queueDeleteAction(_ sender: Any?) {
+    guard let index = selectedQueueIndex() else {
+      NSSound.beep()
+      return
+    }
+    queueItems.remove(at: index)
+    queueDirty = true
+    queueTableView.reloadData()
+    let nextSelection = min(index, queueItems.count - 1)
+    if nextSelection >= 0, nextSelection < queueItems.count {
+      selectQueueItem(localID: queueItems[nextSelection].localID, focusEditor: false)
+    } else {
+      selectQueueItem(localID: nil, focusEditor: false)
+    }
+    queueStatusLabel.stringValue = queueItems.isEmpty
+      ? "Queue cleared locally. Save to remove the shared queue file."
+      : "Deleted queued prompt locally. Save to persist."
+    updateDraftingSidebarControlState()
+  }
+
+  @objc private func queueReloadAction(_ sender: Any?) {
+    reloadQueueFromDisk(force: true, reason: "queue reloaded")
+  }
+
+  @objc private func queueSaveAction(_ sender: Any?) {
+    saveQueueToDisk()
+  }
+
+  private func queueFileURL() -> URL? {
+    guard let attachment = externalQueueAttachment, attachment.isSupportedFormat else { return nil }
+    let path = attachment.queuePath
+    guard !path.isEmpty else { return nil }
+    return URL(fileURLWithPath: path)
+  }
+
+  private func refreshQueueAttachmentPresentation() {
+    guard let attachment = externalQueueAttachment else {
+      queueSubtitle.stringValue = "Shared Claude Pager session queue"
+      return
+    }
+    var parts: [String] = []
+    if let source = attachment.source {
+      parts.append(source)
+    }
+    if let key = attachment.queueKey {
+      parts.append("key: \(key)")
+    }
+    let version = attachment.queueFormatVersion ?? ExternalQueueAttachment.supportedFormatVersion
+    parts.append("format v\(version)")
+    queueSubtitle.stringValue = parts.joined(separator: " • ")
+  }
+
+  private func unsupportedQueueStatus(for attachment: ExternalQueueAttachment) -> String {
+    let version = attachment.queueFormatVersion ?? -1
+    return "Unsupported shared queue format v\(version). TurboDraft supports v\(ExternalQueueAttachment.supportedFormatVersion)."
+  }
+
+  private func currentQueueDiskState(for url: URL) -> QueueDiskState {
+    let fm = FileManager.default
+    guard fm.fileExists(atPath: url.path),
+          let attrs = try? fm.attributesOfItem(atPath: url.path) else {
+      return QueueDiskState(absent: true, fileSize: nil, modifiedAt: nil)
+    }
+    return QueueDiskState(
+      absent: false,
+      fileSize: attrs[.size] as? Int,
+      modifiedAt: attrs[.modificationDate] as? Date
+    )
+  }
+
+  private func attachQueueWatcher(for attachment: ExternalQueueAttachment) {
+    queueWatcher?.stop()
+    queueWatcher = nil
+    let url = URL(fileURLWithPath: attachment.queuePath)
+    let watchURL = url.deletingLastPathComponent()
+    queueObservedDiskState = currentQueueDiskState(for: url)
+    do {
+      let watcher = try DirectoryWatcher(directoryURL: watchURL)
+      queueWatcher = watcher
+      watcher.start { [weak self] in
+        guard let self else { return }
+        Task { @MainActor in
+          self.handleQueueWatcherEvent()
+        }
+      }
+    } catch {
+      queueStatusLabel.stringValue = "Queue watcher unavailable: \(error.localizedDescription)"
+    }
+  }
+
+  private func handleQueueWatcherEvent() {
+    guard let url = queueFileURL() else { return }
+    let diskState = currentQueueDiskState(for: url)
+    guard diskState != queueObservedDiskState else { return }
+    queueObservedDiskState = diskState
+    queueWatcherDebouncer.schedule(delayMs: 120) { [weak self] in
+      guard let self else { return }
+      await MainActor.run {
+        self.reloadQueueFromDisk(force: false, reason: "queue changed on disk")
+      }
+    }
+  }
+
+  private func reloadQueueFromDisk(force: Bool, reason: String) {
+    queueLoadTask?.cancel()
+    queueLoadGeneration += 1
+    let generation = queueLoadGeneration
+    guard let url = queueFileURL() else {
+      queueStatusLabel.stringValue = "No shared queue attached."
+      queueItems.removeAll()
+      queueSelectedLocalID = nil
+      queueFingerprint = nil
+      queueObservedDiskState = QueueDiskState(absent: true, fileSize: nil, modifiedAt: nil)
+      queueDirty = false
+      queueTableView.reloadData()
+      updateQueueEditorFromSelection()
+      updateDraftingSidebarControlState()
+      return
+    }
+    guard let attachment = externalQueueAttachment else { return }
+    let currentPath = attachment.queuePath
+    let currentFingerprint = queueFingerprint
+    let dirtyAtStart = queueDirty
+    queueStatusLabel.stringValue = reason == "queue attached" ? "Loading shared queue…" : queueStatusLabel.stringValue
+
+    queueLoadTask = Task { @MainActor [weak self] in
+      let result = await Task.detached(priority: .utility) { () -> Result<SharedQueueFileSnapshot, Error> in
+        Result { try SharedQueueFileStore.load(from: url) }
+      }.value
+      guard let self else { return }
+      defer {
+        if self.queueLoadGeneration == generation {
+          self.queueLoadTask = nil
+        }
+      }
+      guard !Task.isCancelled else { return }
+      guard self.externalQueueAttachment?.queuePath == currentPath else { return }
+
+      switch result {
+      case let .success(snapshot):
+        self.queueObservedDiskState = self.currentQueueDiskState(for: url)
+        if !force, dirtyAtStart, snapshot.fingerprint != currentFingerprint {
+          self.queueStatusLabel.stringValue = "Queue changed on disk. Reload to compare before saving."
+        } else if !force, snapshot.fingerprint != currentFingerprint || currentFingerprint == nil {
+          self.applyQueueSnapshot(snapshot, statusMessage: self.loadedQueueStatus(for: snapshot))
+        } else if force {
+          self.applyQueueSnapshot(snapshot, statusMessage: self.loadedQueueStatus(for: snapshot))
+        }
+      case let .failure(error):
+        self.queueStatusLabel.stringValue = "Failed to load queue: \(error.localizedDescription)"
+        NSSound.beep()
+      }
+    }
+  }
+
+  private func saveQueueToDisk() {
+    guard let url = queueFileURL() else {
+      NSSound.beep()
+      queueStatusLabel.stringValue = "No shared queue attached."
+      return
+    }
+    guard queueSaveTask == nil else {
+      queueStatusLabel.stringValue = "Queue save already in progress."
+      return
+    }
+    queueSaveGeneration += 1
+    let generation = queueSaveGeneration
+
+    commitQueueEditorToSelection()
+    guard let attachment = externalQueueAttachment else { return }
+    let currentPath = attachment.queuePath
+    let itemsToSave = queueItems
+    let expectedFingerprint = queueFingerprint
+    queueStatusLabel.stringValue = "Saving shared queue…"
+
+    queueSaveTask = Task { @MainActor [weak self] in
+      let result = await Task.detached(priority: .utility) { () -> Result<SharedQueueFileSnapshot, Error> in
+        Result {
+          try SharedQueueFileStore.write(
+            itemsToSave,
+            to: url,
+            expectedFingerprint: expectedFingerprint,
+            enforceFingerprint: true
+          )
+        }
+      }.value
+      guard let self else { return }
+      defer {
+        if self.queueSaveGeneration == generation {
+          self.queueSaveTask = nil
+        }
+      }
+      guard !Task.isCancelled else { return }
+      guard self.externalQueueAttachment?.queuePath == currentPath else { return }
+
+      switch result {
+      case let .success(saved):
+        self.queueObservedDiskState = self.currentQueueDiskState(for: url)
+        let message: String
+        if saved.items.isEmpty {
+          message = "Saved empty queue. Shared queue file removed."
+        } else {
+          message = "Saved \(saved.items.count) queued prompt\(saved.items.count == 1 ? "" : "s")."
+        }
+        self.applyQueueSnapshot(saved, statusMessage: message)
+      case .failure(SharedQueueFileStoreError.conflict(expected: _, actual: _)):
+        self.queueObservedDiskState = self.currentQueueDiskState(for: url)
+        self.queueStatusLabel.stringValue = "Queue changed on disk. Reload before saving."
+        NSSound.beep()
+      case let .failure(error):
+        self.queueStatusLabel.stringValue = "Failed to save queue: \(error.localizedDescription)"
+        NSSound.beep()
+      }
+    }
+  }
+
+  private func applyQueueSnapshot(_ snapshot: SharedQueueFileSnapshot, statusMessage: String) {
+    let previousSelection = queueSelectedLocalID
+    queueItems = snapshot.items
+    queueFingerprint = snapshot.fingerprint
+    queueDirty = false
+    queueTableView.reloadData()
+    if let previousSelection, snapshot.items.contains(where: { $0.localID == previousSelection }) {
+      selectQueueItem(localID: previousSelection, focusEditor: false)
+    } else if let first = snapshot.items.first {
+      selectQueueItem(localID: first.localID, focusEditor: false)
+    } else {
+      selectQueueItem(localID: nil, focusEditor: false)
+    }
+    queueStatusLabel.stringValue = statusMessage
+    updateDraftingSidebarControlState()
+  }
+
+  private func loadedQueueStatus(for snapshot: SharedQueueFileSnapshot) -> String {
+    if snapshot.items.isEmpty {
+      return "Queue is empty."
+    }
+    return "Loaded \(snapshot.items.count) queued prompt\(snapshot.items.count == 1 ? "" : "s")."
+  }
+
+  private func selectedQueueIndex() -> Int? {
+    guard let localID = queueSelectedLocalID else { return nil }
+    return queueItems.firstIndex(where: { $0.localID == localID })
+  }
+
+  private func selectQueueItem(localID: String?, focusEditor: Bool) {
+    queueSelectedLocalID = localID
+    let row = selectedQueueIndex()
+    let rowIndex = row ?? -1
+    if queueTableView.selectedRow != rowIndex {
+      if let row {
+        queueTableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+      } else {
+        queueTableView.deselectAll(nil)
+      }
+    }
+    updateQueueEditorFromSelection()
+    if focusEditor, draftingSidebarVisible, draftingSidebarMode == .queue, row != nil {
+      view.window?.makeFirstResponder(queueEditor)
+    }
+    updateDraftingSidebarControlState()
+  }
+
+  private func updateQueueEditorFromSelection() {
+    let prompt = selectedQueueIndex().map { queueItems[$0].prompt } ?? ""
+    isApplyingQueueEditorUpdate = true
+    queueEditor.string = prompt
+    isApplyingQueueEditorUpdate = false
+    queueEditorScroll.hasVerticalScroller = true
+  }
+
+  private func commitQueueEditorToSelection() {
+    guard !isApplyingQueueEditorUpdate, let index = selectedQueueIndex() else { return }
+    let newPrompt = queueEditor.string
+    if queueItems[index].prompt != newPrompt {
+      queueItems[index].prompt = newPrompt
+      queueDirty = true
+      queueTableView.reloadData(forRowIndexes: IndexSet(integer: index), columnIndexes: IndexSet(integer: 0))
+    }
+  }
+
+  private func handleQueueEditorTextDidChange() {
+    guard !isApplyingQueueEditorUpdate, let index = selectedQueueIndex() else { return }
+    let newPrompt = queueEditor.string
+    if queueItems[index].prompt != newPrompt {
+      queueItems[index].prompt = newPrompt
+      queueDirty = true
+      queueStatusLabel.stringValue = "Queue edited locally. Save to persist."
+      queueTableView.reloadData(forRowIndexes: IndexSet(integer: index), columnIndexes: IndexSet(integer: 0))
+      updateDraftingSidebarControlState()
+    }
+  }
+
+  private func queuePreviewText(for item: SharedQueueItem) -> String {
+    let trimmed = item.prompt
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .split(whereSeparator: \.isNewline)
+      .first
+      .map(String.init) ?? ""
+    return trimmed.isEmpty ? "(empty prompt)" : trimmed
+  }
+
   private func recordSessionReadyIfNeeded() {
     guard sessionOpenToReadyMsValue == nil else { return }
     guard let startNs = sessionOpenStartNs else { return }
@@ -2062,6 +2768,10 @@ final class EditorViewController: NSViewController {
   }
 
   @objc private func handleTextDidChange(_ note: Notification) {
+    if let changedTextView = note.object as? NSTextView, changedTextView === queueEditor {
+      handleQueueEditorTextDidChange()
+      return
+    }
     if isApplyingProgrammaticUpdate { return }
     let changeStartNs = DispatchTime.now().uptimeNanoseconds
     let content = textView.string
@@ -2819,12 +3529,17 @@ final class EditorViewController: NSViewController {
   private func applyAgentConfig() {
     agentRow.isHidden = false
     agentButton.isHidden = !agentConfig.enabled
-    chatButton.isHidden = !agentConfig.enabled || !agentConfig.chatPanelEnabled
-    if !agentConfig.enabled || !agentConfig.chatPanelEnabled {
-      setDraftingSidebarVisible(false)
+    chatButton.isHidden = !isChatSidebarAvailable()
+    if !isChatSidebarAvailable(), draftingSidebarMode == .chat {
+      if isQueueSidebarAvailable() {
+        setDraftingSidebarMode(.queue)
+      } else {
+        setDraftingSidebarVisible(false)
+      }
     }
     agentAdapter = agentConfig.enabled ? makeAgentAdapter() : nil
     draftingSidebarChatAdapter = nil
+    updateDraftingSidebarModeControls()
     updateDraftingSidebarControlState()
   }
 
@@ -3308,6 +4023,40 @@ extension EditorViewController: NSTextViewDelegate {
   }
 }
 #endif
+
+extension EditorViewController: NSTableViewDataSource, NSTableViewDelegate {
+  func numberOfRows(in tableView: NSTableView) -> Int {
+    guard tableView === queueTableView else { return 0 }
+    return queueItems.count
+  }
+
+  func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+    guard tableView === queueTableView, row >= 0, row < queueItems.count else { return nil }
+    let identifier = NSUserInterfaceItemIdentifier("QueuePromptCell")
+    let cellView: NSTableCellView
+    if let existing = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
+      cellView = existing
+    } else {
+      let textField = NSTextField(labelWithString: "")
+      textField.translatesAutoresizingMaskIntoConstraints = false
+      textField.lineBreakMode = .byTruncatingTail
+      textField.maximumNumberOfLines = 1
+      let created = NSTableCellView()
+      created.identifier = identifier
+      created.textField = textField
+      created.addSubview(textField)
+      NSLayoutConstraint.activate([
+        textField.leadingAnchor.constraint(equalTo: created.leadingAnchor, constant: 6),
+        textField.trailingAnchor.constraint(equalTo: created.trailingAnchor, constant: -6),
+        textField.centerYAnchor.constraint(equalTo: created.centerYAnchor),
+      ])
+      cellView = created
+    }
+    cellView.textField?.stringValue = queuePreviewText(for: queueItems[row])
+    cellView.textField?.textColor = colorTheme.foreground
+    return cellView
+  }
+}
 
 #if !TURBODRAFT_USE_CODEEDIT_TEXTVIEW
 final class SidebarComposerTextView: NSTextView {
@@ -3809,6 +4558,35 @@ extension EditorViewController {
   }
 
   func _testingDocumentText() -> String { textView.string }
+  func _testingExternalQueueAttachment() -> ExternalQueueAttachment? { externalQueueAttachment }
+  func _testingOpenQueuePanel() { openQueuePanel() }
+  func _testingIsQueueSidebarVisible() -> Bool {
+    draftingSidebarVisible && !draftingSidebar.isHidden && draftingSidebarMode == .queue
+  }
+  func _testingQueueItemCount() -> Int { queueItems.count }
+  func _testingQueueStatusText() -> String { queueStatusLabel.stringValue }
+  func _testingQueueSelectedPrompt() -> String? {
+    selectedQueueIndex().map { queueItems[$0].prompt }
+  }
+  func _testingQueueSelectedRow() -> Int { queueTableView.selectedRow }
+  func _testingQueueEditorText() -> String { queueEditor.string }
+  func _testingSetQueueEditorText(_ text: String) {
+    queueEditor.string = text
+    handleQueueEditorTextDidChange()
+  }
+  func _testingQueueSelectRow(_ row: Int) {
+    guard row >= 0, row < queueItems.count else {
+      queueTableView.deselectAll(nil)
+      queueSelectionDidChange(nil)
+      return
+    }
+    queueTableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+    queueSelectionDidChange(nil)
+  }
+  func _testingQueueNewItem() { queueNewAction(nil) }
+  func _testingDeleteQueueSelection() { queueDeleteAction(nil) }
+  func _testingSaveQueue() { queueSaveAction(nil) }
+  func _testingReloadQueue() { queueReloadAction(nil) }
   func _testingSetSelection(_ range: NSRange) {
     textView.setSelectedRange(range)
   }

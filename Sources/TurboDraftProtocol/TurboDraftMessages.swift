@@ -46,6 +46,10 @@ public struct SessionOpenParams: Codable, Sendable, Equatable {
   public var column: Int?
   public var requestId: String?
   public var cwd: String?
+  public var source: String?
+  public var queuePath: String?
+  public var queueKey: String?
+  public var queueFormatVersion: Int?
   public var protocolVersion: Int?
 
   public init(
@@ -54,6 +58,10 @@ public struct SessionOpenParams: Codable, Sendable, Equatable {
     column: Int? = nil,
     requestId: String? = nil,
     cwd: String? = nil,
+    source: String? = nil,
+    queuePath: String? = nil,
+    queueKey: String? = nil,
+    queueFormatVersion: Int? = nil,
     protocolVersion: Int? = TurboDraftProtocolVersion.current
   ) {
     self.path = path
@@ -61,6 +69,10 @@ public struct SessionOpenParams: Codable, Sendable, Equatable {
     self.column = column
     self.requestId = requestId
     self.cwd = cwd
+    self.source = source
+    self.queuePath = queuePath
+    self.queueKey = queueKey
+    self.queueFormatVersion = queueFormatVersion
     self.protocolVersion = protocolVersion
   }
 }

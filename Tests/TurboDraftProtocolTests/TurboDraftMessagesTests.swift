@@ -10,6 +10,27 @@ final class TurboDraftMessagesTests: XCTestCase {
   func testSessionOpenParamsDefaultsProtocolVersion() {
     let params = SessionOpenParams(path: "/tmp/x.md")
     XCTAssertEqual(params.protocolVersion, TurboDraftProtocolVersion.current)
+    XCTAssertNil(params.source)
+    XCTAssertNil(params.queuePath)
+    XCTAssertNil(params.queueKey)
+    XCTAssertNil(params.queueFormatVersion)
+  }
+
+  func testSessionOpenParamsRoundTripWithQueueAttachmentFields() throws {
+    let params = SessionOpenParams(
+      path: "/tmp/x.md",
+      line: 3,
+      column: 7,
+      requestId: "req-1",
+      cwd: "/tmp",
+      source: "claude-pager",
+      queuePath: "/Users/test/.claude/queues/abc.queue",
+      queueKey: "abc",
+      queueFormatVersion: 1
+    )
+    let data = try JSONEncoder().encode(params)
+    let decoded = try JSONDecoder().decode(SessionOpenParams.self, from: data)
+    XCTAssertEqual(decoded, params)
   }
 
   func testSessionCloseResultRoundTrip() throws {

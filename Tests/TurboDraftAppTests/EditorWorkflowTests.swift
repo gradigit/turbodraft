@@ -92,9 +92,13 @@ final class EditorWorkflowTests: XCTestCase {
       controller.prepareForIdlePool()
     }
     controllers.removeAll()
-    RunLoop.main.run(until: Date().addingTimeInterval(0.03))
-    for w in windows { w.close() }
+    for w in windows {
+      w.orderOut(nil)
+      w.close()
+      w.contentViewController = nil
+    }
     windows.removeAll()
+    RunLoop.main.run(until: Date().addingTimeInterval(0.08))
     let fm = FileManager.default
     for url in tempURLs {
       try? fm.removeItem(at: url)
@@ -122,6 +126,8 @@ final class EditorWorkflowTests: XCTestCase {
       backing: .buffered,
       defer: false
     )
+    window.animationBehavior = .none
+    window.isReleasedWhenClosed = false
     window.contentViewController = vc
     window.makeKeyAndOrderFront(nil)
     vc._testingSetDocumentText(initialText, actionName: nil)

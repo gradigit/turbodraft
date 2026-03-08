@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var sessionsById: [String: EditorSession] = [:]
   private var windowsById: [String: EditorWindowController] = [:]
   private var sessionPathById: [String: String] = [:]
+  private var externalQueueAttachmentBySessionId: [String: ExternalQueueAttachment] = [:]
   private var sessionLastTouchedById: [String: Date] = [:]
   private weak var focusedWindowController: EditorWindowController?
 
@@ -142,12 +143,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
       }
       do {
+        wc.setExternalQueueAttachment(nil)
         let info = try await wc.openPath(first, line: nil, column: nil)
         registerSession(
           id: info.sessionId,
           path: info.fileURL.standardizedFileURL.path,
           session: editorSession,
-          window: wc
+          window: wc,
+          externalQueueAttachment: nil
         )
         sender.reply(toOpenOrPrint: .success)
       } catch {
@@ -286,6 +289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       windowsById.removeValue(forKey: id)
       sessionPathById.removeValue(forKey: id)
+      externalQueueAttachmentBySessionId.removeValue(forKey: id)
       sessionLastTouchedById.removeValue(forKey: id)
     }
 
@@ -351,6 +355,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       sessionsById.removeValue(forKey: sessionId)
       windowsById.removeValue(forKey: sessionId)
       sessionPathById.removeValue(forKey: sessionId)
+      externalQueueAttachmentBySessionId.removeValue(forKey: sessionId)
       sessionLastTouchedById.removeValue(forKey: sessionId)
     }
     if focusedWindowController === wc {
@@ -358,6 +363,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // Recycle to idle pool (keep max 3 idle windows)
+    wc.setExternalQueueAttachment(nil)
     if idleWindowControllers.count < 3 {
       idleWindowControllers.append(wc)
     } else {
@@ -378,10 +384,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  private func registerSession(id: String, path: String, session: EditorSession, window: EditorWindowController) {
+  private func registerSession(
+    id: String,
+    path: String,
+    session: EditorSession,
+    window: EditorWindowController,
+    externalQueueAttachment: ExternalQueueAttachment?
+  ) {
     sessionsById[id] = session
     windowsById[id] = window
     sessionPathById[id] = path
+    externalQueueAttachmentBySessionId[id] = externalQueueAttachment
     sessionLastTouchedById[id] = Date()
     focusedWindowController = window
   }
@@ -394,6 +407,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       sessionsById.removeValue(forKey: id)
       windowsById.removeValue(forKey: id)
       sessionPathById.removeValue(forKey: id)
+      externalQueueAttachmentBySessionId.removeValue(forKey: id)
       sessionLastTouchedById.removeValue(forKey: id)
     }
   }
@@ -509,6 +523,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let t0 = nowMs()
         let normalizedPath = URL(fileURLWithPath: params.path).standardizedFileURL.path
+        let externalQueueAttachment = ExternalQueueAttachment(
+          source: params.source,
+          queuePath: params.queuePath,
+          queueKey: params.queueKey,
+          queueFormatVersion: params.queueFormatVersion
+        )
         let editorSession: EditorSession
         let wc: EditorWindowController
         if let reuse = reusableSession(forPath: normalizedPath) {
@@ -516,6 +536,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           wc = reuse.1
           if let current = await editorSession.currentInfo(),
              current.fileURL.standardizedFileURL.path == normalizedPath {
+            wc.setExternalQueueAttachment(externalQueueAttachment)
+            externalQueueAttachmentBySessionId[current.sessionId] = externalQueueAttachment
             touchSession(current.sessionId)
             wc.focusExistingSessionWindow()
             let openMs = nowMs() - t0
@@ -537,6 +559,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           wc = dequeueIdleWindowController()
           editorSession = wc.session
         }
+        wc.setExternalQueueAttachment(externalQueueAttachment)
         if NSApp.activationPolicy() == .accessory {
           NSApp.setActivationPolicy(.regular)
         }
@@ -547,7 +570,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           id: info.sessionId,
           path: info.fileURL.standardizedFileURL.path,
           session: editorSession,
-          window: wc
+          window: wc,
+          externalQueueAttachment: externalQueueAttachment
         )
         touchSession(info.sessionId)
 
@@ -661,11 +685,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         touchSession(params.sessionId)
 
         if let wc = windowsById[params.sessionId], wc.window != nil {
-          wc.window?.performClose(nil)
+          wc.requestSessionClose()
         } else {
           sessionsById.removeValue(forKey: params.sessionId)
           windowsById.removeValue(forKey: params.sessionId)
           sessionPathById.removeValue(forKey: params.sessionId)
+          externalQueueAttachmentBySessionId.removeValue(forKey: params.sessionId)
           sessionLastTouchedById.removeValue(forKey: params.sessionId)
           await editorSession.markClosed()
         }
@@ -686,6 +711,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           sessionsById.removeValue(forKey: params.sessionId)
           windowsById.removeValue(forKey: params.sessionId)
           sessionPathById.removeValue(forKey: params.sessionId)
+          externalQueueAttachmentBySessionId.removeValue(forKey: params.sessionId)
           sessionLastTouchedById.removeValue(forKey: params.sessionId)
         }
         return ok(SessionWaitResult(reason: closed ? "userClosed" : "timeout"))
