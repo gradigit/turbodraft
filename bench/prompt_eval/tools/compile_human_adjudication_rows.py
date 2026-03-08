@@ -27,7 +27,7 @@ def mean_score(values: list[float]) -> float:
 
 def load_answers(path: pathlib.Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8", newline="") as fh:
-        return [dict(row) for row in csv.DictReader(fh)]
+        return [{**dict(row), "__answer_source": str(path)} for row in csv.DictReader(fh)]
 
 
 def resolve_winner(decisions: list[str]) -> str | None:
@@ -54,7 +54,7 @@ def main() -> int:
     args = ap.parse_args()
     candidate_rows = load_jsonl(pathlib.Path(args.candidates).resolve())
     cases = {c.case_id: c for c in (normalize_case(row, i + 1) for i, row in enumerate(candidate_rows))}
-    answer_paths = [pathlib.Path(item).resolve() for item in args.answers]
+    answer_paths = list(dict.fromkeys(pathlib.Path(item).resolve() for item in args.answers))
     answers: list[dict[str, str]] = []
     for path in answer_paths:
         answers.extend(load_answers(path))
@@ -66,7 +66,22 @@ def main() -> int:
     missing: list[str] = []
     for case_id, case in cases.items():
         rows = grouped.get(case_id, [])
-        if len(rows) < args.min_raters:
+        unique_rows: list[dict[str, str]] = []
+        seen_raters: dict[str, str] = {}
+        for row in rows:
+            rater_id = str(row.get("rater_id_hashed") or "").strip()
+            if not rater_id:
+                raise RuntimeError(f"{case_id}: rater_id_hashed required for every answer row")
+            source = str(row.get("__answer_source") or "").strip()
+            prior_source = seen_raters.get(rater_id)
+            if prior_source is not None:
+                raise RuntimeError(
+                    f"{case_id}: duplicate rater_id_hashed {rater_id!r} "
+                    f"across answer sources {prior_source!r} and {source!r}"
+                )
+            seen_raters[rater_id] = source
+            unique_rows.append(row)
+        if len(unique_rows) < args.min_raters:
             missing.append(case_id)
             continue
         decisions = []
@@ -77,13 +92,11 @@ def main() -> int:
         tags_b: set[str] = set()
         blind_vote_details: list[dict[str, Any]] = []
         lane_values: set[str] = set()
-        for row in rows:
+        for row in unique_rows:
             decision = str(row.get("decision") or "").strip()
             if decision not in VALID_DECISIONS:
                 raise RuntimeError(f"{case_id}: decision must be one of {sorted(VALID_DECISIONS)}")
             rater_id = str(row.get("rater_id_hashed") or "").strip()
-            if not rater_id:
-                raise RuntimeError(f"{case_id}: rater_id_hashed required for every answer row")
             try:
                 qa = float(str(row.get("quality_a_0_100") or "").strip())
                 qb = float(str(row.get("quality_b_0_100") or "").strip())

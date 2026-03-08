@@ -66,7 +66,11 @@ def main() -> int:
             "entries": list(unique_entries.values()),
         }
 
-    ready_for_compile = bool(per_case) and all(item["ready_for_compile"] for item in per_case.values())
+    ready_for_compile = (
+        bool(per_case)
+        and all(summary["ready_for_parse"] for summary in summaries)
+        and all(item["ready_for_compile"] for item in per_case.values())
+    )
     payload = {
         "ok": True,
         "require_raters": args.require_raters,

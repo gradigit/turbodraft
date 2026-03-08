@@ -143,6 +143,8 @@ Execute judge lock work with immutable numeric criteria and compaction-safe pers
 - [x] S4c.1d: Replace human-facing CSV flow with markdown workbook + post-blind Gemini appendix + compatibility parser
 - [x] S4c.1e: Harden workbook flow against blind leakage, mint fresh blind candidate IDs, and prepare `batch3_blindfresh` reviewer kits
 - [x] S4c.1f: Add guided blind-core workbooks, validate-only intake/readiness tooling, and a deficit-aware batch planner to reduce human-label friction
+- [x] S4c.1g: Apply guided blind-core follow-up hardening (duplicate-rater rejection, strict readiness gating, canonical deficit-planner de-duplication)
+- [x] S4c.1h: Generate `batch4_guidedcore` AI-assisted companion packs with Auggie GPT-5.4 for non-lock expansion review
 - [ ] S4c.2: Import real-primary dataset and execute Arm J/Arm O strict runs on the `gpt-5.4 xhigh` judge baseline
 
 Current verdict artifact:

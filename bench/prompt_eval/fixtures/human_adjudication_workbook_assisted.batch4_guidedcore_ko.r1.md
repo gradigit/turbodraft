@@ -1,0 +1,189 @@
+# TurboDraft Prompt Eval — Batch4 Guided Core (Korean, AI-Assisted R1)
+
+> This is the **AI-assisted expansion lane**.
+> It is useful for throughput and disagreement analysis, but it is **not lock-grade blind evidence**.
+
+## Instructions
+- Review the AI assessment, then record your own final decision in this file.
+- Required per case: relation to AI + final winner + confidence.
+- Optional per case: short note.
+- Use this lane when the blind-only task is too difficult for a non-expert rater.
+
+## Confidence rubric
+- **High** — you clearly agree or clearly reject the AI assessment.
+- **Medium** — you have a likely decision, but there is real ambiguity.
+- **Low** — still difficult; good candidate for expert review or execution-based check.
+
+<!-- TD_CASE_META {"case_id": "batch3blind_ko_005", "preset_family": "coding", "language_tag": "ko-KR", "split": "tune", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "assist_model_label": "Auggie GPT-5.4", "assist_display_winner": "A", "assist_canonical_winner": "A", "assist_confidence": "Medium", "integrity_sha256": "b6acb0be36294550363ac2d7f8e7e3b28ddfac0482fb1c077840a25aa3ed99ac"} -->
+## Case 01
+
+### Draft
+```text
+TurboDraft에서 Escape 키가 현재 아무 역할도 없을 때만 editor를 닫도록 해줘. 기존 취소/포커스 해제 같은 동작은 유지되어야 해.
+```
+### Candidate A
+```text
+Goal / Objective
+Escape 키에 의미 있는 기존 바인딩이 없는 editor 문맥에서만 editor를 닫도록 구현한다.
+
+Scope and Constraints
+- 기존 취소, 포커스 해제, 모달 종료 같은 Escape 동작은 유지한다.
+- Escape 우선순위를 바꾸면서 전역 의미를 재정의하지 않는다.
+- 예측 가능한 동작이어야 한다.
+
+Implementation Steps
+1. 현재 Escape 처리 경로와 우선순위를 확인한다.
+2. 기존 의미 있는 Escape 동작이 없는 editor 문맥에만 close를 연결한다.
+3. 포커스/모달 상태 충돌 여부를 점검한다.
+4. 회귀 테스트를 추가한다.
+
+Validation / Acceptance Checks
+- 의미 없는 Escape만 editor를 닫는다.
+- 기존 취소/포커스 해제 동작은 유지된다.
+- 충돌 문맥은 보고한다.
+```
+### Candidate B
+```text
+Goal / Objective
+Escape 키 동작을 정리하되, 기존 취소/포커스 해제 의미를 유지하면서 의미 없는 Escape만 editor close로 연결한다.
+
+Scope and Constraints
+- 기존 취소, 포커스 해제, 모달 종료 같은 Escape 동작은 유지한다.
+- close 동작은 기존 의미 있는 Escape가 없는 editor 문맥에만 연결한다.
+- 동작 우선순위를 설명 가능하게 유지한다.
+
+Implementation Steps
+1. 현재 Escape 처리 경로와 우선순위를 확인한다.
+2. 기존 의미 있는 Escape가 없는 문맥만 close 대상으로 제한한다.
+3. 포커스/모달 상태별 예외를 문서화하고 회귀 테스트를 추가한다.
+4. 우선순위 충돌이 있으면 동작을 넓히지 말고 보고한다.
+
+Validation / Acceptance Checks
+- 의미 없는 Escape만 editor를 닫는다.
+- 기존 취소/포커스 해제 동작은 유지된다.
+- 동작 경계가 테스트와 설명으로 확인된다.
+```
+### AI assessment
+- Model: Auggie GPT-5.4
+- AI pick: A
+- AI confidence: Medium
+- AI rationale: A stays closer to the draft’s exact scope while still giving a clear implementation/validation contract, whereas B adds slight scope expansion and documentation requirements.
+
+### Human final decision
+Relation to AI:
+- [ ] Agree
+- [ ] Disagree / override
+
+Final winner:
+- [ ] A
+- [ ] B
+- [ ] Tie
+- [ ] BothBad
+
+Confidence:
+- [ ] High
+- [ ] Medium
+- [ ] Low
+
+Optional note:
+> 
+
+<!-- TD_CASE_META {"case_id": "batch3blind_ko_008", "preset_family": "pivot_kr_en_reason_ko", "language_tag": "ko-KR", "split": "tune", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "assist_model_label": "Auggie GPT-5.4", "assist_display_winner": "A", "assist_canonical_winner": "A", "assist_confidence": "Medium", "integrity_sha256": "bdf79e696a94ad2c154ec3054c5740b1dbeb357033ae4dd37a1443d5ce63ef27"} -->
+## Case 02
+
+### Draft
+```text
+한국어 사용자용 답변이 필요하지만, 품질은 영어 중심 추론 경로를 쓰는 것처럼 높게 유지하고 싶어. 최종 출력은 한국어만 나와야 해.
+```
+### Candidate A
+```text
+Refine the request into a prompt that maximizes task quality while ensuring the final user-visible output remains Korean only.
+- Preserve all user constraints and uncertainty.
+- Emphasize execution quality over Korean surface polish alone.
+- Keep the prompt directly usable by the downstream model.
+- Do not expose intermediate reasoning, but allow the model to internally organize the task in the way that best preserves quality.
+- Output only the final refined prompt text.
+```
+### Candidate B
+```text
+Refine the request into a prompt that maximizes task quality while ensuring the final user-visible output is Korean only.
+- Preserve all user constraints and uncertainty.
+- Optimize for high-quality task execution rather than Korean surface polish alone.
+- Keep the prompt directly usable by the downstream model.
+- Do not instruct the final output to reveal intermediate reasoning.
+- Output only the final refined prompt text.
+```
+### AI assessment
+- Model: Auggie GPT-5.4
+- AI pick: A
+- AI confidence: Medium
+- AI rationale: A better preserves the draft’s intent by pairing Korean-only output with an explicit quality-preserving internal-organization allowance, while B’s reasoning clause is weaker and less operational.
+
+### Human final decision
+Relation to AI:
+- [ ] Agree
+- [ ] Disagree / override
+
+Final winner:
+- [ ] A
+- [ ] B
+- [ ] Tie
+- [ ] BothBad
+
+Confidence:
+- [ ] High
+- [ ] Medium
+- [ ] Low
+
+Optional note:
+> 
+
+<!-- TD_CASE_META {"case_id": "batch3blind_ko_009", "preset_family": "pivot_kr_en_optimize_ko", "language_tag": "ko-KR", "split": "sealed_test", "display_map": {"A": "candidate_b", "B": "candidate_a"}, "assist_model_label": "Auggie GPT-5.4", "assist_display_winner": "B", "assist_canonical_winner": "A", "assist_confidence": "High", "integrity_sha256": "47699a4fc72ae2af91e0ba1c7b01ceba3c4aeb6607e5977e03f53afa42a822cc"} -->
+## Case 03
+
+### Draft
+```text
+한국어 사용자가 쓴 초안을 더 강한 실행용 프롬프트로 다듬어줘. 결과 프롬프트는 바로 다른 모델에 넣을 수 있어야 하고, 한국어로 동작해야 해.
+```
+### Candidate A
+```text
+다음 한국어 초안을 더 강한 실행용 프롬프트로 다듬는다.
+- 원래 목표, 제약, 불확실성을 보존한다.
+- 구조를 명확하게 만들되 불필요한 범위 확장은 하지 않는다.
+- 최종 프롬프트는 한국어로 직접 사용 가능해야 한다.
+- 출력은 최종 정제 프롬프트 본문만 제공한다.
+- 부족한 정보가 정말 필수일 때만 추가 질문 항목을 분리한다.
+```
+### Candidate B
+```text
+다음 한국어 초안을 더 강한 실행용 프롬프트로 다듬는다.
+- 원래 목표, 제약, 불확실성을 보존한다.
+- 구조를 명확하게 만들되 불필요한 범위 확장은 하지 않는다.
+- 최종 프롬프트는 한국어로 직접 사용 가능해야 한다.
+- 정말 필요한 경우에만 누락 정보 요청을 별도 섹션으로 분리하고, 그 외에는 바로 실행 가능한 형태를 유지한다.
+- 출력은 최종 정제 프롬프트 본문만 제공한다.
+```
+### AI assessment
+- Model: Auggie GPT-5.4
+- AI pick: B
+- AI confidence: High
+- AI rationale: B가 필수 정보 누락 시 예외 처리와 기본적으로 즉시 실행 가능한 출력 계약을 더 명확하게 규정한다.
+
+### Human final decision
+Relation to AI:
+- [ ] Agree
+- [ ] Disagree / override
+
+Final winner:
+- [ ] A
+- [ ] B
+- [ ] Tie
+- [ ] BothBad
+
+Confidence:
+- [ ] High
+- [ ] Medium
+- [ ] Low
+
+Optional note:
+> 

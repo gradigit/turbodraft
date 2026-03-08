@@ -257,6 +257,59 @@ class HumanAdjudicationPacketTests(unittest.TestCase):
             rows = [json.loads(line) for line in out.read_text(encoding='utf-8').splitlines() if line.strip()]
             self.assertEqual(len(rows), 3)
 
+    def test_compile_rejects_duplicate_rater_across_answer_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            candidates = root / 'candidates.jsonl'
+            answers1 = root / 'answers1.csv'
+            answers2 = root / 'answers2.csv'
+            out = root / 'compiled.jsonl'
+            row = {
+                'case_id': 'case_demo',
+                'preset_family': 'coding',
+                'language_tag': 'en-US',
+                'split': 'dev',
+                'draft_prompt': 'Fix the sidebar drag behavior.',
+                'candidate_a': 'Structured prompt A',
+                'candidate_b': 'Vague prompt B',
+            }
+            candidates.write_text(json.dumps(row) + '\n', encoding='utf-8')
+            fieldnames = [
+                'case_id','preset_family','language_tag','split','draft_sha256','candidate_a_text_sha256','candidate_b_text_sha256','candidate_a_source','candidate_b_source','source_ids','rater_id_hashed','decision','blind_decision_raw','blind_confidence_label','quality_a_0_100','quality_b_0_100','confidence_1_5','defect_tags_a','defect_tags_b','notes'
+            ]
+            for path in (answers1, answers2):
+                with path.open('w', encoding='utf-8', newline='') as fh:
+                    writer = csv.DictWriter(fh, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerow({
+                        'case_id': 'case_demo',
+                        'preset_family': 'coding',
+                        'language_tag': 'en-US',
+                        'split': 'dev',
+                        'rater_id_hashed': 'r1',
+                        'decision': 'A',
+                        'blind_decision_raw': 'A',
+                        'blind_confidence_label': 'High',
+                        'quality_a_0_100': '88',
+                        'quality_b_0_100': '52',
+                        'confidence_1_5': '5',
+                        'defect_tags_a': '',
+                        'defect_tags_b': 'verbosity_bloat',
+                        'notes': '',
+                    })
+            proc = subprocess.run([
+                'python3', str(COMPILE_SCRIPT),
+                '--candidates', str(candidates),
+                '--answers', str(answers1),
+                '--answers', str(answers2),
+                '--out', str(out),
+                '--provenance-source', 'human_panel_batch_01',
+                '--provenance-artifact', 'round_01',
+                '--min-raters', '2',
+            ], capture_output=True, text=True, cwd=REPO)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn('duplicate rater_id_hashed', proc.stderr)
+
     def test_compile_mixed_tie_votes_are_unresolved(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -636,6 +689,63 @@ class HumanAdjudicationPacketTests(unittest.TestCase):
             self.assertEqual(payload['workbook_count'], 1)
             self.assertEqual(payload['per_case']['case_demo']['complete_rater_count'], 1)
 
+    def test_batch_readiness_requires_workbook_ready_for_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            candidates = root / 'candidates.jsonl'
+            workbook = root / 'dup.md'
+            rows = [
+                {
+                    'case_id': 'case_demo_1',
+                    'preset_family': 'coding',
+                    'language_tag': 'en-US',
+                    'split': 'dev',
+                    'draft_prompt': 'Fix the sidebar drag behavior.',
+                    'candidate_a': 'Structured prompt A',
+                    'candidate_b': 'Vague prompt B',
+                },
+                {
+                    'case_id': 'case_demo_1',
+                    'preset_family': 'coding',
+                    'language_tag': 'en-US',
+                    'split': 'dev',
+                    'draft_prompt': 'Refine the product request prompt.',
+                    'candidate_a': 'Structured prompt C',
+                    'candidate_b': 'Vague prompt D',
+                },
+            ]
+            candidates.write_text(''.join(json.dumps(row) + '\n' for row in rows), encoding='utf-8')
+            build = subprocess.run(
+                [
+                    'python3',
+                    str(WORKBOOK_SCRIPT),
+                    '--candidates', str(candidates),
+                    '--workbook-out', str(workbook),
+                ],
+                capture_output=True,
+                text=True,
+                cwd=REPO,
+            )
+            self.assertEqual(build.returncode, 0, msg=build.stderr + '\n' + build.stdout)
+            text = workbook.read_text(encoding='utf-8')
+            text = text.replace('- [ ] A', '- [x] A', 2).replace('- [ ] High', '- [x] High', 2)
+            workbook.write_text(text, encoding='utf-8')
+            proc = subprocess.run(
+                [
+                    'python3',
+                    str(READINESS_SCRIPT),
+                    '--workbook', str(workbook),
+                    '--require-raters', '1',
+                ],
+                capture_output=True,
+                text=True,
+                cwd=REPO,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + '\n' + proc.stdout)
+            payload = json.loads(proc.stdout)
+            self.assertFalse(payload['workbooks'][0]['ready_for_parse'])
+            self.assertFalse(payload['ready_for_compile'])
+
     def test_deficit_planner_prioritizes_sealed_and_missing_language_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -753,6 +863,41 @@ class HumanAdjudicationPacketTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, msg=proc.stderr + '\n' + proc.stdout)
             selected_rows = [json.loads(line) for line in selected.read_text(encoding='utf-8').splitlines() if line.strip()]
             self.assertEqual([row['case_id'] for row in selected_rows], ['case_new'])
+
+    def test_deficit_planner_does_not_reselect_id_only_case(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            candidates = root / 'candidates.jsonl'
+            selected = root / 'selected.jsonl'
+            candidate_rows = [
+                {
+                    'id': 'case_from_id',
+                    'preset_family': 'coding',
+                    'language_tag': 'en-US',
+                    'split': 'sealed_test',
+                    'draft_prompt': 'A',
+                    'candidate_a': 'A1',
+                    'candidate_b': 'A2',
+                }
+            ]
+            candidates.write_text(''.join(json.dumps(row) + '\n' for row in candidate_rows), encoding='utf-8')
+            proc = subprocess.run(
+                [
+                    'python3',
+                    str(DEFICIT_PLANNER_SCRIPT),
+                    '--candidates', str(candidates),
+                    '--out-jsonl', str(selected),
+                    '--max-cases', '3',
+                ],
+                capture_output=True,
+                text=True,
+                cwd=REPO,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + '\n' + proc.stdout)
+            selected_rows = [json.loads(line) for line in selected.read_text(encoding='utf-8').splitlines() if line.strip()]
+            self.assertEqual(len(selected_rows), 1)
+            payload = json.loads(proc.stdout)
+            self.assertEqual(payload['selected_case_ids'], ['case_from_id'])
 
     def test_ai_assist_appendix_simulated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

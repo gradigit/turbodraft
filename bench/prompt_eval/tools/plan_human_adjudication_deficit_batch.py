@@ -104,7 +104,7 @@ def main() -> int:
     current_split_counts = Counter(split_counts)
     current_total_pairwise = total_pairwise
 
-    candidate_rows: list[dict[str, Any]] = []
+    candidate_entries: list[tuple[str, dict[str, Any], Any]] = []
     seen_case_ids: set[str] = set()
     for path in candidate_paths:
         for index, row in enumerate(load_jsonl(path), start=1):
@@ -114,15 +114,14 @@ def main() -> int:
             if case.case_id in seen_case_ids:
                 continue
             seen_case_ids.add(case.case_id)
-            candidate_rows.append(row)
+            candidate_entries.append((case.case_id, row, case))
 
     selected: list[dict[str, Any]] = []
     selected_case_ids: list[str] = []
-    remaining = list(candidate_rows)
+    remaining = list(candidate_entries)
     while remaining and len(selected) < args.max_cases:
-        scored: list[tuple[float, tuple[Any, ...], dict[str, Any], Any]] = []
-        for index, row in enumerate(remaining, start=1):
-            case = normalize_case(row, index)
+        scored: list[tuple[float, tuple[Any, ...], str, dict[str, Any], Any]] = []
+        for case_id, row, case in remaining:
             score, tie_break = candidate_score(
                 case=case,
                 family_counts=family_counts,
@@ -135,18 +134,18 @@ def main() -> int:
                 language_target=args.language_target,
                 max_family_share=args.max_family_share,
             )
-            scored.append((score, tie_break, row, case))
+            scored.append((score, tie_break, case_id, row, case))
         scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
-        score, _, row, case = scored[0]
+        score, _, case_id, row, case = scored[0]
         if score <= 0:
             break
         selected.append(row)
-        selected_case_ids.append(case.case_id)
+        selected_case_ids.append(case_id)
         family_counts[case.preset_family] += 1
         language_counts[case.language_tag] += 1
         split_counts[case.split] += 1
         total_pairwise += 1
-        remaining = [item for item in remaining if str(item.get("case_id") or "").strip() != case.case_id]
+        remaining = [item for item in remaining if item[0] != case_id]
 
     out_path = pathlib.Path(args.out_jsonl).resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
