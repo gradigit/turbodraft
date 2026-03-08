@@ -12,6 +12,7 @@ from typing import Any
 CASE_META_RE = re.compile(r"<!-- TD_CASE_META (.+?) -->")
 WINNER_OPTIONS = ("A", "B", "Tie", "BothBad")
 CONFIDENCE_OPTIONS = ("High", "Medium", "Low")
+DECISION_SECTION_MARKERS = ("### Blind decision", "### Guided blind decision")
 CONFIDENCE_TO_NUMERIC = {
     "High": (68.0, 32.0, 5),
     "Medium": (61.0, 39.0, 3),
@@ -22,6 +23,10 @@ CONFIDENCE_TO_NUMERIC = {
 def workbook_meta_integrity(meta: dict[str, Any]) -> str:
     payload = json.dumps(meta, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+def case_content_integrity(content: str) -> str:
+    return hashlib.sha256(content.lstrip("\n").encode("utf-8")).hexdigest()
 
 
 def iter_case_blocks(text: str) -> list[tuple[dict[str, Any], str]]:
@@ -38,19 +43,36 @@ def iter_case_blocks(text: str) -> list[tuple[dict[str, Any], str]]:
         check_meta.pop("integrity_sha256", None)
         if not integrity or integrity != workbook_meta_integrity(check_meta):
             raise RuntimeError("case metadata integrity check failed")
+        content_sha = str(meta.get("content_sha256") or "").strip()
+        if not content_sha:
+            raise RuntimeError("case metadata missing content_sha256")
+        content_block = case_content_before_decision(text[start:end])
+        if content_sha != case_content_integrity(content_block):
+            raise RuntimeError("case content integrity check failed")
         blocks.append((meta, text[start:end]))
     return blocks
 
 
+def decision_marker_start(block: str) -> int:
+    for marker in DECISION_SECTION_MARKERS:
+        start = block.find(marker)
+        if start != -1:
+            return start
+    raise RuntimeError("missing blind decision section")
+
+
+def case_content_before_decision(block: str) -> str:
+    start = decision_marker_start(block)
+    return block[:start]
+
+
 def blind_decision_section(block: str) -> str:
-    marker = "### Blind decision"
-    start = block.find(marker)
-    if start == -1:
-        raise RuntimeError("missing blind decision section")
+    start = decision_marker_start(block)
+    marker = next(marker for marker in DECISION_SECTION_MARKERS if block.find(marker) == start)
     return block[start + len(marker):]
 
 
-def parse_checked_option(block: str, label: str, options: tuple[str, ...]) -> str:
+def checked_options(block: str, label: str, options: tuple[str, ...]) -> list[str]:
     marker = f"{label}:"
     start = block.find(marker)
     if start == -1:
@@ -73,6 +95,11 @@ def parse_checked_option(block: str, label: str, options: tuple[str, ...]) -> st
         value = value.strip()
         if value in options and state.lower() == "x":
             checked.append(value)
+    return checked
+
+
+def parse_checked_option(block: str, label: str, options: tuple[str, ...]) -> str:
+    checked = checked_options(block, label, options)
     if len(checked) != 1:
         raise RuntimeError(f"{label} must have exactly one checked option")
     return checked[0]
@@ -119,11 +146,46 @@ def derive_scores(decision: str, confidence: str, display_map: dict[str, Any]) -
     raise RuntimeError("display_map must map checked winner to candidate_a or candidate_b")
 
 
+def validate_case_block(meta: dict[str, Any], block: str) -> dict[str, Any]:
+    case_id = str(meta.get("case_id") or "").strip()
+    result: dict[str, Any] = {
+        "case_id": case_id,
+        "preset_family": str(meta.get("preset_family") or "").strip(),
+        "language_tag": str(meta.get("language_tag") or "").strip(),
+        "split": str(meta.get("split") or "").strip(),
+        "winner_checked": [],
+        "confidence_checked": [],
+        "ready": False,
+        "errors": [],
+    }
+    try:
+        decision_block = blind_decision_section(block)
+    except RuntimeError as exc:
+        result["errors"].append(str(exc))
+        return result
+    try:
+        result["winner_checked"] = checked_options(decision_block, "Winner", WINNER_OPTIONS)
+    except RuntimeError as exc:
+        result["errors"].append(str(exc))
+    try:
+        result["confidence_checked"] = checked_options(decision_block, "Confidence", CONFIDENCE_OPTIONS)
+    except RuntimeError as exc:
+        result["errors"].append(str(exc))
+    if len(result["winner_checked"]) != 1:
+        result["errors"].append("Winner must have exactly one checked option")
+    if len(result["confidence_checked"]) != 1:
+        result["errors"].append("Confidence must have exactly one checked option")
+    result["ready"] = not result["errors"]
+    result["note"] = parse_note(decision_block)
+    return result
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Parse a filled markdown adjudication workbook into legacy-compatible answer CSV rows.")
     ap.add_argument("--workbook", required=True)
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--rater-id-hashed", required=True)
+    ap.add_argument("--out")
+    ap.add_argument("--rater-id-hashed")
+    ap.add_argument("--validate-only", action="store_true", help="Validate workbook completion and emit readiness JSON without writing CSV")
     args = ap.parse_args()
 
     workbook_path = pathlib.Path(args.workbook).resolve()
@@ -131,6 +193,31 @@ def main() -> int:
     blocks = iter_case_blocks(text)
     if not blocks:
         raise RuntimeError("no TD_CASE_META blocks found")
+
+    validations = [validate_case_block(meta, block) for meta, block in blocks]
+    if args.validate_only:
+        complete = sum(1 for item in validations if item["ready"])
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "mode": "validate_only",
+                    "workbook": str(workbook_path),
+                    "case_count": len(validations),
+                    "complete_case_count": complete,
+                    "ready_for_parse": complete == len(validations),
+                    "cases": validations,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if not args.out:
+        raise RuntimeError("--out is required unless --validate-only is used")
+    if not args.rater_id_hashed:
+        raise RuntimeError("--rater-id-hashed is required unless --validate-only is used")
 
     out_path = pathlib.Path(args.out).resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -140,6 +227,7 @@ def main() -> int:
         "language_tag",
         "split",
         "rater_id_hashed",
+        "decision_mode",
         "decision",
         "blind_decision_raw",
         "blind_confidence_label",
@@ -174,6 +262,7 @@ def main() -> int:
                     "language_tag": str(meta.get("language_tag") or "").strip(),
                     "split": str(meta.get("split") or "").strip(),
                     "rater_id_hashed": args.rater_id_hashed,
+                    "decision_mode": str(meta.get("lane") or "blind_gold").strip() or "blind_gold",
                     "decision": decision,
                     "blind_decision_raw": blind_winner,
                     "blind_confidence_label": blind_confidence,

@@ -1,0 +1,80 @@
+{
+  "batch3blind_en_001": {
+    "why_it_matters": "The human does not need to decide which prompt is 'more expert'; only which one is less likely to break the requested resize behavior.",
+    "checklist": [
+      "Does it clearly separate divider-drag behavior from true window-edge resizing?",
+      "Does it preserve normal border resize behavior?",
+      "Does it keep scope narrow instead of adding unrelated layout polish?"
+    ],
+    "disqualifiers": [
+      "Vague about which drag path resizes the window",
+      "Expands scope beyond the resize bug",
+      "Fails to require regression checks for divider vs border drags"
+    ]
+  },
+  "batch3blind_en_002": {
+    "why_it_matters": "The task is to diagnose CI failures with evidence, not to produce a generic review or speculative fix list.",
+    "checklist": [
+      "Does it ask for concrete blockers backed by evidence?",
+      "Does it avoid generic summary or speculative fixes?",
+      "Does it keep the task focused on diagnosis before proposing changes?"
+    ],
+    "disqualifiers": [
+      "Generic prose without evidence requirements",
+      "Speculative fixes before identifying blockers",
+      "Loses the 'concrete blockers only' requirement"
+    ]
+  },
+  "batch3blind_en_003": {
+    "why_it_matters": "A good prompt here should preserve open exploration and force the analysis to be testable rather than opinion-only.",
+    "checklist": [
+      "Does it compare family-only vs family-plus-profile instead of assuming one answer?",
+      "Does it include tradeoffs?",
+      "Does it require falsifiable experiments or a way to test the recommendation?"
+    ],
+    "disqualifiers": [
+      "Assumes a single architecture too early",
+      "Drops tradeoffs or experiments",
+      "Turns brainstorming into a one-sided recommendation"
+    ]
+  },
+  "batch3blind_ko_005": {
+    "why_it_matters": "The key question is which candidate better protects existing Escape behavior while only adding close behavior where Escape currently does nothing meaningful.",
+    "checklist": [
+      "기존 취소/포커스 해제/모달 종료 같은 Escape 의미를 유지하는가?",
+      "의미 없는 editor 문맥에서만 close를 연결하는가?",
+      "우선순위 충돌이나 포커스/모달 예외를 다루는가?"
+    ],
+    "disqualifiers": [
+      "Escape 전역 의미를 재정의함",
+      "기존 취소/포커스 해제 동작을 약화시킴",
+      "어떤 문맥에서 close가 허용되는지 불명확함"
+    ]
+  },
+  "batch3blind_ko_008": {
+    "why_it_matters": "The human only needs to check whether the prompt protects Korean-only final output while preserving the intended high-quality reasoning path.",
+    "checklist": [
+      "최종 사용자 가시 출력이 한국어만 나오도록 유지하는가?",
+      "품질 향상을 위한 내부 영어 중심 추론 경로를 허용하되, 그 결과를 노출하지 않는가?",
+      "실행 프롬프트로 바로 쓸 수 있는 형태를 유지하는가?"
+    ],
+    "disqualifiers": [
+      "최종 출력 언어가 섞이거나 불명확함",
+      "영어 내부 추론을 최종 출력에 노출함",
+      "다른 에이전트를 언급하거나 메타 지시가 섞임"
+    ]
+  },
+  "batch3blind_ko_009": {
+    "why_it_matters": "The winner should be the candidate that most safely turns the Korean draft into a stronger execution prompt without changing behavior or adding agent confusion.",
+    "checklist": [
+      "한국어 초안을 바로 실행 가능한 더 강한 프롬프트로 만든다는 목적을 유지하는가?",
+      "원래 의도와 제약을 바꾸지 않고 강화하는가?",
+      "결과 프롬프트가 한국어로 동작해야 한다는 요구를 분명히 지키는가?"
+    ],
+    "disqualifiers": [
+      "불필요한 범위 확장",
+      "메타 설명이나 다른 에이전트 언급",
+      "한국어 동작 요구를 약화시킴"
+    ]
+  }
+}

@@ -1,24 +1,36 @@
-# TurboDraft Human Adjudication Workbook — Batch3 Blindfresh EN R2
+# TurboDraft Guided Blind Core Workbook — Batch4 EN R2
 
 ## Instructions
-- Make your blind decision in this file directly.
-- Do not open any AI-assist appendix until the blind pass is finished.
+- This is the **guided blind core** lane for lock-grade human evidence.
+- Use the checklist as a reading aid, but make your own decision.
+- Do not open any AI-assisted workbook or appendix first.
 - Required per case: winner + confidence.
 - Optional per case: short note.
-- Candidate order is randomized per case; do not infer quality from position.
+- If both candidates seem acceptable, use the checklist to identify which one is less likely to fail the draft.
+- If you still genuinely cannot tell, choose `Tie` with `Low` confidence.
 
 ## Confidence rubric
-- **High** — clear winner; materially better on multiple important criteria.
-- **Medium** — likely winner; better overall, but there is a real tradeoff or ambiguity.
-- **Low** — close call; uncertain or difficult to distinguish.
+- **High** — one candidate clearly satisfies the draft better with fewer obvious risks.
+- **Medium** — likely winner, but there is a real tradeoff or ambiguity.
+- **Low** — still hard to distinguish from text alone.
 
-<!-- TD_CASE_META {"case_id": "batch3blind_en_001", "preset_family": "coding", "language_tag": "en-US", "split": "dev", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "11", "rater_label": "eta", "lane": "blind_gold", "content_sha256": "ad3ea246535b1a4151034f385087560711d4cb24e192acbff00492492d53daf7", "integrity_sha256": "d6f8de1d3c8d9c9852553f13735d64cd7449339528f0b8d5199861f63506ebe4"} -->
+<!-- TD_CASE_META {"case_id": "batch3blind_en_001", "preset_family": "coding", "language_tag": "en-US", "split": "dev", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "11", "rater_label": "eta", "lane": "guided_blind_core", "content_sha256": "5196bb1ace50c272bd98ca8bd3ebc0c3df910edce6a0f32bc051afd2f24165eb", "integrity_sha256": "fe34afaa98fc7cd0b5720b8857513562d61ddca8ba5ead2ea7bdddb3102a32f0"} -->
 ## Case 01
 
 ### Draft
 ```text
 Fix the TurboDraft sidebar resize bug so dragging the divider only changes sidebar width, while normal window-edge resizing still works.
 ```
+### Why this case matters
+> The human does not need to decide which prompt is 'more expert'; only which one is less likely to break the requested resize behavior.
+### Quick checklist
+- Does it clearly separate divider-drag behavior from true window-edge resizing?
+- Does it preserve normal border resize behavior?
+- Does it keep scope narrow instead of adding unrelated layout polish?
+### Disqualifiers to look for
+- Vague about which drag path resizes the window
+- Expands scope beyond the resize bug
+- Fails to require regression checks for divider vs border drags
 ### Candidate A
 ```text
 Goal / Objective
@@ -76,13 +88,23 @@ Confidence:
 Optional note:
 > 
 
-<!-- TD_CASE_META {"case_id": "batch3blind_en_002", "preset_family": "review", "language_tag": "en-US", "split": "sealed_test", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "11", "rater_label": "eta", "lane": "blind_gold", "content_sha256": "fc149a1813cf721004de30eec9f5db3dcf3d32321a05303f2f9b121495f58b92", "integrity_sha256": "fa9ca6122c9322b90223539960626b11b93c31e21182f22fd3630cb55ddb959e"} -->
+<!-- TD_CASE_META {"case_id": "batch3blind_en_002", "preset_family": "review", "language_tag": "en-US", "split": "sealed_test", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "11", "rater_label": "eta", "lane": "guided_blind_core", "content_sha256": "87955c82c8b81da6578642d59a31f0572213d014c48716e7d5c1a197c2d1ba66", "integrity_sha256": "2dde1e794006ee539dcd280c5bfe7ec41a99639c4fc749948fd38cc122a37ad5"} -->
 ## Case 02
 
 ### Draft
 ```text
 Review why TurboDraft CI is failing again and focus on concrete blockers with evidence, not generic summary or speculative fixes.
 ```
+### Why this case matters
+> The task is to diagnose CI failures with evidence, not to produce a generic review or speculative fix list.
+### Quick checklist
+- Does it ask for concrete blockers backed by evidence?
+- Does it avoid generic summary or speculative fixes?
+- Does it keep the task focused on diagnosis before proposing changes?
+### Disqualifiers to look for
+- Generic prose without evidence requirements
+- Speculative fixes before identifying blockers
+- Loses the 'concrete blockers only' requirement
 ### Candidate A
 ```text
 Goal / Framing
@@ -158,13 +180,23 @@ Confidence:
 Optional note:
 > 
 
-<!-- TD_CASE_META {"case_id": "batch3blind_en_003", "preset_family": "brainstorm", "language_tag": "en-US", "split": "tune", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "11", "rater_label": "eta", "lane": "blind_gold", "content_sha256": "542e867ebee60fb7b4ee0fde8cf5ca2bbf1fdab487123ea1738a0f250cf419c8", "integrity_sha256": "95ab31652c0ce09ea374511788ac42c9b06651c5d5048f371be162c0d4466012"} -->
+<!-- TD_CASE_META {"case_id": "batch3blind_en_003", "preset_family": "brainstorm", "language_tag": "en-US", "split": "tune", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "11", "rater_label": "eta", "lane": "guided_blind_core", "content_sha256": "571d48b83c36186da403e50cda8a012d2f61c09afdddb3b286df7532b0aa48eb", "integrity_sha256": "133399d558bfa91ad9ad76361eeaedd08c713a0f7ca7e0d2a260867514c10447"} -->
 ## Case 03
 
 ### Draft
 ```text
 Brainstorm whether presets should be split by family only or family plus profile, and make sure the analysis includes tradeoffs and falsifiable experiments.
 ```
+### Why this case matters
+> A good prompt here should preserve open exploration and force the analysis to be testable rather than opinion-only.
+### Quick checklist
+- Does it compare family-only vs family-plus-profile instead of assuming one answer?
+- Does it include tradeoffs?
+- Does it require falsifiable experiments or a way to test the recommendation?
+### Disqualifiers to look for
+- Assumes a single architecture too early
+- Drops tradeoffs or experiments
+- Turns brainstorming into a one-sided recommendation
 ### Candidate A
 ```text
 Goal / Framing
@@ -225,70 +257,6 @@ Evaluation Criteria
 - Options are distinct.
 - Tradeoffs are concrete.
 - Next steps are falsifiable.
-```
-### Blind decision
-Winner:
-- [ ] A
-- [ ] B
-- [ ] Tie
-- [ ] BothBad
-
-Confidence:
-- [ ] High
-- [ ] Medium
-- [ ] Low
-
-Optional note:
-> 
-
-<!-- TD_CASE_META {"case_id": "batch3blind_en_004", "preset_family": "legacy", "language_tag": "en-US", "split": "dev", "display_map": {"A": "candidate_b", "B": "candidate_a"}, "seed": "11", "rater_label": "eta", "lane": "blind_gold", "content_sha256": "ad7b5dffc301c83f0c4e021bf8f31b54694caea1b952813ce7c080e9b774e7f8", "integrity_sha256": "a797c6bb20c7b239574a1a930048d09cb754b1fe31fc51a4abf0da46801979de"} -->
-## Case 04
-
-### Draft
-```text
-Modernize the legacy preset language without changing its intended behavior or removing its protective guardrails.
-```
-### Candidate A
-```text
-Goal / Objective
-Modernize the legacy preset language while preserving its intended behavior, boundary conditions, and protective guardrails.
-
-Scope and Constraints
-- Preserve behavioral intent and guardrails.
-- Improve clarity and terminology only when meaning is unchanged.
-- Flag potentially obsolete guardrails separately instead of rewriting behavior around them.
-
-Implementation Steps
-1. Identify outdated wording and ambiguous terminology.
-2. Rewrite for clarity while preserving guardrail semantics.
-3. Separate possible cleanup opportunities from the main modernization pass.
-4. Add a semantic review step that checks for drift.
-
-Validation / Acceptance Checks
-- Behavioral intent is preserved.
-- Guardrails remain intact.
-- Modernization improves readability without changing boundaries.
-```
-### Candidate B
-```text
-Goal / Objective
-Modernize the legacy preset language while preserving its intended behavior and protective guardrails.
-
-Scope and Constraints
-- Preserve behavioral intent and guardrails.
-- Improve clarity, terminology, and redundancy only when meaning stays unchanged.
-- Surface any potentially obsolete guardrail as a flagged follow-up rather than treating it as an in-scope rewrite decision.
-
-Implementation Steps
-1. Identify outdated wording, duplicated phrasing, and ambiguous terminology.
-2. Rewrite for clarity while preserving guardrail semantics.
-3. Separate modernization edits from flagged follow-up questions about possible cleanup.
-4. Add a semantic review or diff check that looks for boundary drift.
-
-Validation / Acceptance Checks
-- Behavioral intent is preserved.
-- Guardrails remain intact unless explicitly approved otherwise.
-- Readability improves without narrowing or broadening protections.
 ```
 ### Blind decision
 Winner:

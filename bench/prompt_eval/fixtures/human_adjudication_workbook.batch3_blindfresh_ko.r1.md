@@ -1,4 +1,4 @@
-# TurboDraft Human Adjudication Workbook — Batch 3 KO R1
+# TurboDraft Human Adjudication Workbook — Batch3 Blindfresh KO R1
 
 ## Instructions
 - Make your blind decision in this file directly.
@@ -12,7 +12,7 @@
 - **Medium** — likely winner; better overall, but there is a real tradeoff or ambiguity.
 - **Low** — close call; uncertain or difficult to distinguish.
 
-<!-- TD_CASE_META {"case_id": "batch3blind_ko_005", "preset_family": "coding", "language_tag": "ko-KR", "split": "tune", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "1", "rater_label": "beta", "integrity_sha256": "fbe2e3c8dc1df244c697fce96aa79551f9f8612c7f1f4230fd4912ebe1f5ee20"} -->
+<!-- TD_CASE_META {"case_id": "batch3blind_ko_005", "preset_family": "coding", "language_tag": "ko-KR", "split": "tune", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "7", "rater_label": "gamma", "lane": "blind_gold", "content_sha256": "62af63caa91f619d29c0b7067c8dc9db35f4d75274ee9195314f99b133fe718b", "integrity_sha256": "7ee2e7125e721dc991e063369caea578fc5ba02e01e40faadb702549fd9bf3a1"} -->
 ## Case 01
 
 ### Draft
@@ -76,7 +76,7 @@ Confidence:
 Optional note:
 > 
 
-<!-- TD_CASE_META {"case_id": "batch3blind_ko_006", "preset_family": "review", "language_tag": "ko-KR", "split": "tune", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "1", "rater_label": "beta", "integrity_sha256": "ae053761d8a3799b558c71234330b737afbfca9699e2d0c3171df085fe1b2f1f"} -->
+<!-- TD_CASE_META {"case_id": "batch3blind_ko_006", "preset_family": "review", "language_tag": "ko-KR", "split": "tune", "display_map": {"A": "candidate_b", "B": "candidate_a"}, "seed": "7", "rater_label": "gamma", "lane": "blind_gold", "content_sha256": "457c5392495e83a7f4a55ae370805b271dd7b1f459a8aaa17f5a824a3269690a", "integrity_sha256": "4d9b5f0fde32e37816ce66f04f921cece031a8136033871ed0c0fba5580e866a"} -->
 ## Case 02
 
 ### Draft
@@ -84,36 +84,6 @@ Optional note:
 기존 프리셋 프롬프트들을 감사해서 실제 문제점과 누락을 짚어줘. 형식만 맞는지 보는 피상적인 리뷰는 원하지 않아.
 ```
 ### Candidate A
-```text
-Goal / Framing
-기존 프리셋 프롬프트들을 감사해서 실제 문제점, 누락된 제약, 실사용상 혼동 지점을 구체적으로 식별한다.
-
-Assumptions / Constraints
-- 형식 준수 여부만 보는 피상적 리뷰는 피한다.
-- 실제 사용 시 오작동할 수 있는 부분을 우선한다.
-- 증거가 약하면 단정하지 않고 불확실성을 표시한다.
-
-Open Questions
-- 어떤 프리셋이 실사용 제약을 충분히 보존하지 못하는가?
-- 구조는 맞아도 의미적으로 약한 지점은 어디인가?
-- 사용자/모델 혼동을 일으킬 표현은 무엇인가?
-
-Option Space / Tradeoffs
-- 최소 수정으로 보완.
-- 더 큰 구조 수정으로 혼동 감소.
-- 문서/UX 보완.
-
-Recommended Next Steps
-- 프리셋별 실제 실패 모드를 적는다.
-- 형식이 맞아도 의미가 약한 사례를 분리한다.
-- 수정 우선순위를 위험 기준으로 정리한다.
-
-Evaluation Criteria
-- 실제 실패 가능성을 짚는다.
-- 누락/혼동 지점이 구체적이다.
-- 피상적 형식 점검으로 끝나지 않는다.
-```
-### Candidate B
 ```text
 Goal / Framing
 기존 프리셋 프롬프트들을 감사해서 실제 문제점, 누락된 제약, 그리고 형식이 맞아도 실사용에서 약한 지점을 구체적으로 식별한다.
@@ -143,6 +113,36 @@ Evaluation Criteria
 - 누락/혼동 지점이 구체적이다.
 - 피상적 형식 점검으로 끝나지 않는다.
 ```
+### Candidate B
+```text
+Goal / Framing
+기존 프리셋 프롬프트들을 감사해서 실제 문제점, 누락된 제약, 실사용상 혼동 지점을 구체적으로 식별한다.
+
+Assumptions / Constraints
+- 형식 준수 여부만 보는 피상적 리뷰는 피한다.
+- 실제 사용 시 오작동할 수 있는 부분을 우선한다.
+- 증거가 약하면 단정하지 않고 불확실성을 표시한다.
+
+Open Questions
+- 어떤 프리셋이 실사용 제약을 충분히 보존하지 못하는가?
+- 구조는 맞아도 의미적으로 약한 지점은 어디인가?
+- 사용자/모델 혼동을 일으킬 표현은 무엇인가?
+
+Option Space / Tradeoffs
+- 최소 수정으로 보완.
+- 더 큰 구조 수정으로 혼동 감소.
+- 문서/UX 보완.
+
+Recommended Next Steps
+- 프리셋별 실제 실패 모드를 적는다.
+- 형식이 맞아도 의미가 약한 사례를 분리한다.
+- 수정 우선순위를 위험 기준으로 정리한다.
+
+Evaluation Criteria
+- 실제 실패 가능성을 짚는다.
+- 누락/혼동 지점이 구체적이다.
+- 피상적 형식 점검으로 끝나지 않는다.
+```
 ### Blind decision
 Winner:
 - [ ] A
@@ -158,7 +158,7 @@ Confidence:
 Optional note:
 > 
 
-<!-- TD_CASE_META {"case_id": "batch3blind_ko_007", "preset_family": "research", "language_tag": "ko-KR", "split": "sealed_test", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "1", "rater_label": "beta", "integrity_sha256": "c3d0e4f7750e00822fedd3d404ddbd8f7395e0793c6159e4070706db35cbed99"} -->
+<!-- TD_CASE_META {"case_id": "batch3blind_ko_007", "preset_family": "research", "language_tag": "ko-KR", "split": "sealed_test", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "7", "rater_label": "gamma", "lane": "blind_gold", "content_sha256": "12d7d551cf0469d037237f9e947eefd143cdf499525f736dde0daa10ff699ea3", "integrity_sha256": "d700c74ebb0dd3565e1177c7403515ca3e1c86e0c729322af59ae3858dabcfef"} -->
 ## Case 03
 
 ### Draft
@@ -240,7 +240,7 @@ Confidence:
 Optional note:
 > 
 
-<!-- TD_CASE_META {"case_id": "batch3blind_ko_008", "preset_family": "pivot_kr_en_reason_ko", "language_tag": "ko-KR", "split": "tune", "display_map": {"A": "candidate_b", "B": "candidate_a"}, "seed": "1", "rater_label": "beta", "integrity_sha256": "372738c5a451e4fc607d403ca285d61cd877a118e46df88637bd1250d4be96fe"} -->
+<!-- TD_CASE_META {"case_id": "batch3blind_ko_008", "preset_family": "pivot_kr_en_reason_ko", "language_tag": "ko-KR", "split": "tune", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "7", "rater_label": "gamma", "lane": "blind_gold", "content_sha256": "12a0b3cd7c7da3e4f92c93d7f03f5a2a8cad786602612b854f0b8625ca11712d", "integrity_sha256": "bb15414b267cb3d487461499799d85cb2258a2403677e2f39aba4396c28cfdc1"} -->
 ## Case 04
 
 ### Draft
@@ -249,20 +249,20 @@ Optional note:
 ```
 ### Candidate A
 ```text
-Refine the request into a prompt that maximizes task quality while ensuring the final user-visible output is Korean only.
-- Preserve all user constraints and uncertainty.
-- Optimize for high-quality task execution rather than Korean surface polish alone.
-- Keep the prompt directly usable by the downstream model.
-- Do not instruct the final output to reveal intermediate reasoning.
-- Output only the final refined prompt text.
-```
-### Candidate B
-```text
 Refine the request into a prompt that maximizes task quality while ensuring the final user-visible output remains Korean only.
 - Preserve all user constraints and uncertainty.
 - Emphasize execution quality over Korean surface polish alone.
 - Keep the prompt directly usable by the downstream model.
 - Do not expose intermediate reasoning, but allow the model to internally organize the task in the way that best preserves quality.
+- Output only the final refined prompt text.
+```
+### Candidate B
+```text
+Refine the request into a prompt that maximizes task quality while ensuring the final user-visible output is Korean only.
+- Preserve all user constraints and uncertainty.
+- Optimize for high-quality task execution rather than Korean surface polish alone.
+- Keep the prompt directly usable by the downstream model.
+- Do not instruct the final output to reveal intermediate reasoning.
 - Output only the final refined prompt text.
 ```
 ### Blind decision
@@ -280,7 +280,7 @@ Confidence:
 Optional note:
 > 
 
-<!-- TD_CASE_META {"case_id": "batch3blind_ko_009", "preset_family": "pivot_kr_en_optimize_ko", "language_tag": "ko-KR", "split": "sealed_test", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "1", "rater_label": "beta", "integrity_sha256": "1f79bb43f1a58c0ff6d543808f59a646c1ad460e3b48291e0dd2b214f5756f20"} -->
+<!-- TD_CASE_META {"case_id": "batch3blind_ko_009", "preset_family": "pivot_kr_en_optimize_ko", "language_tag": "ko-KR", "split": "sealed_test", "display_map": {"A": "candidate_b", "B": "candidate_a"}, "seed": "7", "rater_label": "gamma", "lane": "blind_gold", "content_sha256": "d776c77753044dae4dc5c1e7263fdf281bb581a3d374faa070d7be4d64ff520a", "integrity_sha256": "e8e5a82ecf5c4017eb211011eed5f2c071000957970f9d013fb8e4df50d3d46b"} -->
 ## Case 05
 
 ### Draft
@@ -293,8 +293,8 @@ Optional note:
 - 원래 목표, 제약, 불확실성을 보존한다.
 - 구조를 명확하게 만들되 불필요한 범위 확장은 하지 않는다.
 - 최종 프롬프트는 한국어로 직접 사용 가능해야 한다.
-- 정말 필요한 경우에만 누락 정보 요청을 별도 섹션으로 분리하고, 그 외에는 바로 실행 가능한 형태를 유지한다.
 - 출력은 최종 정제 프롬프트 본문만 제공한다.
+- 부족한 정보가 정말 필수일 때만 추가 질문 항목을 분리한다.
 ```
 ### Candidate B
 ```text
@@ -302,8 +302,8 @@ Optional note:
 - 원래 목표, 제약, 불확실성을 보존한다.
 - 구조를 명확하게 만들되 불필요한 범위 확장은 하지 않는다.
 - 최종 프롬프트는 한국어로 직접 사용 가능해야 한다.
+- 정말 필요한 경우에만 누락 정보 요청을 별도 섹션으로 분리하고, 그 외에는 바로 실행 가능한 형태를 유지한다.
 - 출력은 최종 정제 프롬프트 본문만 제공한다.
-- 부족한 정보가 정말 필수일 때만 추가 질문 항목을 분리한다.
 ```
 ### Blind decision
 Winner:

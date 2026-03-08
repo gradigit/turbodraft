@@ -1,4 +1,4 @@
-# TurboDraft Human Adjudication Workbook — Batch 3 KO R2
+# TurboDraft Human Adjudication Workbook — Batch3 Blindfresh KO R2
 
 ## Instructions
 - Make your blind decision in this file directly.
@@ -12,7 +12,7 @@
 - **Medium** — likely winner; better overall, but there is a real tradeoff or ambiguity.
 - **Low** — close call; uncertain or difficult to distinguish.
 
-<!-- TD_CASE_META {"case_id": "batch3blind_ko_005", "preset_family": "coding", "language_tag": "ko-KR", "split": "tune", "display_map": {"A": "candidate_b", "B": "candidate_a"}, "seed": "1", "rater_label": "delta", "integrity_sha256": "7e7f5925ae0664342c2250b99a9a6e307a96848f31185e80bf819bd61864cfe9"} -->
+<!-- TD_CASE_META {"case_id": "batch3blind_ko_005", "preset_family": "coding", "language_tag": "ko-KR", "split": "tune", "display_map": {"A": "candidate_b", "B": "candidate_a"}, "seed": "11", "rater_label": "eta", "lane": "blind_gold", "content_sha256": "a78c131aad2c25de109b8a511b31267eef794dbdfa916ff024d0042929f9b7f7", "integrity_sha256": "764a66c51548d9ddedcc2161bdd30c804f5d9162c609eaab73d42255a7fe9595"} -->
 ## Case 01
 
 ### Draft
@@ -76,7 +76,7 @@ Confidence:
 Optional note:
 > 
 
-<!-- TD_CASE_META {"case_id": "batch3blind_ko_006", "preset_family": "review", "language_tag": "ko-KR", "split": "tune", "display_map": {"A": "candidate_b", "B": "candidate_a"}, "seed": "1", "rater_label": "delta", "integrity_sha256": "da66cd94defaa2ec02b22ffaebd1e3709df5e326fb0e972378d4ca6ff65c0d33"} -->
+<!-- TD_CASE_META {"case_id": "batch3blind_ko_006", "preset_family": "review", "language_tag": "ko-KR", "split": "tune", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "11", "rater_label": "eta", "lane": "blind_gold", "content_sha256": "f85b5734443033b0297b3acf39622676a242fab243d0fe3f39bf93aacff3b59a", "integrity_sha256": "7297874d1bf76013073ad0c989e26baeadb3ea82f686c08c3f400296171274c9"} -->
 ## Case 02
 
 ### Draft
@@ -84,36 +84,6 @@ Optional note:
 기존 프리셋 프롬프트들을 감사해서 실제 문제점과 누락을 짚어줘. 형식만 맞는지 보는 피상적인 리뷰는 원하지 않아.
 ```
 ### Candidate A
-```text
-Goal / Framing
-기존 프리셋 프롬프트들을 감사해서 실제 문제점, 누락된 제약, 그리고 형식이 맞아도 실사용에서 약한 지점을 구체적으로 식별한다.
-
-Assumptions / Constraints
-- 형식 준수 여부만 보는 피상적 리뷰는 피한다.
-- 실제 사용 시 오작동하거나 오해를 부를 수 있는 부분을 우선한다.
-- 증거가 약하면 단정하지 않고 불확실성을 표시한다.
-
-Open Questions
-- 어떤 프리셋이 실사용 제약을 충분히 보존하지 못하는가?
-- 형식은 맞아도 의미적으로 약한 지점은 어디인가?
-- 사용자/모델 혼동을 일으키는 표현은 무엇인가?
-
-Option Space / Tradeoffs
-- 최소 수정으로 보완.
-- 더 큰 구조 수정으로 혼동 감소.
-- 문서/UX 보완으로 리스크 완화.
-
-Recommended Next Steps
-- 프리셋별 실제 실패 모드를 적는다.
-- 형식이 맞아도 의미가 약한 사례를 분리한다.
-- 수정 우선순위를 실사용 위험 기준으로 정리한다.
-
-Evaluation Criteria
-- 실제 실패 가능성을 짚는다.
-- 누락/혼동 지점이 구체적이다.
-- 피상적 형식 점검으로 끝나지 않는다.
-```
-### Candidate B
 ```text
 Goal / Framing
 기존 프리셋 프롬프트들을 감사해서 실제 문제점, 누락된 제약, 실사용상 혼동 지점을 구체적으로 식별한다.
@@ -143,6 +113,36 @@ Evaluation Criteria
 - 누락/혼동 지점이 구체적이다.
 - 피상적 형식 점검으로 끝나지 않는다.
 ```
+### Candidate B
+```text
+Goal / Framing
+기존 프리셋 프롬프트들을 감사해서 실제 문제점, 누락된 제약, 그리고 형식이 맞아도 실사용에서 약한 지점을 구체적으로 식별한다.
+
+Assumptions / Constraints
+- 형식 준수 여부만 보는 피상적 리뷰는 피한다.
+- 실제 사용 시 오작동하거나 오해를 부를 수 있는 부분을 우선한다.
+- 증거가 약하면 단정하지 않고 불확실성을 표시한다.
+
+Open Questions
+- 어떤 프리셋이 실사용 제약을 충분히 보존하지 못하는가?
+- 형식은 맞아도 의미적으로 약한 지점은 어디인가?
+- 사용자/모델 혼동을 일으키는 표현은 무엇인가?
+
+Option Space / Tradeoffs
+- 최소 수정으로 보완.
+- 더 큰 구조 수정으로 혼동 감소.
+- 문서/UX 보완으로 리스크 완화.
+
+Recommended Next Steps
+- 프리셋별 실제 실패 모드를 적는다.
+- 형식이 맞아도 의미가 약한 사례를 분리한다.
+- 수정 우선순위를 실사용 위험 기준으로 정리한다.
+
+Evaluation Criteria
+- 실제 실패 가능성을 짚는다.
+- 누락/혼동 지점이 구체적이다.
+- 피상적 형식 점검으로 끝나지 않는다.
+```
 ### Blind decision
 Winner:
 - [ ] A
@@ -158,7 +158,7 @@ Confidence:
 Optional note:
 > 
 
-<!-- TD_CASE_META {"case_id": "batch3blind_ko_007", "preset_family": "research", "language_tag": "ko-KR", "split": "sealed_test", "display_map": {"A": "candidate_b", "B": "candidate_a"}, "seed": "1", "rater_label": "delta", "integrity_sha256": "fe797f59814803d1a1fba342ebccc1d673ec05a63f0e7b26ee0b0d277d737bbc"} -->
+<!-- TD_CASE_META {"case_id": "batch3blind_ko_007", "preset_family": "research", "language_tag": "ko-KR", "split": "sealed_test", "display_map": {"A": "candidate_b", "B": "candidate_a"}, "seed": "11", "rater_label": "eta", "lane": "blind_gold", "content_sha256": "59ae59927748f1b3dc4d4a0b5f8fe055302b8c547c1ad21063dbe3b08767abed", "integrity_sha256": "8d7470b00d56bfb4be3c81a5248ab2322edd5aa2a8c34fd85c769f9c026c16a0"} -->
 ## Case 03
 
 ### Draft
@@ -240,7 +240,7 @@ Confidence:
 Optional note:
 > 
 
-<!-- TD_CASE_META {"case_id": "batch3blind_ko_008", "preset_family": "pivot_kr_en_reason_ko", "language_tag": "ko-KR", "split": "tune", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "1", "rater_label": "delta", "integrity_sha256": "55119661cb62425a63bcfe4803559b2c22f25660e296cd57fdc5adba9d43f73c"} -->
+<!-- TD_CASE_META {"case_id": "batch3blind_ko_008", "preset_family": "pivot_kr_en_reason_ko", "language_tag": "ko-KR", "split": "tune", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "11", "rater_label": "eta", "lane": "blind_gold", "content_sha256": "12a0b3cd7c7da3e4f92c93d7f03f5a2a8cad786602612b854f0b8625ca11712d", "integrity_sha256": "a8e7ec0c5ebcaac9b0801249fc155039223eca6509598d2778f932c45ecc8401"} -->
 ## Case 04
 
 ### Draft
@@ -280,7 +280,7 @@ Confidence:
 Optional note:
 > 
 
-<!-- TD_CASE_META {"case_id": "batch3blind_ko_009", "preset_family": "pivot_kr_en_optimize_ko", "language_tag": "ko-KR", "split": "sealed_test", "display_map": {"A": "candidate_b", "B": "candidate_a"}, "seed": "1", "rater_label": "delta", "integrity_sha256": "4df09cb2979592ef41ea7a4fa6dd9346d3fccc9dab52f51a634a26f0164b1756"} -->
+<!-- TD_CASE_META {"case_id": "batch3blind_ko_009", "preset_family": "pivot_kr_en_optimize_ko", "language_tag": "ko-KR", "split": "sealed_test", "display_map": {"A": "candidate_a", "B": "candidate_b"}, "seed": "11", "rater_label": "eta", "lane": "blind_gold", "content_sha256": "b77013e3e9eb3ddd63f83ae0f34fb875ae260b1281cdf72d4b4248e93620e75f", "integrity_sha256": "2b13e5e116c31125592ab90afb2b7dd2e1a7bb4ad0ca1ebf7c95a05eb6a022fa"} -->
 ## Case 05
 
 ### Draft
@@ -293,8 +293,8 @@ Optional note:
 - 원래 목표, 제약, 불확실성을 보존한다.
 - 구조를 명확하게 만들되 불필요한 범위 확장은 하지 않는다.
 - 최종 프롬프트는 한국어로 직접 사용 가능해야 한다.
+- 정말 필요한 경우에만 누락 정보 요청을 별도 섹션으로 분리하고, 그 외에는 바로 실행 가능한 형태를 유지한다.
 - 출력은 최종 정제 프롬프트 본문만 제공한다.
-- 부족한 정보가 정말 필수일 때만 추가 질문 항목을 분리한다.
 ```
 ### Candidate B
 ```text
@@ -302,8 +302,8 @@ Optional note:
 - 원래 목표, 제약, 불확실성을 보존한다.
 - 구조를 명확하게 만들되 불필요한 범위 확장은 하지 않는다.
 - 최종 프롬프트는 한국어로 직접 사용 가능해야 한다.
-- 정말 필요한 경우에만 누락 정보 요청을 별도 섹션으로 분리하고, 그 외에는 바로 실행 가능한 형태를 유지한다.
 - 출력은 최종 정제 프롬프트 본문만 제공한다.
+- 부족한 정보가 정말 필수일 때만 추가 질문 항목을 분리한다.
 ```
 ### Blind decision
 Winner:

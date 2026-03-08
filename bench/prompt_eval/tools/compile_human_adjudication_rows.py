@@ -9,6 +9,7 @@ from statistics import mean
 from typing import Any
 from build_human_adjudication_packet import load_jsonl, normalize_case
 VALID_DECISIONS = {"A", "B", "Tie", "BothBad"}
+LOCK_GRADE_LANES = {"blind_gold", "guided_blind_core"}
 
 
 def parse_tags(value: str) -> list[str]:
@@ -44,7 +45,7 @@ def resolve_winner(decisions: list[str]) -> str | None:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Compile human answer-sheet rows into canonical gold/perturbation/pairwise JSONL rows.")
     ap.add_argument("--candidates", required=True)
-    ap.add_argument("--answers", required=True)
+    ap.add_argument("--answers", action="append", required=True, help="Parsed answer CSV. May be repeated for multiple raters/workbooks.")
     ap.add_argument("--out", required=True)
     ap.add_argument("--provenance-source", required=True)
     ap.add_argument("--provenance-artifact", required=True)
@@ -53,7 +54,10 @@ def main() -> int:
     args = ap.parse_args()
     candidate_rows = load_jsonl(pathlib.Path(args.candidates).resolve())
     cases = {c.case_id: c for c in (normalize_case(row, i + 1) for i, row in enumerate(candidate_rows))}
-    answers = load_answers(pathlib.Path(args.answers).resolve())
+    answer_paths = [pathlib.Path(item).resolve() for item in args.answers]
+    answers: list[dict[str, str]] = []
+    for path in answer_paths:
+        answers.extend(load_answers(path))
     grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in answers:
         grouped[str(row.get("case_id") or "").strip()].append(row)
@@ -92,6 +96,8 @@ def main() -> int:
             tags_a.update(parse_tags(str(row.get("defect_tags_a") or "")))
             tags_b.update(parse_tags(str(row.get("defect_tags_b") or "")))
             lane = str(row.get("decision_mode") or "blind_gold").strip() or "blind_gold"
+            if lane not in LOCK_GRADE_LANES | {"assisted_expansion"}:
+                raise RuntimeError(f"{case_id}: unsupported decision_mode {lane!r}")
             lane_values.add(lane)
             blind_vote_details.append(
                 {
@@ -120,7 +126,7 @@ def main() -> int:
             "consensus_method": "majority_no_tie",
             "blind_vote_details": blind_vote_details,
             "adjudication_lane": adjudication_lane,
-            "lock_eligible": adjudication_lane == "blind_gold",
+            "lock_eligible": adjudication_lane in LOCK_GRADE_LANES,
         }
         gold_id = f"{case_id}__gold"
         perturb_id = f"{case_id}__perturbation"
@@ -207,6 +213,7 @@ def main() -> int:
     print(json.dumps({
         "ok": True,
         "out": str(out_path),
+        "answer_sources": [str(path) for path in answer_paths],
         "case_count": len(cases),
         "compiled_case_count": len(out_rows) // 3,
         "unresolved_cases": unresolved,

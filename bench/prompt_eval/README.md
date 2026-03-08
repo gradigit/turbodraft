@@ -42,7 +42,10 @@ Simulated artifacts are **explicitly non-promotable** in phase G.
 - `tools/build_human_adjudication_packet.py` — renders markdown review packets + CSV answer sheets from candidate prompt pairs.
 - `tools/compile_human_adjudication_rows.py` — compiles completed answer sheets into canonical `gold` / `perturbation` / `pairwise` JSONL rows for import.
 - `tools/build_human_adjudication_workbook.py` — renders blinded markdown workbooks for direct human editing (`winner + confidence + optional note`).
+- `tools/build_human_adjudication_guided_workbook.py` — renders a guided blind-core workbook with checklist/disqualifier aids while preserving lock-grade blind semantics.
 - `tools/parse_human_adjudication_workbook.py` — parses filled workbooks into legacy-compatible answer rows using a confidence-to-score compatibility mapping.
+- `tools/check_human_adjudication_batch_readiness.py` — aggregates workbook completion/readiness across raters before compile.
+- `tools/plan_human_adjudication_deficit_batch.py` — plans the next blind candidate pack using frozen lock-floor deficits only (metadata-only; no label contamination).
 - `tools/build_human_adjudication_assisted_workbook.py` — renders an AI-assisted expansion-lane workbook from a blind workbook + AI assist JSONL.
 - `tools/parse_human_adjudication_assisted_workbook.py` — parses AI-assisted expansion workbooks into compatibility answer rows while preserving assist metadata.
 - `tools/materialize_blind_adjudication_candidates.py` — strips internal winner/source metadata, mints fresh blind case IDs, and writes a separate internal mapping file.
@@ -133,12 +136,14 @@ The current real-primary workflow is:
 1. curate candidate prompt pairs into an **internal** JSONL,
 2. materialize a **fresh blind** candidate JSONL with `tools/materialize_blind_adjudication_candidates.py`,
 3. render a **blinded** markdown workbook with `tools/build_human_adjudication_workbook.py`,
+   - or a **guided blind-core** workbook with `tools/build_human_adjudication_guided_workbook.py` when non-expert raters need checklist/disqualifier aids,
 4. collect at least 2 independent blind human workbooks,
-5. parse those workbooks into compatibility answer rows with `tools/parse_human_adjudication_workbook.py`,
-6. compile those rows into canonical `gold` / `perturbation` / `pairwise` rows with `tools/compile_human_adjudication_rows.py`,
-7. import via the human-adjudicated importer,
-8. only after blind submission, optionally generate a **post-blind** AI appendix with `tools/generate_human_adjudication_ai_assist.py`,
-9. run integrity checks, then Arm J / Arm O strict.
+5. optionally run `tools/parse_human_adjudication_workbook.py --validate-only` and/or `tools/check_human_adjudication_batch_readiness.py` before compile,
+6. parse those workbooks into compatibility answer rows with `tools/parse_human_adjudication_workbook.py`,
+7. compile those rows into canonical `gold` / `perturbation` / `pairwise` rows with `tools/compile_human_adjudication_rows.py` (`--answers` may be repeated for multiple raters),
+8. import via the human-adjudicated importer,
+9. only after blind submission, optionally generate a **post-blind** AI appendix with `tools/generate_human_adjudication_ai_assist.py`,
+10. run integrity checks, then Arm J / Arm O strict.
 
 Reviewer-facing artifacts should stay blinded by default:
 - no source IDs,
@@ -169,6 +174,7 @@ so downstream analysis can distinguish blind gold evidence from assisted-expansi
 
 `batch1` is a workflow-validation + evidence-accumulation tranche, **not** a lock-sufficient tranche by itself.
 `batch2_closecall` is now treated as an internal/exposed design tranche, **not** the active blind batch.
+`batch4_guidedcore` is the current lower-friction blind-core tranche for non-expert human raters.
 
 ## Judge-quality dataset workflow (M1)
 

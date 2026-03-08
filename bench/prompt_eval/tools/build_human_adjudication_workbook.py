@@ -21,6 +21,10 @@ def workbook_meta_integrity(meta: dict[str, Any]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def case_content_integrity(content: str) -> str:
+    return hashlib.sha256(content.lstrip("\n").encode("utf-8")).hexdigest()
+
+
 def render_workbook(
     *,
     title: str,
@@ -55,17 +59,22 @@ def render_workbook(
             "display_map": display_map,
             "seed": seed,
             "rater_label": rater_label,
+            "lane": "blind_gold",
         }
+        case_body = (
+            f"## Case {index:02d}\n\n"
+            "### Draft\n"
+            f"```text\n{case.draft_prompt}\n```\n"
+            "### Candidate A\n"
+            f"```text\n{display_a}\n```\n"
+            "### Candidate B\n"
+            f"```text\n{display_b}\n```\n"
+        )
+        meta["content_sha256"] = case_content_integrity(case_body)
         meta["integrity_sha256"] = workbook_meta_integrity(meta)
         parts.append("\n")
         parts.append(f"<!-- TD_CASE_META {json.dumps(meta, ensure_ascii=False)} -->\n")
-        parts.append(f"## Case {index:02d}\n\n")
-        parts.append("### Draft\n")
-        parts.append(f"```text\n{case.draft_prompt}\n```\n")
-        parts.append("### Candidate A\n")
-        parts.append(f"```text\n{display_a}\n```\n")
-        parts.append("### Candidate B\n")
-        parts.append(f"```text\n{display_b}\n```\n")
+        parts.append(case_body)
         parts.append("### Blind decision\n")
         parts.append("Winner:\n")
         parts.append("- [ ] A\n")

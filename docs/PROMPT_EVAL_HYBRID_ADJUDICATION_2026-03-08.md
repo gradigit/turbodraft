@@ -31,7 +31,12 @@ Properties:
 
 Tools:
 - `build_human_adjudication_workbook.py`
+- `build_human_adjudication_guided_workbook.py`
 - `parse_human_adjudication_workbook.py`
+
+Recommended variant for non-expert raters:
+- use the **guided blind-core** workbook when the case is still lock-grade eligible but humans need checklist/disqualifier aids.
+- preserve the same blind-first rule and the same parse/compile/import path.
 
 Metadata expectation:
 - `review_metadata.adjudication_lane = blind_gold`
