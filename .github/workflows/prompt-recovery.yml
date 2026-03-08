@@ -1,0 +1,32 @@
+name: prompt-recovery
+
+on:
+  workflow_dispatch:
+
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Recovery diagnostics
+        run: |
+          python3 bench/prompt_eval/tools/validate_gate_manifest.py
+          python3 bench/prompt_eval/tools/check_dataset_integrity.py
+          echo "Recovery mode scaffolding validated."
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prompt-recovery-artifacts
+          path: |
+            bench/prompt_eval/config/**
+            bench/prompt_eval/datasets/**

@@ -1,0 +1,4 @@
+case_id,preset_family,language_tag,split,rater_id_hashed,decision,quality_a_0_100,quality_b_0_100,confidence_1_5,defect_tags_a,defect_tags_b,notes
+sample_coding_sidebar,coding,en-US,dev,,,,,,,,
+sample_research_eval_design,research,en-US,dev,,,,,,,,
+sample_pivot_translate_ko,pivot_kr_en_translate,ko-KR,dev,,,,,,,,

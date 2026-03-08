@@ -1,0 +1,78 @@
+{
+  "version": "v1",
+  "default_draft_profile": "large_opt",
+  "presets": [
+    {
+      "id": "legacy",
+      "family": "execution",
+      "instruction_path": "bench/presets/instructions/legacy.md",
+      "contract_path": null,
+      "requires_language_policy": false,
+      "ui_group": "General"
+    },
+    {
+      "id": "coding",
+      "family": "execution",
+      "instruction_path": "bench/presets/instructions/coding.md",
+      "contract_path": "bench/presets/contracts/coding.md",
+      "requires_language_policy": false,
+      "ui_group": "Build"
+    },
+    {
+      "id": "refactor",
+      "family": "execution",
+      "instruction_path": "bench/presets/instructions/refactor.md",
+      "contract_path": "bench/presets/contracts/refactor.md",
+      "requires_language_policy": false,
+      "ui_group": "Build"
+    },
+    {
+      "id": "review",
+      "family": "execution",
+      "instruction_path": "bench/presets/instructions/review.md",
+      "contract_path": "bench/presets/contracts/review.md",
+      "requires_language_policy": false,
+      "ui_group": "Review"
+    },
+    {
+      "id": "research",
+      "family": "exploration",
+      "instruction_path": "bench/presets/instructions/research.md",
+      "contract_path": "bench/presets/contracts/research.md",
+      "requires_language_policy": false,
+      "ui_group": "Think"
+    },
+    {
+      "id": "brainstorm",
+      "family": "exploration",
+      "instruction_path": "bench/presets/instructions/brainstorm.md",
+      "contract_path": "bench/presets/contracts/brainstorm.md",
+      "requires_language_policy": false,
+      "ui_group": "Think"
+    },
+    {
+      "id": "pivot_kr_en_translate",
+      "family": "pivot",
+      "instruction_path": "bench/presets/instructions/pivot_kr_en_translate.md",
+      "contract_path": "bench/presets/contracts/pivot_kr_en_translate.md",
+      "requires_language_policy": false,
+      "ui_group": "Pivot"
+    },
+    {
+      "id": "pivot_kr_en_reason_ko",
+      "family": "pivot",
+      "instruction_path": "bench/presets/instructions/pivot_kr_en_reason_ko.md",
+      "contract_path": "bench/presets/contracts/pivot_kr_en_reason_ko.md",
+      "requires_language_policy": true,
+      "ui_group": "Pivot"
+    },
+    {
+      "id": "pivot_kr_en_optimize_ko",
+      "family": "pivot",
+      "instruction_path": "bench/presets/instructions/pivot_kr_en_optimize_ko.md",
+      "contract_path": "bench/presets/contracts/pivot_kr_en_optimize_ko.md",
+      "requires_language_policy": true,
+      "ui_group": "Pivot"
+    }
+  ]
+}

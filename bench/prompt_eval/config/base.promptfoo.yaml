@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: "TurboDraft prompt preset eval (base)"
+
+prompts:
+  - file://../prompts/drafter_baseline.md
+  - file://../prompts/drafter_contract_selfcheck.md
+  - file://../prompts/drafter_precision_guard.md
+
+providers:
+  - id: file://../providers/promptfoo_cli_provider.py
+    config:
+      runner: codex
+      model: gpt-5.3-codex-spark
+      reasoning_effort: xhigh
+      timeout_sec: 900
+
+defaultTest:
+  assert:
+    - type: javascript
+      value: "!/drafting_agent|execution_agent/i.test(output)"
+
+metadata:
+  suite: turbodraft-prompt-eval
+  mode: base

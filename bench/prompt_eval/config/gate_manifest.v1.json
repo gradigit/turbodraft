@@ -1,0 +1,110 @@
+{
+  "version": "v1",
+  "required_preset_families": [
+    "coding",
+    "refactor",
+    "review",
+    "research",
+    "brainstorm",
+    "pivot_kr_en_translate",
+    "pivot_kr_en_reason_ko",
+    "pivot_kr_en_optimize_ko",
+    "legacy"
+  ],
+  "judge_thresholds": {
+    "invalid_json_rate_max": 0.0,
+    "calibration_accuracy_min": 0.85,
+    "symmetry_rate_min": 0.95,
+    "repeat_agreement_min": 0.9,
+    "transitivity_violation_ci_upper_max": 0.1,
+    "shadow_judge_disagreement_max": 0.08,
+    "gold_anchor_accuracy_min": 0.8
+  },
+  "judge_lock_thresholds": {
+    "pairwise_labels_min": 500,
+    "pairwise_agreement_min": 0.75,
+    "pairwise_agreement_ci95_lower_min": 0.5,
+    "critical_defect_recall_min": 0.9,
+    "order_swap_flip_rate_max": 0.05,
+    "repeat_agreement_min": 0.9,
+    "paraphrase_drift_median_max": 5.0,
+    "verbosity_drift_median_max": 5.0,
+    "family_source_bias_delta_max": 3.0,
+    "attack_success_rate_max": 0.05,
+    "attack_invalid_json_amplification_max": 2.0,
+    "invalid_json_rate_max": 0.005,
+    "runtime_error_rate_max": 0.01,
+    "timeout_rate_max": 0.02,
+    "reruns_min": 5
+  },
+  "outcome_alignment_thresholds": {
+    "meta_rho_min": 0.5,
+    "meta_rho_ci95_lower_min": 0.3,
+    "outcome_total_tasks_min": 200,
+    "outcome_per_family_tasks_min": 20,
+    "exploration_share_min": 0.25
+  },
+  "judge_provider_lock": {
+    "primary": {
+      "runner": "codex",
+      "model": "gpt-5.4",
+      "reasoning_effort": "xhigh"
+    },
+    "shadow": {
+      "runner": "claude",
+      "model": "claude-opus-4-6",
+      "reasoning_effort": "high"
+    }
+  },
+  "promotion_thresholds": {
+    "holdout_winrate_ci95_lower_min": 0.5,
+    "holdout_non_loss_rate_min": 0.65,
+    "holm_adjusted_pvalue_max": 0.05,
+    "repeat_winrate_stddev_max": 0.03,
+    "critical_failures_max": 0,
+    "pairwise_orientation_disagreement_max": 0.2,
+    "timeout_rate_max": 0.15
+  },
+  "minimum_sample_floors": {
+    "critical_failure_checked_cases_min": 300,
+    "holdout_non_tie_pairs_per_family_min": 320,
+    "holdout_looks_per_cycle_max": 1,
+    "judge_calibration_pairs_min": 10,
+    "judge_triads_per_family_min": 50,
+    "shadow_spotcheck_pairs_min": 20,
+    "gold_anchor_pairs_min": 20,
+    "judge_repeats_min": 5,
+    "pairwise_orientation_pairs_min": 20
+  },
+  "budget_caps": {
+    "cycle_max_tokens": 4000000,
+    "cycle_max_cost_usd": 400,
+    "cycle_max_wall_clock_minutes": 360,
+    "warning_ratio": 0.8
+  },
+  "source_policy": {
+    "research_artifact_path": "architect/research/high-quality-prompt-sources-2026-03-06.md",
+    "required_provider_coverage": [
+      "openai",
+      "anthropic",
+      "google",
+      "promptfoo"
+    ],
+    "minimum_total_sources": 20,
+    "minimum_recent_non_provider_sources": 3,
+    "minimum_recent_source_date": "2025-06-01",
+    "reference_source_registry_path": "bench/prompt_eval/config/high_quality_prompt_sources.v1.json",
+    "external_reference_sources_seed_only": true,
+    "internal_research_corpus_paths": [
+      "architect/research/",
+      "architect/review-findings/",
+      "docs/PROMPT_EVAL_JUDGE_ONLY_GOALS.md",
+      "docs/PROMPT_EVAL_JUDGE_LOCK_SPEC_2026-03-06.md"
+    ]
+  },
+  "mode_policy": {
+    "fail_closed_manifest_validation": true,
+    "enforce_holdout_isolation": true,
+    "allow_policy_mutation_mid_cycle": false
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-03-01T00:00:00+00:00",
+  "model": "gpt-5.4",
+  "reasoning_effort": "xhigh",
+  "repeats_per_orientation": 5,
+  "n_cases": 10,
+  "symmetry_rate": 1.0,
+  "forward_repeat_agreement": 1.0,
+  "reverse_repeat_agreement": 1.0
+}
+

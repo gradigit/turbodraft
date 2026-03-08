@@ -1,0 +1,11 @@
+case_id,preset_family,language_tag,split,rater_id_hashed,decision,quality_a_0_100,quality_b_0_100,confidence_1_5,defect_tags_a,defect_tags_b,notes
+batch1_coding_sidebar_resize_en_dev,coding,en-US,dev,,,,,,,,
+batch1_coding_promptfoo_runner_en_tune,coding,en-US,tune,,,,,,,,
+batch1_refactor_provider_contract_en_dev,refactor,en-US,dev,,,,,,,,
+batch1_review_ci_failure_en_sealed,review,en-US,sealed_test,,,,,,,,
+batch1_research_judge_design_en_tune,research,en-US,tune,,,,,,,,
+batch1_brainstorm_preset_arch_en_dev,brainstorm,en-US,dev,,,,,,,,
+batch1_legacy_coding_en_sealed,legacy,en-US,sealed_test,,,,,,,,
+batch1_coding_prompt_packet_en_dev,coding,en-US,dev,,,,,,,,
+batch1_research_quota_math_en_tune,research,en-US,tune,,,,,,,,
+batch1_brainstorm_lock_tranches_en_dev,brainstorm,en-US,dev,,,,,,,,

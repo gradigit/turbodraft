@@ -32,6 +32,7 @@ public final class ClaudePromptEngineerAdapter: AgentAdapting, @unchecked Sendab
   private let model: String
   private let timeoutMs: Int
   private let promptProfile: String
+  private let draftingPreset: String
   private let reasoningEffort: String
   private let extraArgs: [String]
   private let maxOutputBytes: Int
@@ -42,6 +43,7 @@ public final class ClaudePromptEngineerAdapter: AgentAdapting, @unchecked Sendab
     model: String = "claude-sonnet-4-6",
     timeoutMs: Int = 120_000,
     promptProfile: String = "large_opt",
+    draftingPreset: String = "legacy",
     reasoningEffort: String = "high",
     extraArgs: [String] = [],
     maxOutputBytes: Int = 2 * 1024 * 1024
@@ -50,6 +52,7 @@ public final class ClaudePromptEngineerAdapter: AgentAdapting, @unchecked Sendab
     self.model = model
     self.timeoutMs = timeoutMs
     self.promptProfile = promptProfile
+    self.draftingPreset = draftingPreset
     self.reasoningEffort = reasoningEffort
     self.extraArgs = extraArgs
     self.maxOutputBytes = maxOutputBytes
@@ -80,13 +83,14 @@ public final class ClaudePromptEngineerAdapter: AgentAdapting, @unchecked Sendab
 
   private func draftBlocking(resolved: String, prompt: String, instruction: String, cwd: String?) async throws -> String {
     let profile = PromptEngineerPrompts.Profile(rawValue: promptProfile) ?? .largeOpt
+    let preset = PromptEngineerPrompts.DraftingPreset(rawValue: draftingPreset) ?? .coding
     let preamble = PromptEngineerPrompts.preamble(for: profile)
-    let userText = PromptEngineerPrompts.userTurnText(prompt: prompt, instruction: instruction)
+    let userText = PromptEngineerPrompts.userTurnText(prompt: prompt, instruction: instruction, preset: preset)
 
     let out1 = try runClaude(resolved: resolved, systemPrompt: preamble, userMessage: userText, cwd: cwd)
 
     let normalized1 = PromptEngineerOutputGuard.normalize(output: out1).trimmingCharacters(in: .whitespacesAndNewlines)
-    let check = PromptEngineerOutputGuard.check(draft: prompt, output: normalized1)
+    let check = PromptEngineerOutputGuard.check(draft: prompt, output: normalized1, preset: preset)
     if !check.needsRepair {
       return normalized1
     }
@@ -94,12 +98,22 @@ public final class ClaudePromptEngineerAdapter: AgentAdapting, @unchecked Sendab
     // Repair turn with the repair instruction.
     let repairUserText = PromptEngineerPrompts.userTurnText(
       prompt: prompt,
-      instruction: PromptEngineerPrompts.repairInstruction
+      instruction: PromptEngineerPrompts.repairInstruction,
+      preset: preset
     )
     let out2Raw = try runClaude(resolved: resolved, systemPrompt: preamble, userMessage: repairUserText, cwd: cwd)
     let out2 = PromptEngineerOutputGuard.normalize(output: out2Raw).trimmingCharacters(in: .whitespacesAndNewlines)
-    let check2 = PromptEngineerOutputGuard.check(draft: prompt, output: out2)
-    if check2.reasons.contains("missing_actionable_numbered_step_section") {
+    let check2 = PromptEngineerOutputGuard.check(draft: prompt, output: out2, preset: preset)
+    if preset == .legacy, check2.needsRepair {
+      throw ClaudePromptEngineerError.invalidOutput(check2.reasons)
+    }
+    if check2.reasons.contains("missing_execution_structure")
+      || check2.reasons.contains("missing_exploration_structure")
+      || check2.reasons.contains("missing_task_planning_instruction")
+      || check2.reasons.contains("missing_pivot_language_contract")
+      || check2.reasons.contains("contains_internal_agent_role_names")
+      || check2.reasons.contains("missing_actionable_numbered_step_section")
+    {
       throw ClaudePromptEngineerError.invalidOutput(check2.reasons)
     }
     return out2

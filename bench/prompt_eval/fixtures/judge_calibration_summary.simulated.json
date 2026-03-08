@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-03-01T00:00:00+00:00",
+  "model": "gpt-5.4",
+  "reasoning_effort": "xhigh",
+  "dataset": "simulated",
+  "schema": "bench/prompt_eval/schemas/judge_decision.schema.json",
+  "prompt_summaries": [
+    {
+      "prompt": "bench/prompt_eval/prompts/judge_pairwise_v2.md",
+      "n": 10,
+      "accuracy": 1.0,
+      "invalid_count": 0,
+      "recall_A": 1.0,
+      "recall_B": 1.0,
+      "recall_Tie": 1.0
+    }
+  ],
+  "recommended_prompt": {
+    "prompt": "bench/prompt_eval/prompts/judge_pairwise_v2.md",
+    "n": 10,
+    "accuracy": 1.0,
+    "invalid_count": 0,
+    "recall_A": 1.0,
+    "recall_B": 1.0,
+    "recall_Tie": 1.0
+  }
+}
+

@@ -35,9 +35,11 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
   private let timeoutMs: Int
   private let webSearch: String
   private let promptProfile: String
+  private let draftingPreset: String
   private let reasoningEffort: String
   private let reasoningSummary: String
   private let extraArgs: [String]
+  private let environmentOverrides: [String: String]
   private let maxOutputBytes: Int
   private static let adapterLog = Logger(subsystem: "com.turbodraft", category: "CodexPromptEngineerAdapter")
   private actor State {
@@ -59,9 +61,11 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     timeoutMs: Int = 60_000,
     webSearch: String = "disabled",
     promptProfile: String = "large_opt",
+    draftingPreset: String = "legacy",
     reasoningEffort: String = "low",
     reasoningSummary: String = "auto",
     extraArgs: [String] = [],
+    environmentOverrides: [String: String] = [:],
     maxOutputBytes: Int = 2 * 1024 * 1024
   ) {
     self.command = command
@@ -69,9 +73,11 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     self.timeoutMs = timeoutMs
     self.webSearch = webSearch
     self.promptProfile = promptProfile
+    self.draftingPreset = draftingPreset
     self.reasoningEffort = reasoningEffort
     self.reasoningSummary = reasoningSummary
     self.extraArgs = extraArgs
+    self.environmentOverrides = environmentOverrides
     self.maxOutputBytes = maxOutputBytes
   }
 
@@ -90,10 +96,16 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     let requestedModel: String? = await state.requestedModelOverride(model)
     var modelOverride: String? = requestedModel
     let profile = PromptEngineerPrompts.Profile(rawValue: promptProfile) ?? .largeOpt
+    let preset = PromptEngineerPrompts.DraftingPreset(rawValue: draftingPreset) ?? .coding
 
     var out1: String
     do {
-      let stdinText = PromptEngineerPrompts.compose(prompt: prompt, instruction: instruction, profile: profile)
+      let stdinText = PromptEngineerPrompts.compose(
+        prompt: prompt,
+        instruction: instruction,
+        profile: profile,
+        preset: preset
+      )
       out1 = try runCodex(resolved: resolved, stdin: Data(stdinText.utf8), modelOverride: modelOverride, reasoningEffortOverride: nil, images: images, cwd: cwd)
     } catch let e as CodexPromptEngineerError {
       if case let .nonZeroExit(_, msg) = e,
@@ -102,7 +114,12 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
         // Retry once without forcing the model; let the CLI pick a supported default.
         await state.disableOverride()
         modelOverride = nil
-        let stdinText = PromptEngineerPrompts.compose(prompt: prompt, instruction: instruction, profile: profile)
+        let stdinText = PromptEngineerPrompts.compose(
+          prompt: prompt,
+          instruction: instruction,
+          profile: profile,
+          preset: preset
+        )
         out1 = try runCodex(resolved: resolved, stdin: Data(stdinText.utf8), modelOverride: modelOverride, reasoningEffortOverride: nil, images: images, cwd: cwd)
       } else {
         throw e
@@ -110,7 +127,7 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     }
 
     let normalized1 = PromptEngineerOutputGuard.normalize(output: out1).trimmingCharacters(in: .whitespacesAndNewlines)
-    let check = PromptEngineerOutputGuard.check(draft: prompt, output: normalized1)
+    let check = PromptEngineerOutputGuard.check(draft: prompt, output: normalized1, preset: preset)
     if !check.needsRepair {
       return normalized1
     }
@@ -122,7 +139,8 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     let stdinRepairText = PromptEngineerPrompts.compose(
       prompt: prompt,
       instruction: PromptEngineerPrompts.repairInstruction,
-      profile: profile
+      profile: profile,
+      preset: preset
     )
     let out2Raw = try runCodex(
       resolved: resolved,
@@ -133,8 +151,17 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
       cwd: cwd
     )
     let out2 = PromptEngineerOutputGuard.normalize(output: out2Raw).trimmingCharacters(in: .whitespacesAndNewlines)
-    let check2 = PromptEngineerOutputGuard.check(draft: prompt, output: out2)
-    if check2.reasons.contains("missing_actionable_numbered_step_section") {
+    let check2 = PromptEngineerOutputGuard.check(draft: prompt, output: out2, preset: preset)
+    if preset == .legacy, check2.needsRepair {
+      throw CodexPromptEngineerError.invalidOutput(check2.reasons)
+    }
+    if check2.reasons.contains("missing_execution_structure")
+      || check2.reasons.contains("missing_exploration_structure")
+      || check2.reasons.contains("missing_task_planning_instruction")
+      || check2.reasons.contains("missing_pivot_language_contract")
+      || check2.reasons.contains("contains_internal_agent_role_names")
+      || check2.reasons.contains("missing_actionable_numbered_step_section")
+    {
       throw CodexPromptEngineerError.invalidOutput(check2.reasons)
     }
     return out2
@@ -278,7 +305,9 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     // (e.g. `#!/usr/bin/env node`) resolve when running under a LaunchAgent whose
     // PATH omits nvm/fnm-managed bin directories.
     let execDir = URL(fileURLWithPath: executablePath).deletingLastPathComponent().path
-    var cEnv: [UnsafeMutablePointer<CChar>?] = CommandResolver.buildEnv(prependingToPath: execDir).map { strdup($0) }
+    let baseEnv = CommandResolver.buildEnv(prependingToPath: execDir)
+    let mergedEnv = SpawnEnvironment.merged(base: baseEnv, overrides: environmentOverrides)
+    var cEnv: [UnsafeMutablePointer<CChar>?] = mergedEnv.map { strdup($0) }
     cEnv.append(nil)
     defer { for p in cEnv where p != nil { free(p) } }
 

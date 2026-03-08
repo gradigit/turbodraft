@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string", "const": "v1" },
+    "generated_at": { "type": "string" },
+    "mode": { "type": "string", "enum": ["real", "simulated"] },
+    "providers": {
+      "type": "object",
+      "properties": {
+        "primary": {
+          "type": "object",
+          "properties": {
+            "runner": { "type": "string" },
+            "model": { "type": "string" },
+            "reasoning_effort": { "type": "string" }
+          },
+          "required": ["runner", "model", "reasoning_effort"],
+          "additionalProperties": false
+        },
+        "shadow": {
+          "type": "object",
+          "properties": {
+            "runner": { "type": "string" },
+            "model": { "type": "string" },
+            "reasoning_effort": { "type": "string" }
+          },
+          "required": ["runner", "model", "reasoning_effort"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["primary", "shadow"],
+      "additionalProperties": false
+    },
+    "datasets": {
+      "type": "object",
+      "properties": {
+        "triads_path": { "type": "string" },
+        "triads_sha256": { "type": "string" },
+        "triads_n": { "type": "integer", "minimum": 0 },
+        "shadow_pairs_path": { "type": "string" },
+        "shadow_pairs_sha256": { "type": "string" },
+        "shadow_pairs_n": { "type": "integer", "minimum": 0 },
+        "gold_pairs_path": { "type": "string" },
+        "gold_pairs_sha256": { "type": "string" },
+        "gold_pairs_n": { "type": "integer", "minimum": 0 }
+      },
+      "required": [
+        "triads_path",
+        "triads_sha256",
+        "triads_n",
+        "shadow_pairs_path",
+        "shadow_pairs_sha256",
+        "shadow_pairs_n",
+        "gold_pairs_path",
+        "gold_pairs_sha256",
+        "gold_pairs_n"
+      ],
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "transitivity": {
+          "type": "object",
+          "properties": {
+            "triads_evaluated": { "type": "integer", "minimum": 0 },
+            "violations": { "type": "integer", "minimum": 0 },
+            "violation_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+            "violation_ci95_upper": { "type": "number", "minimum": 0, "maximum": 1 },
+            "threshold_max": { "type": "number", "minimum": 0, "maximum": 1 },
+            "ok": { "type": "boolean" }
+          },
+          "required": [
+            "triads_evaluated",
+            "violations",
+            "violation_rate",
+            "violation_ci95_upper",
+            "threshold_max",
+            "ok"
+          ],
+          "additionalProperties": false
+        },
+        "shadow_drift": {
+          "type": "object",
+          "properties": {
+            "pairs_evaluated": { "type": "integer", "minimum": 0 },
+            "disagreements": { "type": "integer", "minimum": 0 },
+            "disagreement_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+            "threshold_max": { "type": "number", "minimum": 0, "maximum": 1 },
+            "ok": { "type": "boolean" }
+          },
+          "required": [
+            "pairs_evaluated",
+            "disagreements",
+            "disagreement_rate",
+            "threshold_max",
+            "ok"
+          ],
+          "additionalProperties": false
+        },
+        "gold_anchor": {
+          "type": "object",
+          "properties": {
+            "pairs_evaluated": { "type": "integer", "minimum": 0 },
+            "correct": { "type": "integer", "minimum": 0 },
+            "accuracy": { "type": "number", "minimum": 0, "maximum": 1 },
+            "threshold_min": { "type": "number", "minimum": 0, "maximum": 1 },
+            "ok": { "type": "boolean" }
+          },
+          "required": [
+            "pairs_evaluated",
+            "correct",
+            "accuracy",
+            "threshold_min",
+            "ok"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": ["transitivity", "shadow_drift", "gold_anchor"],
+      "additionalProperties": false
+    },
+    "checks": {
+      "type": "object",
+      "properties": {
+        "transitivity_ok": { "type": "boolean" },
+        "shadow_drift_ok": { "type": "boolean" },
+        "gold_anchor_ok": { "type": "boolean" }
+      },
+      "required": ["transitivity_ok", "shadow_drift_ok", "gold_anchor_ok"],
+      "additionalProperties": false
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "required": [
+    "version",
+    "generated_at",
+    "mode",
+    "providers",
+    "datasets",
+    "metrics",
+    "checks",
+    "reason_codes"
+  ],
+  "additionalProperties": false
+}
+

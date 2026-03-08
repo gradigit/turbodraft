@@ -1,0 +1,30 @@
+name: prompt-promotion
+
+on:
+  workflow_dispatch:
+
+jobs:
+  promotion-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Evaluate promotion gates (strict)
+        run: |
+          echo "This workflow expects prior reports under bench/prompt_eval/reports/<cycle>."
+          echo "For autonomous cycles, phaseG is run by orchestrator after phaseF."
+          test -f bench/prompt_eval/config/gate_manifest.v1.json
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prompt-promotion-artifacts
+          path: bench/prompt_eval/reports/**

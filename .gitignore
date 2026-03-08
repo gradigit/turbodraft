@@ -43,6 +43,7 @@ plan-deepened.md
 
 # Prompt benchmark suite (temporarily removed for overhaul)
 bench/prompt/
+bench/prompt_eval/reports/
 bench/baselines/
 bench/fixtures/profiles/
 bench/fixtures/prompt_engineering_draft.md

@@ -1,0 +1,140 @@
+{
+  "version": "v1",
+  "updated_at": "2026-03-06",
+  "purpose": "Reference-source policy for seeding real-primary judge benchmark candidates without confusing inspiration with lock-grade evidence.",
+  "primary_usage_rule": "External prompts are reference seeds only until adapted to TurboDraft use cases and human-adjudicated.",
+  "tiers": {
+    "tier_1_primary_reference": [
+      {
+        "id": "openai_codex_prompting_guide",
+        "provider": "openai",
+        "source_type": "official_prompting_guide",
+        "usage": [
+          "reference_seed",
+          "pattern_mining"
+        ],
+        "lock_grade_gold_label": false,
+        "notes": "Strong source for autonomy, tool use, repo exploration, verification, and agent behavior patterns."
+      },
+      {
+        "id": "openai_agents_md_guidance",
+        "provider": "openai",
+        "source_type": "official_instruction_layering_guide",
+        "usage": [
+          "reference_seed",
+          "instruction_architecture"
+        ],
+        "lock_grade_gold_label": false,
+        "notes": "Use for durable repo-scoped instruction structure and precedence patterns."
+      },
+      {
+        "id": "openai_eval_and_graders_guidance",
+        "provider": "openai",
+        "source_type": "official_eval_guidance",
+        "usage": [
+          "judge_prompt_design",
+          "grader_calibration"
+        ],
+        "lock_grade_gold_label": false,
+        "notes": "Primary source for judge rubric, calibration, ranking checks, and reward-hacking detection."
+      },
+      {
+        "id": "anthropic_prompting_and_eval_guidance",
+        "provider": "anthropic",
+        "source_type": "official_prompting_and_eval_guidance",
+        "usage": [
+          "reference_seed",
+          "rubric_design"
+        ],
+        "lock_grade_gold_label": false,
+        "notes": "Strong source for explicit criteria, structure, examples, and grading reliability."
+      },
+      {
+        "id": "google_gemini_prompting_and_vertex_judge_eval",
+        "provider": "google",
+        "source_type": "official_prompting_and_judge_eval_guidance",
+        "usage": [
+          "reference_seed",
+          "judge_stability_controls"
+        ],
+        "lock_grade_gold_label": false,
+        "notes": "Strong source for few-shot structure, adaptive rubrics, response flipping, and calibration."
+      },
+      {
+        "id": "gemini_cli_init_prompt_artifact",
+        "provider": "google",
+        "source_type": "official_cli_prompt_artifact",
+        "usage": [
+          "reference_seed",
+          "bootstrap_prompt_pattern"
+        ],
+        "lock_grade_gold_label": false,
+        "notes": "Concrete production prompt scaffold from installed Gemini CLI; adapt, do not treat as gold truth."
+      },
+      {
+        "id": "turbodraft_prior_research_corpus",
+        "provider": "internal",
+        "source_type": "research_and_review_artifacts",
+        "usage": [
+          "pattern_mining",
+          "defect_taxonomy",
+          "rubric_design",
+          "anti_pattern_archive"
+        ],
+        "lock_grade_gold_label": false,
+        "notes": "Use prior TurboDraft research, adversarial reviews, lock-spec docs, and failure analyses as reference context and anti-regression guidance, not as direct gold labels."
+      },
+      {
+        "id": "turbodraft_internal_human_adjudicated_candidates",
+        "provider": "internal",
+        "source_type": "real_engineered_prompt_artifacts",
+        "usage": [
+          "benchmark_candidate",
+          "gold_anchor",
+          "lock_grade_evidence"
+        ],
+        "lock_grade_gold_label": true,
+        "notes": "Only source class that can become lock-grade after human adjudication, provenance capture, and sealed governance."
+      }
+    ],
+    "tier_2_adapted_reference": [
+      {
+        "id": "vendor_cookbook_examples",
+        "usage": [
+          "reference_seed"
+        ],
+        "lock_grade_gold_label": false,
+        "notes": "Useful concrete examples; require TurboDraft adaptation and human review."
+      },
+      {
+        "id": "maintained_open_source_agent_instruction_files",
+        "usage": [
+          "pattern_mining"
+        ],
+        "lock_grade_gold_label": false,
+        "notes": "Secondary reference only; provenance and maintenance quality matter."
+      }
+    ],
+    "tier_3_secondary_only": [
+      {
+        "id": "mined_or_leaked_system_prompts",
+        "usage": [
+          "secondary_inspiration",
+          "adversarial_comparison"
+        ],
+        "lock_grade_gold_label": false,
+        "notes": "Not acceptable as gold labels or sole proof of best prompt engineering."
+      },
+      {
+        "id": "synthetic_perturbation_templates",
+        "usage": [
+          "sanity_arm",
+          "stress_test"
+        ],
+        "lock_grade_gold_label": false,
+        "notes": "Useful for stress testing only; not primary evidence for judge lock."
+      }
+    ]
+  },
+  "generated_seed_bank_path": "bench/prompt_eval/fixtures/reference_prompt_seed_bank.v1.jsonl"
+}

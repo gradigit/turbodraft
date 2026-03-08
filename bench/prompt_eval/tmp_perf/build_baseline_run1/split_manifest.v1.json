@@ -1,0 +1,258 @@
+{
+  "version": "v1",
+  "dataset_family": "judge_quality",
+  "generated_at": "2026-03-05T18:16:50Z",
+  "split_seed": 20260304,
+  "split_locked_at": "2026-03-04T00:00:00Z",
+  "target_ratios_by_family": {
+    "dev": 0.6,
+    "tune": 0.2,
+    "sealed_test": 0.2
+  },
+  "ratio_tolerance": 0.05,
+  "min_counts_per_split_per_family": {
+    "dev": 3,
+    "tune": 1,
+    "sealed_test": 1
+  },
+  "template_holdout_for_lock": [
+    "syn_contract_removal"
+  ],
+  "lock_eligible_predicate": {
+    "item_type": "gold",
+    "adjudication_status": "adjudicated",
+    "rater_count_min": 3,
+    "error_tags_required_field": true,
+    "absolute_score_0_100_range": [
+      0,
+      100
+    ],
+    "allowed_splits": [
+      "dev",
+      "tune",
+      "sealed_test"
+    ],
+    "exclude_adjudication_statuses": [
+      "pending",
+      "excluded"
+    ]
+  },
+  "quality_gates": {
+    "krippendorff_alpha_min": 0.67,
+    "natural_negative_ratio_min": 0.5
+  },
+  "governance": {
+    "sealed_open_count": 0,
+    "sealed_opened_at": null,
+    "sealed_open_reason": null,
+    "break_glass_used": false,
+    "break_glass_token_hash": null,
+    "trusted_break_glass_token_hash": null,
+    "sealed_export_audit_log": []
+  },
+  "families": {
+    "brainstorm": {
+      "gold_counts_by_split": {
+        "dev": 3,
+        "tune": 1,
+        "sealed_test": 1
+      },
+      "gold_ratios_by_split": {
+        "dev": 0.6,
+        "tune": 0.2,
+        "sealed_test": 0.2
+      },
+      "split_floor_ok": true,
+      "split_ratio_ok": true,
+      "negative_counts": {
+        "natural": 15,
+        "synthetic": 10
+      },
+      "natural_negative_ratio": 0.6,
+      "hard_negative_count": 10
+    },
+    "coding": {
+      "gold_counts_by_split": {
+        "dev": 3,
+        "tune": 1,
+        "sealed_test": 1
+      },
+      "gold_ratios_by_split": {
+        "dev": 0.6,
+        "tune": 0.2,
+        "sealed_test": 0.2
+      },
+      "split_floor_ok": true,
+      "split_ratio_ok": true,
+      "negative_counts": {
+        "natural": 15,
+        "synthetic": 10
+      },
+      "natural_negative_ratio": 0.6,
+      "hard_negative_count": 10
+    },
+    "legacy": {
+      "gold_counts_by_split": {
+        "dev": 3,
+        "tune": 1,
+        "sealed_test": 1
+      },
+      "gold_ratios_by_split": {
+        "dev": 0.6,
+        "tune": 0.2,
+        "sealed_test": 0.2
+      },
+      "split_floor_ok": true,
+      "split_ratio_ok": true,
+      "negative_counts": {
+        "natural": 15,
+        "synthetic": 10
+      },
+      "natural_negative_ratio": 0.6,
+      "hard_negative_count": 10
+    },
+    "pivot_kr_en_optimize_ko": {
+      "gold_counts_by_split": {
+        "dev": 3,
+        "tune": 1,
+        "sealed_test": 1
+      },
+      "gold_ratios_by_split": {
+        "dev": 0.6,
+        "tune": 0.2,
+        "sealed_test": 0.2
+      },
+      "split_floor_ok": true,
+      "split_ratio_ok": true,
+      "negative_counts": {
+        "natural": 15,
+        "synthetic": 10
+      },
+      "natural_negative_ratio": 0.6,
+      "hard_negative_count": 10
+    },
+    "pivot_kr_en_reason_ko": {
+      "gold_counts_by_split": {
+        "dev": 3,
+        "tune": 1,
+        "sealed_test": 1
+      },
+      "gold_ratios_by_split": {
+        "dev": 0.6,
+        "tune": 0.2,
+        "sealed_test": 0.2
+      },
+      "split_floor_ok": true,
+      "split_ratio_ok": true,
+      "negative_counts": {
+        "natural": 15,
+        "synthetic": 10
+      },
+      "natural_negative_ratio": 0.6,
+      "hard_negative_count": 10
+    },
+    "pivot_kr_en_translate": {
+      "gold_counts_by_split": {
+        "dev": 3,
+        "tune": 1,
+        "sealed_test": 1
+      },
+      "gold_ratios_by_split": {
+        "dev": 0.6,
+        "tune": 0.2,
+        "sealed_test": 0.2
+      },
+      "split_floor_ok": true,
+      "split_ratio_ok": true,
+      "negative_counts": {
+        "natural": 15,
+        "synthetic": 10
+      },
+      "natural_negative_ratio": 0.6,
+      "hard_negative_count": 10
+    },
+    "refactor": {
+      "gold_counts_by_split": {
+        "dev": 3,
+        "tune": 1,
+        "sealed_test": 1
+      },
+      "gold_ratios_by_split": {
+        "dev": 0.6,
+        "tune": 0.2,
+        "sealed_test": 0.2
+      },
+      "split_floor_ok": true,
+      "split_ratio_ok": true,
+      "negative_counts": {
+        "natural": 15,
+        "synthetic": 10
+      },
+      "natural_negative_ratio": 0.6,
+      "hard_negative_count": 10
+    },
+    "research": {
+      "gold_counts_by_split": {
+        "dev": 3,
+        "tune": 1,
+        "sealed_test": 1
+      },
+      "gold_ratios_by_split": {
+        "dev": 0.6,
+        "tune": 0.2,
+        "sealed_test": 0.2
+      },
+      "split_floor_ok": true,
+      "split_ratio_ok": true,
+      "negative_counts": {
+        "natural": 15,
+        "synthetic": 10
+      },
+      "natural_negative_ratio": 0.6,
+      "hard_negative_count": 10
+    },
+    "review": {
+      "gold_counts_by_split": {
+        "dev": 3,
+        "tune": 1,
+        "sealed_test": 1
+      },
+      "gold_ratios_by_split": {
+        "dev": 0.6,
+        "tune": 0.2,
+        "sealed_test": 0.2
+      },
+      "split_floor_ok": true,
+      "split_ratio_ok": true,
+      "negative_counts": {
+        "natural": 15,
+        "synthetic": 10
+      },
+      "natural_negative_ratio": 0.6,
+      "hard_negative_count": 10
+    }
+  },
+  "dataset_stats": {
+    "gold_prompts": 45,
+    "perturbations": 225,
+    "pairwise_labels": 225,
+    "lock_eligible_gold": 45,
+    "krippendorff_alpha_lock_eligible": 0.9498,
+    "natural_negative_ratio": 0.6,
+    "language_tags": [
+      "en-US",
+      "ko-KR"
+    ]
+  },
+  "integrity": {
+    "detached_manifest_signature": {
+      "algorithm": "hmac-sha256",
+      "secret_env": "PROMPT_EVAL_JUDGE_QUALITY_MANIFEST_SECRET",
+      "required": false,
+      "payload_sha256": "43601b1faa95dae3a14dffef12d24b7d1f21f7950167c30c1ddc0c19254ff503",
+      "signature": null,
+      "signed_at": null,
+      "unsigned_override_used": true
+    }
+  }
+}

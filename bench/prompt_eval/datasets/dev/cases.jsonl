@@ -1,0 +1,4 @@
+{"id":"dev_coding_install_wizard","preset":"coding","draft_prompt":"Need to build install wizard improvements for TurboDraft. It should detect existing symlinks, offer repair mode, avoid destructive actions unless user confirms, and include tests."}
+{"id":"dev_research_eval_plan","preset":"research","draft_prompt":"Research best way to evaluate prompt presets for our drafting workflow with objective go/no-go criteria and adversarial checks."}
+{"id":"dev_brainstorm_profile_vs_preset","preset":"brainstorm","draft_prompt":"Should we keep profile+preset architecture or switch to only presets? Need objective risks and migration complexity."}
+{"id":"dev_pivot_optimize_release_notes","preset":"pivot_kr_en_optimize_ko","draft_prompt":"이번 릴리스 노트를 정리해야 해요. 창 리사이즈 수정, 사이드바 드래그 개선, 벤치마크 플랜 추가."}

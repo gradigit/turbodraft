@@ -1,0 +1,47 @@
+- vars:
+    preset: refactor
+    preset_instruction: |
+      Refactor-focused prompt with behavior-preserving constraints.
+    preset_contract: |
+      Must preserve behavior and include validation checks.
+    draft_prompt: |
+      Refactor sidebar drag logic to simplify code without changing behavior.
+      Must include regression checks and rollback trigger.
+  assert:
+    - type: javascript
+      value: '(/without changing behavior|preserve behavior/i).test(output)'
+    - type: javascript
+      value: '(/validation|regression|rollback/i).test(output)'
+    - type: javascript
+      value: '!/drafting_agent|execution_agent/i.test(output)'
+
+- vars:
+    preset: review
+    preset_instruction: |
+      Review-focused prompt for risk/issue identification with evidence requirements.
+    preset_contract: |
+      Include severity framing and concrete follow-up checks.
+    draft_prompt: |
+      Audit prompt architecture and identify hidden failure modes in CI and gating.
+      Need concrete remediation plan.
+  assert:
+    - type: javascript
+      value: '(/risk|failure|severity/i).test(output)'
+    - type: javascript
+      value: '(/remediation|mitigation|follow-up/i).test(output)'
+    - type: javascript
+      value: '!/drafting_agent|execution_agent/i.test(output)'
+
+- vars:
+    preset: legacy
+    preset_instruction: |
+      Legacy preset rewrite preserving intent and constraints.
+    preset_contract: |
+      No role leakage and no structural corruption.
+    draft_prompt: |
+      Keep old behavior but improve clarity and enforce explicit success criteria.
+  assert:
+    - type: javascript
+      value: '(/success|criteria|acceptance/i).test(output)'
+    - type: javascript
+      value: '!/drafting_agent|execution_agent/i.test(output)'

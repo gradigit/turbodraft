@@ -42,10 +42,45 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
       case live
     }
 
+    public enum PluginPolicy: String, Codable, Sendable, Equatable, CaseIterable {
+      case curatedAllowlist = "curated_allowlist"
+      case denyAll = "deny_all"
+      case allowAll = "allow_all"
+    }
+
     public enum PromptProfile: String, Codable, Sendable, Equatable, CaseIterable {
       case core
       case largeOpt = "large_opt"
       case extended
+    }
+
+    public enum DraftingPreset: String, Codable, Sendable, Equatable, CaseIterable {
+      case legacy
+      case research
+      case coding
+      case refactor
+      case review
+      case brainstorm
+      case pivotKrEnTranslate = "pivot_kr_en_translate"
+      case pivotKrEnReasonKo = "pivot_kr_en_reason_ko"
+      case pivotKrEnOptimizeKo = "pivot_kr_en_optimize_ko"
+    }
+
+    public enum ProviderBackend: String, Codable, Sendable, Equatable, CaseIterable {
+      case direct
+      case litellm
+    }
+
+    public enum TaskInstructionMode: String, Codable, Sendable, Equatable, CaseIterable {
+      case abstract
+    }
+
+    public enum AskQuestionScope: String, Codable, Sendable, Equatable, CaseIterable {
+      case refinementOnly = "refinement_only"
+    }
+
+    public enum AnnotationFormat: String, Codable, Sendable, Equatable, CaseIterable {
+      case tdCommentV1 = "td_comment_v1"
     }
 
     public var enabled: Bool
@@ -53,20 +88,40 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     public var command: String
     public var model: String
     public var timeoutMs: Int
+    public var providerBackend: ProviderBackend
     public var webSearch: WebSearchMode
+    public var pluginPolicy: PluginPolicy
+    public var pluginAllowlist: [String]
     public var promptProfile: PromptProfile
+    public var draftingPreset: DraftingPreset
+    public var taskInstructionMode: TaskInstructionMode
+    public var askQuestionScope: AskQuestionScope
+    public var annotationEnabled: Bool
+    public var annotationFormat: AnnotationFormat
+    public var chatPanelEnabled: Bool
+    public var experimentalTerminalChatEnabled: Bool
     public var reasoningEffort: ReasoningEffort
     public var reasoningSummary: ReasoningSummary
     public var args: [String]
 
     public init(
       enabled: Bool = false,
-      backend: Backend = .exec,
+      backend: Backend = .appServer,
       command: String = "codex",
       model: String = "gpt-5.3-codex-spark",
       timeoutMs: Int = 60_000,
+      providerBackend: ProviderBackend = .direct,
       webSearch: WebSearchMode = .cached,
+      pluginPolicy: PluginPolicy = .curatedAllowlist,
+      pluginAllowlist: [String] = [],
       promptProfile: PromptProfile = .largeOpt,
+      draftingPreset: DraftingPreset = .legacy,
+      taskInstructionMode: TaskInstructionMode = .abstract,
+      askQuestionScope: AskQuestionScope = .refinementOnly,
+      annotationEnabled: Bool = true,
+      annotationFormat: AnnotationFormat = .tdCommentV1,
+      chatPanelEnabled: Bool = true,
+      experimentalTerminalChatEnabled: Bool = false,
       reasoningEffort: ReasoningEffort = .low,
       reasoningSummary: ReasoningSummary = .auto,
       args: [String] = []
@@ -76,8 +131,18 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
       self.command = command
       self.model = model
       self.timeoutMs = timeoutMs
+      self.providerBackend = providerBackend
       self.webSearch = webSearch
+      self.pluginPolicy = pluginPolicy
+      self.pluginAllowlist = pluginAllowlist
       self.promptProfile = promptProfile
+      self.draftingPreset = draftingPreset
+      self.taskInstructionMode = taskInstructionMode
+      self.askQuestionScope = askQuestionScope
+      self.annotationEnabled = annotationEnabled
+      self.annotationFormat = annotationFormat
+      self.chatPanelEnabled = chatPanelEnabled
+      self.experimentalTerminalChatEnabled = experimentalTerminalChatEnabled
       self.reasoningEffort = reasoningEffort
       self.reasoningSummary = reasoningSummary
       self.args = args
@@ -89,8 +154,18 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
       case command
       case model
       case timeoutMs
+      case providerBackend
       case webSearch
+      case pluginPolicy
+      case pluginAllowlist
       case promptProfile
+      case draftingPreset
+      case taskInstructionMode
+      case askQuestionScope
+      case annotationEnabled
+      case annotationFormat
+      case chatPanelEnabled
+      case experimentalTerminalChatEnabled
       case reasoningEffort
       case reasoningSummary
       case args
@@ -99,12 +174,22 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
-      self.backend = try c.decodeIfPresent(Backend.self, forKey: .backend) ?? .exec
+      self.backend = try c.decodeIfPresent(Backend.self, forKey: .backend) ?? .appServer
       self.command = try c.decodeIfPresent(String.self, forKey: .command) ?? "codex"
       self.model = try c.decodeIfPresent(String.self, forKey: .model) ?? "gpt-5.3-codex-spark"
       self.timeoutMs = try c.decodeIfPresent(Int.self, forKey: .timeoutMs) ?? 60_000
+      self.providerBackend = try c.decodeIfPresent(ProviderBackend.self, forKey: .providerBackend) ?? .direct
       self.webSearch = try c.decodeIfPresent(WebSearchMode.self, forKey: .webSearch) ?? .cached
+      self.pluginPolicy = try c.decodeIfPresent(PluginPolicy.self, forKey: .pluginPolicy) ?? .curatedAllowlist
+      self.pluginAllowlist = try c.decodeIfPresent([String].self, forKey: .pluginAllowlist) ?? []
       self.promptProfile = try c.decodeIfPresent(PromptProfile.self, forKey: .promptProfile) ?? .largeOpt
+      self.draftingPreset = try c.decodeIfPresent(DraftingPreset.self, forKey: .draftingPreset) ?? .legacy
+      self.taskInstructionMode = try c.decodeIfPresent(TaskInstructionMode.self, forKey: .taskInstructionMode) ?? .abstract
+      self.askQuestionScope = try c.decodeIfPresent(AskQuestionScope.self, forKey: .askQuestionScope) ?? .refinementOnly
+      self.annotationEnabled = try c.decodeIfPresent(Bool.self, forKey: .annotationEnabled) ?? true
+      self.annotationFormat = try c.decodeIfPresent(AnnotationFormat.self, forKey: .annotationFormat) ?? .tdCommentV1
+      self.chatPanelEnabled = try c.decodeIfPresent(Bool.self, forKey: .chatPanelEnabled) ?? true
+      self.experimentalTerminalChatEnabled = try c.decodeIfPresent(Bool.self, forKey: .experimentalTerminalChatEnabled) ?? false
       self.reasoningEffort = try c.decodeIfPresent(ReasoningEffort.self, forKey: .reasoningEffort) ?? .low
       self.reasoningSummary = try c.decodeIfPresent(ReasoningSummary.self, forKey: .reasoningSummary) ?? .auto
       self.args = try c.decodeIfPresent([String].self, forKey: .args) ?? []
@@ -117,8 +202,18 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
       try c.encode(command, forKey: .command)
       try c.encode(model, forKey: .model)
       try c.encode(timeoutMs, forKey: .timeoutMs)
+      try c.encode(providerBackend, forKey: .providerBackend)
       try c.encode(webSearch, forKey: .webSearch)
+      try c.encode(pluginPolicy, forKey: .pluginPolicy)
+      try c.encode(pluginAllowlist, forKey: .pluginAllowlist)
       try c.encode(promptProfile, forKey: .promptProfile)
+      try c.encode(draftingPreset, forKey: .draftingPreset)
+      try c.encode(taskInstructionMode, forKey: .taskInstructionMode)
+      try c.encode(askQuestionScope, forKey: .askQuestionScope)
+      try c.encode(annotationEnabled, forKey: .annotationEnabled)
+      try c.encode(annotationFormat, forKey: .annotationFormat)
+      try c.encode(chatPanelEnabled, forKey: .chatPanelEnabled)
+      try c.encode(experimentalTerminalChatEnabled, forKey: .experimentalTerminalChatEnabled)
       try c.encode(reasoningEffort, forKey: .reasoningEffort)
       try c.encode(reasoningSummary, forKey: .reasoningSummary)
       try c.encode(args, forKey: .args)
@@ -143,7 +238,7 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     theme: ThemeMode = .system,
     editorMode: EditorMode = .reliable,
     colorTheme: String = "turbodraft-dark",
-    fontSize: Int = 13,
+    fontSize: Int = 15,
     fontFamily: String = "system"
   ) {
     self.socketPath = socketPath
@@ -178,7 +273,7 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     self.theme = try c.decodeIfPresent(ThemeMode.self, forKey: .theme) ?? .system
     self.editorMode = try c.decodeIfPresent(EditorMode.self, forKey: .editorMode) ?? .reliable
     self.colorTheme = try c.decodeIfPresent(String.self, forKey: .colorTheme) ?? "turbodraft-dark"
-    self.fontSize = try c.decodeIfPresent(Int.self, forKey: .fontSize) ?? 13
+    self.fontSize = try c.decodeIfPresent(Int.self, forKey: .fontSize) ?? 15
     self.fontFamily = try c.decodeIfPresent(String.self, forKey: .fontFamily) ?? "system"
   }
 
@@ -219,6 +314,14 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     if cfg.agent.model.contains("spark"), cfg.agent.reasoningEffort == .minimal {
       cfg.agent.reasoningEffort = .low
     }
+
+    cfg.agent.pluginAllowlist = Array(
+      Set(
+        cfg.agent.pluginAllowlist
+          .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+          .filter { !$0.isEmpty }
+      )
+    ).sorted()
 
     let normalizedCommand = cfg.agent.command
       .trimmingCharacters(in: .whitespacesAndNewlines)

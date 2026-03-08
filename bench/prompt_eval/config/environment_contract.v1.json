@@ -1,0 +1,28 @@
+{
+  "version": "v1",
+  "required_env": [],
+  "optional_env": [
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "PROMPTFOO_DISABLE_TELEMETRY",
+    "PROMPT_EVAL_ALLOW_HOLDOUT",
+    "PROMPT_EVAL_CYCLE_ID",
+    "PROMPT_EVAL_SEQUENTIAL_MODE",
+    "PROMPT_EVAL_MAX_PARALLEL_AGENTS"
+  ],
+  "defaults": {
+    "PROMPTFOO_DISABLE_TELEMETRY": "1",
+    "PROMPT_EVAL_MAX_PARALLEL_AGENTS": "6",
+    "PROMPT_EVAL_SEQUENTIAL_MODE": "0"
+  },
+  "runtime_requirements": {
+    "node_min_major": 22,
+    "python_min_major": 3,
+    "python_min_minor": 11
+  },
+  "safety_contract": {
+    "block_holdout_when_not_confirmatory": true,
+    "block_promotion_without_gate_report": true,
+    "block_if_manifest_invalid": true
+  }
+}

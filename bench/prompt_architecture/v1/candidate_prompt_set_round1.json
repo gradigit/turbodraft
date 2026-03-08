@@ -1,0 +1,29 @@
+{
+  "round": 1,
+  "description": "First benchmarkable candidate prompt-engineering variants",
+  "variants": [
+    {
+      "id": "baseline",
+      "overlay_path": "bench/prompt_eval/variants/overlay_baseline.md",
+      "intent": "current production behavior"
+    },
+    {
+      "id": "contract_selfcheck",
+      "overlay_path": "bench/prompt_eval/variants/overlay_contract_selfcheck.md",
+      "intent": "increase structural validity before final output"
+    },
+    {
+      "id": "precision_guard",
+      "overlay_path": "bench/prompt_eval/variants/overlay_precision_guard.md",
+      "intent": "reduce scope creep and improve concision"
+    }
+  ],
+  "draft_model": {
+    "name": "gpt-5.3-codex-spark",
+    "reasoning_effort": "xhigh"
+  },
+  "judge_model": {
+    "name": "gpt-5.3-codex",
+    "reasoning_effort": "xhigh"
+  }
+}

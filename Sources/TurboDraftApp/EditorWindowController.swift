@@ -18,10 +18,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     self.session = session
     self.config = config
     self.editorVC = EditorViewController(session: session, config: config)
-    self.editorVC.preferredContentSize = NSSize(width: 760, height: 720)
+    let initialContentSize = NSSize(width: 760, height: 720)
 
     let window = NSWindow(
-      contentRect: NSRect(x: 200, y: 200, width: 760, height: 720),
+      contentRect: NSRect(x: 200, y: 200, width: initialContentSize.width, height: initialContentSize.height),
       styleMask: [.titled, .closable, .miniaturizable, .resizable],
       backing: .buffered,
       defer: false
@@ -30,7 +30,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     window.animationBehavior = .none
     window.collectionBehavior.insert(.fullScreenPrimary)
     window.collectionBehavior.insert(.fullScreenAllowsTiling)
-    window.contentMinSize = NSSize(width: 420, height: 260)
+    window.contentMinSize = NSSize(width: 1, height: 1)
     Self.applyTheme(config.theme, to: window)
     window.isReleasedWhenClosed = false
     window.contentViewController = editorVC
@@ -38,7 +38,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     let restored = window.setFrameUsingName(Self.frameAutosaveName)
     window.setFrameAutosaveName(Self.frameAutosaveName)
     if !restored {
-      window.setContentSize(editorVC.preferredContentSize)
+      window.setContentSize(initialContentSize)
     }
 
     super.init(window: window)
@@ -157,6 +157,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
   func replaceAll() {
     editorVC.replaceAll()
+  }
+
+  func insertDraftingAnnotation() {
+    editorVC.insertDraftingAnnotationFromMenu()
+  }
+
+  func openDraftingChat() {
+    editorVC.openDraftingChatFromMenu()
   }
 
   func focusExistingSessionWindow() {

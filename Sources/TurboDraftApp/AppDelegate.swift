@@ -822,6 +822,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let replaceAll = NSMenuItem(title: "Replace All", action: #selector(replaceAll(_:)), keyEquivalent: "")
     replaceAll.target = self
     editMenu.addItem(replaceAll)
+    editMenu.addItem(.separator())
+    let insertAnnotation = NSMenuItem(title: "Insert Drafting Annotation", action: #selector(insertDraftingAnnotation(_:)), keyEquivalent: "A")
+    insertAnnotation.target = self
+    insertAnnotation.keyEquivalentModifierMask = [.command, .shift]
+    editMenu.addItem(insertAnnotation)
 
     // View menu
     let viewItem = NSMenuItem()
@@ -942,6 +947,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     improve.keyEquivalentModifierMask = [.command]
     improve.isEnabled = true
     agentMenu.addItem(improve)
+    let chatRefine = NSMenuItem(title: "Chat with Drafting Agent…", action: #selector(chatWithDraftingAgent(_:)), keyEquivalent: "r")
+    chatRefine.target = self
+    chatRefine.keyEquivalentModifierMask = [.command, .option]
+    chatRefine.isEnabled = true
+    agentMenu.addItem(chatRefine)
 
     let restore = NSMenuItem(title: "Restore Previous Buffer", action: #selector(restorePreviousBuffer(_:)), keyEquivalent: "")
     restore.target = self
@@ -1081,6 +1091,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     activeWindowController()?.runPromptEngineer()
   }
 
+  @MainActor @objc private func chatWithDraftingAgent(_ sender: NSMenuItem) {
+    activeWindowController()?.openDraftingChat()
+  }
+
   @MainActor @objc private func showFind(_ sender: NSMenuItem) {
     activeWindowController()?.showFind(replace: false)
   }
@@ -1107,6 +1121,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   @MainActor @objc private func replaceAll(_ sender: NSMenuItem) {
     activeWindowController()?.replaceAll()
+  }
+
+  @MainActor @objc private func insertDraftingAnnotation(_ sender: NSMenuItem) {
+    activeWindowController()?.insertDraftingAnnotation()
   }
 
   @MainActor @objc private func submitAndClose(_ sender: NSMenuItem) {

@@ -1,0 +1,90 @@
+{
+  "ok": false,
+  "decision": "NO_LOCK",
+  "timestamp": "2026-03-05T18:19:48.430163+00:00",
+  "inputs": {
+    "datasets_root": "/Users/aaaaa/Projects/turbodraft/bench/prompt_eval/tmp_perf/assess_scale120",
+    "gate_manifest": "/Users/aaaaa/Projects/turbodraft/bench/prompt_eval/config/gate_manifest.v1.json",
+    "armj_calibration_summary": "",
+    "armj_invariance_summary": "",
+    "armo_summary": "",
+    "aa_ci_halfwidth": 0.0
+  },
+  "frozen_thresholds": {
+    "pairwise_labels_min": 500,
+    "sealed_labels_min": 200,
+    "family_count_min": 5,
+    "family_items_min": 40,
+    "language_count_min": 2,
+    "language_items_min": 80,
+    "max_family_share": 0.4,
+    "pairwise_agreement_min": 0.78,
+    "pairwise_ci95_lower_min": 0.55,
+    "critical_defect_recall_min": 0.9,
+    "krippendorff_alpha_min": 0.55,
+    "mirror_symmetry_error_max": 0.1,
+    "repeatability_error_max": 0.12,
+    "invariance_fail_rate_max": 0.08,
+    "invalid_json_rate_max": 0.005,
+    "runtime_error_rate_max": 0.01,
+    "timeout_rate_max": 0.01,
+    "replication_seeds_min": 2,
+    "armo_candidate_delta_min": 0.03,
+    "armo_tail_regression_max": 0.01,
+    "armo_total_tasks_min": 200,
+    "armo_per_family_tasks_min": 20,
+    "armo_meta_rho_min": 0.5,
+    "armo_meta_rho_ci95_lower_min": 0.3
+  },
+  "noise_floor_required": 0.02,
+  "metrics": {
+    "dataset": {
+      "pairwise_labels_total": 3240,
+      "pairwise_labels_sealed": 648,
+      "pairwise_by_family": {
+        "brainstorm": 360,
+        "coding": 360,
+        "legacy": 360,
+        "pivot_kr_en_optimize_ko": 360,
+        "pivot_kr_en_reason_ko": 360,
+        "pivot_kr_en_translate": 360,
+        "refactor": 360,
+        "research": 360,
+        "review": 360
+      },
+      "pairwise_by_language": {
+        "en-US": 2160,
+        "ko-KR": 1080
+      },
+      "family_count": 9,
+      "language_count": 2,
+      "max_family_share": 0.1111111111111111,
+      "sealed_provenance_violation_total": 0,
+      "sealed_provenance_violations": [],
+      "lineage_collision_count": 0,
+      "lineage_collisions": []
+    },
+    "armj": {},
+    "armo": {},
+    "gate_manifest_version": "v1"
+  },
+  "checks": {
+    "dataset_pairwise_labels_floor": true,
+    "dataset_sealed_labels_floor": true,
+    "dataset_family_count_floor": true,
+    "dataset_family_items_floor": true,
+    "dataset_language_count_floor": true,
+    "dataset_language_items_floor": true,
+    "dataset_max_family_share": true,
+    "dataset_sealed_provenance_clean": true,
+    "dataset_split_lineage_clean": true,
+    "armj_artifacts_present": false,
+    "armo_artifact_present": false,
+    "noise_floor": false
+  },
+  "reason_codes": [
+    "CHECK_FAILED:armj_artifacts_present",
+    "CHECK_FAILED:armo_artifact_present",
+    "CHECK_FAILED:noise_floor"
+  ]
+}

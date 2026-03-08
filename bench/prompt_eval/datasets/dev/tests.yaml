@@ -1,0 +1,99 @@
+- vars:
+    preset: coding
+    preset_instruction: |
+      Rewrite and improve this prompt into an implementation-focused prompt that is ready for direct use by a downstream model.
+      Use headings Goal / Objective, Scope and Constraints, Implementation Steps, Validation / Acceptance Checks.
+    preset_contract: |
+      Include task planning instruction and rollback/failure signal. No role leakage.
+    draft_prompt: |
+      Need to build install wizard improvements for TurboDraft. It should detect existing symlinks,
+      offer repair mode, avoid destructive actions unless user confirms, and include tests.
+  assert:
+    - type: icontains
+      value: Goal / Objective
+    - type: icontains
+      value: Scope and Constraints
+    - type: icontains
+      value: Implementation Steps
+    - type: icontains
+      value: Validation / Acceptance Checks
+    - type: javascript
+      value: '!/drafting_agent|execution_agent/i.test(output)'
+    - type: javascript
+      value: '(output.match(/^[\\t ]*[-*][\\t ]*Optional:/gim)||[]).length <= 2'
+
+- vars:
+    preset: research
+    preset_instruction: |
+      Rewrite into a structured research prompt with headings:
+      Goal / Framing, Assumptions / Constraints, Open Questions,
+      Option Space / Tradeoffs, Recommended Next Steps, Evaluation Criteria.
+    preset_contract: |
+      Preserve uncertainty, include evidence-oriented checks, no role leakage.
+    draft_prompt: |
+      Research best way to evaluate prompt presets for our drafting workflow.
+      Need objective go/no-go criteria, adversarial checks, and cost/latency coverage.
+  assert:
+    - type: icontains
+      value: Goal / Framing
+    - type: icontains
+      value: Assumptions / Constraints
+    - type: icontains
+      value: Open Questions
+    - type: icontains
+      value: Option Space / Tradeoffs
+    - type: icontains
+      value: Recommended Next Steps
+    - type: icontains
+      value: Evaluation Criteria
+    - type: javascript
+      value: '!/drafting_agent|execution_agent/i.test(output)'
+
+- vars:
+    preset: brainstorm
+    preset_instruction: |
+      Rewrite into ideation prompt with headings:
+      Goal / Framing, Assumptions / Constraints, Open Questions,
+      Option Space / Tradeoffs, Recommended Next Steps, Evaluation Criteria.
+      Include at least 3 options including one contrarian option.
+    preset_contract: |
+      Emphasize low-cost experiments and decision triggers. No role leakage.
+    draft_prompt: |
+      Should we keep profile+preset architecture or switch to only presets?
+      Need objective analysis, migration risk, and UX implications.
+  assert:
+    - type: icontains
+      value: Goal / Framing
+    - type: icontains
+      value: Option Space / Tradeoffs
+    - type: javascript
+      value: '(/contrarian|opposite|alternative/i).test(output)'
+    - type: javascript
+      value: '!/drafting_agent|execution_agent/i.test(output)'
+
+- vars:
+    preset: pivot_kr_en_optimize_ko
+    preset_instruction: |
+      Rewrite Korean draft into stronger English execution prompt using headings:
+      Objective, Context and Constraints, Implementation Steps, Validation Checks, Language Policy.
+      Language policy requires internal analysis in English and final answer in Korean.
+    preset_contract: |
+      Preserve constraints, keep terms precise, no role leakage.
+    draft_prompt: |
+      이번 릴리스 노트를 정리해야 해요. 변경사항은 창 리사이즈 문제 수정,
+      사이드바 드래그 개선, 벤치마크 플랜 추가예요. 최종 답변은 한국어로 보여줘.
+  assert:
+    - type: icontains
+      value: Objective
+    - type: icontains
+      value: Context and Constraints
+    - type: icontains
+      value: Implementation Steps
+    - type: icontains
+      value: Validation Checks
+    - type: icontains
+      value: Language Policy
+    - type: icontains
+      value: final answer in Korean
+    - type: javascript
+      value: '!/drafting_agent|execution_agent/i.test(output)'

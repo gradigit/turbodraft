@@ -1,0 +1,18 @@
+version: v1
+providers:
+  drafting:
+    id: gpt-5.3-codex-spark
+    via: codex exec
+    reasoning_effort: xhigh
+  judge_primary:
+    id: gpt-5.4
+    via: codex exec
+    reasoning_effort: xhigh
+  judge_secondary:
+    id: gemini-3.1-pro-preview
+    via: gemini cli
+    reasoning_effort: high
+  judge_shadow:
+    id: claude-opus-4-6
+    via: claude code cli
+    reasoning_effort: high

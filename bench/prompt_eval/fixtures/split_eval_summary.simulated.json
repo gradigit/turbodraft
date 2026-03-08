@@ -1,0 +1,52 @@
+{
+  "timestamp": "2026-03-01T00:00:00+00:00",
+  "draft_model": "gpt-5.4-spark",
+  "judge_model": "gpt-5.4",
+  "draft_reasoning_effort": "xhigh",
+  "judge_reasoning_effort": "xhigh",
+  "cases": [
+    "sim_case_001",
+    "sim_case_002",
+    "sim_case_003"
+  ],
+  "baseline_variant": "overlay_baseline",
+  "pairwise_selected_non_baseline_variants": [
+    "overlay_contract_selfcheck"
+  ],
+  "pairwise_pruned_non_baseline_variants": [
+    "overlay_precision_guard"
+  ],
+  "pairwise_top_k": 1,
+  "judge_prompt": "bench/prompt_eval/prompts/judge_pairwise_v2.md",
+  "judge_schema": "bench/prompt_eval/schemas/judge_decision.schema.json",
+  "results": {
+    "overlay_baseline": {
+      "n": 400,
+      "hard_pass_rate": 0.91,
+      "avg_deterministic_score": 0.91
+    },
+    "overlay_contract_selfcheck": {
+      "n": 400,
+      "hard_pass_rate": 0.94,
+      "avg_deterministic_score": 0.95,
+      "pairwise_vs_baseline": {
+        "n": 400,
+        "wins": 240,
+        "losses": 80,
+        "ties": 80,
+        "non_tie_n": 320,
+        "win_rate": 0.6,
+        "loss_rate": 0.2,
+        "tie_rate": 0.2,
+        "non_loss_rate": 0.8,
+        "non_tie_win_rate": 0.75
+      }
+    },
+    "overlay_precision_guard": {
+      "n": 400,
+      "hard_pass_rate": 0.92,
+      "avg_deterministic_score": 0.93
+    }
+  }
+}
+

@@ -67,9 +67,58 @@ final class EditorViewController: NSViewController {
 
   private let agentRow = NSStackView()
   private let agentButton = NSButton(title: "Improve Prompt", target: nil, action: nil)
+  private let chatButton = NSButton(title: "Chat Refine", target: nil, action: nil)
   private let saveStatus = NSTextField(labelWithString: "Saved")
+  private let draftingSidebar = NSVisualEffectView()
+  private let draftingSidebarResizeHandle = SidebarResizeHandleView()
+  private let draftingSidebarStack = NSStackView()
+  private let draftingChatTitle = NSTextField(labelWithString: "Drafting Chat")
+  private let draftingChatSubtitle = NSTextField(labelWithString: "Chat with drafting_agent, or add notes and improve.")
+  private let draftingChatScroll = NSScrollView()
+  private let draftingChatTranscript = NSTextView()
+  private let draftingChatInputScroll = NSScrollView()
+  private let draftingChatInput = SidebarComposerTextView(frame: .zero)
+  private let draftingChatAttachmentRow = NSStackView()
+  private let draftingChatAttachmentSummary = NSTextField(labelWithString: "No attachments")
+  private let draftingChatAttachButton = NSButton(title: "Attach…", target: nil, action: nil)
+  private let draftingChatClearAttachmentsButton = NSButton(title: "Clear", target: nil, action: nil)
+  private let draftingAnnotationTypePicker = NSPopUpButton(frame: .zero, pullsDown: false)
+  private let draftingChatContextButton = NSButton(title: "Context", target: nil, action: nil)
+  private let draftingChatDiffButton = NSButton(title: "Diff", target: nil, action: nil)
+  private let draftingChatSendButton = NSButton(title: "Send", target: nil, action: nil)
+  private let draftingChatAddImproveButton = NSButton(title: "Add + Improve", target: nil, action: nil)
+  private let draftingChatAddNoteButton = NSButton(title: "Add Note", target: nil, action: nil)
+  private let draftingChatApplySuggestionButton = NSButton(title: "Apply Suggestion", target: nil, action: nil)
+  private let draftingChatCloseButton = NSButton(title: "Close", target: nil, action: nil)
+  private let draftingContextScroll = NSScrollView()
+  private let draftingContextView = NSTextView()
+  private let draftingDiffScroll = NSScrollView()
+  private let draftingDiffView = NSTextView()
+  private let draftingChatInputMinHeight: CGFloat = 72
+  private let draftingChatInputMaxHeight: CGFloat = 140
+  private var draftingChatMessages: [String] = []
+  private var draftingStreamingLineIndex: Int?
+  private var draftingSidebarPendingAttachmentRefs: [String] = []
+  private var draftingSidebarPendingAttachmentRefSet: Set<String> = []
+  private var draftingSidebarPendingAttachmentDisplay: [String] = []
+  private var draftingContextVisible = false
+  private var draftingDiffVisible = false
+  private var draftingLastSentContext = ""
+  private var draftingLastDiffPreview = ""
+  private var draftingSidebarSuggestedDraft: String?
+  private var draftingSidebarVisible = false
+  private var draftingSidebarPreferredWidth: CGFloat = 360
+  private var mainStackTrailingConstraint: NSLayoutConstraint?
+  private var draftingSidebarWidthConstraint: NSLayoutConstraint?
+  private var draftingSidebarDragStartWindowX: CGFloat?
+  private var draftingSidebarDragStartWidth: CGFloat = 0
+  private var draftingChatInputHeightConstraint: NSLayoutConstraint?
+  private var draftingContextHeightConstraint: NSLayoutConstraint?
+  private var draftingDiffHeightConstraint: NSLayoutConstraint?
   private var agentAdapter: AgentAdapting?
+  private var draftingSidebarChatAdapter: AgentSidebarChatAdapting?
   private var agentRunning = false
+  private var draftingChatRunning = false
   private var sessionCwd: String?
   private var attachedImages: [String: URL] = [:]
   private var imageConversionTask: Task<Void, Never>?
@@ -77,12 +126,26 @@ final class EditorViewController: NSViewController {
   private var sessionOpenStartNs: UInt64?
   private var sessionOpenToReadyMsValue: Double?
   private let imagePlaceholderRegex = try! NSRegularExpression(pattern: #"\[image-([a-f0-9]{8})\]"#)
+  private let draftingAnnotationRegex = try! NSRegularExpression(
+    pattern: #"<!--\s*@td\((note|question|constraint|decision|context)\)\s*:\s*([\s\S]*?)\s*-->"#,
+    options: [.caseInsensitive]
+  )
+  private let draftingAnnotationLineRegex = try! NSRegularExpression(
+    pattern: #"(?m)^[ \t]*@@(?:\s*(note|question|constraint|decision|context)\s*:)?\s*(.+)$"#,
+    options: [.caseInsensitive]
+  )
   private let listPrefixRegex = try! NSRegularExpression(
     pattern: #"^([ \t]*(?:>[ \t]*)*)(?:[-+*][ \t]+(?:\[[ xX]\][ \t]+)?|\d{1,9}[.)][ \t]+)"#
   )
   private let taskCheckboxRegex = try! NSRegularExpression(
     pattern: #"^([ \t]*(?:>[ \t]*)*)([-+*])([ \t]+)\[([ xX])\]([ \t]+)(.*)$"#
   )
+  private static let fencedCodeBlockRegex = try! NSRegularExpression(
+    pattern: #"```([A-Za-z0-9_+\-]*)[ \t]*\n([\s\S]*?)\n```"#
+  )
+  private static let supportedImageExtensions: Set<String> = [
+    "png", "jpg", "jpeg", "gif", "tiff", "tif", "bmp", "webp", "heic",
+  ]
 
   var typingLatencySamples: [Double] { _typingLatencies }
   var sessionOpenToReadyMs: Double? { sessionOpenToReadyMsValue }
@@ -96,6 +159,24 @@ final class EditorViewController: NSViewController {
     case error
   }
 
+  private enum DraftingAnnotationType: String, CaseIterable {
+    case note
+    case question
+    case constraint
+    case decision
+    case context
+
+    var menuTitle: String {
+      switch self {
+      case .note: return "Note"
+      case .question: return "Question"
+      case .constraint: return "Constraint"
+      case .decision: return "Decision"
+      case .context: return "Context"
+      }
+    }
+  }
+
   private var saveState: SaveState = .saved
 
   init(session: EditorSession, config: TurboDraftConfig) {
@@ -103,10 +184,11 @@ final class EditorViewController: NSViewController {
     self.config = config
     self.editorMode = config.editorMode
     self.agentConfig = config.agent
+    let initialFontSize = CGFloat(max(11, min(config.fontSize, 72)))
     #if TURBODRAFT_USE_CODEEDIT_TEXTVIEW
     self.textView = TextView(
       string: "",
-      font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+      font: NSFont.monospacedSystemFont(ofSize: initialFontSize, weight: .regular),
       textColor: EditorTheme.primaryText,
       lineHeightMultiplier: 1.0,
       wrapLines: true,
@@ -122,6 +204,13 @@ final class EditorViewController: NSViewController {
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  private func applyModernScrollerStyle(to scrollView: NSScrollView) {
+    scrollView.scrollerStyle = .overlay
+    scrollView.autohidesScrollers = true
+    scrollView.verticalScroller?.controlSize = .small
+    scrollView.horizontalScroller?.controlSize = .small
+  }
 
   deinit {
     autosaveDebouncer.cancel()
@@ -153,8 +242,10 @@ final class EditorViewController: NSViewController {
     }
 
     scrollView.hasVerticalScroller = true
+    scrollView.hasHorizontalScroller = false
     scrollView.drawsBackground = false
     scrollView.documentView = textView
+    applyModernScrollerStyle(to: scrollView)
     baseScrollInsets = scrollView.contentInsets
 
     #if TURBODRAFT_USE_CODEEDIT_TEXTVIEW
@@ -208,12 +299,31 @@ final class EditorViewController: NSViewController {
     textView.onUseSelectionForFind = { [weak self] in
       self?.useSelectionForFind()
     }
+    textView.onOpenDraftingChat = { [weak self] in
+      self?.openDraftingChatFromMenu()
+    }
+    textView.onInsertDraftingAnnotation = { [weak self] in
+      self?.insertDraftingAnnotation(type: "note")
+    }
     textView.onCloseFind = { [weak self] in
       guard let self, !self.findContainer.isHidden else { return false }
       self.hideFind()
       return true
     }
-    textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    textView.onCloseDraftingSidebar = { [weak self] in
+      guard let self, self.draftingSidebarVisible else { return false }
+      self.setDraftingSidebarVisible(false)
+      return true
+    }
+    textView.onEscape = { [weak self] in
+      guard let window = self?.view.window else { return false }
+      window.performClose(nil)
+      return true
+    }
+    textView.font = NSFont.monospacedSystemFont(
+      ofSize: CGFloat(max(11, min(config.fontSize, 72))),
+      weight: .regular
+    )
     textView.drawsBackground = true
     textView.isVerticallyResizable = true
     textView.isHorizontallyResizable = false
@@ -367,13 +477,17 @@ final class EditorViewController: NSViewController {
     findStack.addArrangedSubview(findRow)
     findStack.addArrangedSubview(replaceRow)
     findContainer.addSubview(findStack)
+    let findFieldMinWidthConstraint = findField.widthAnchor.constraint(greaterThanOrEqualToConstant: 170)
+    findFieldMinWidthConstraint.priority = .defaultLow
+    let replaceFieldMinWidthConstraint = replaceField.widthAnchor.constraint(greaterThanOrEqualToConstant: 170)
+    replaceFieldMinWidthConstraint.priority = .defaultLow
     NSLayoutConstraint.activate([
       findStack.leadingAnchor.constraint(equalTo: findContainer.leadingAnchor),
       findStack.trailingAnchor.constraint(equalTo: findContainer.trailingAnchor),
       findStack.topAnchor.constraint(equalTo: findContainer.topAnchor),
       findStack.bottomAnchor.constraint(equalTo: findContainer.bottomAnchor),
-      findField.widthAnchor.constraint(greaterThanOrEqualToConstant: 170),
-      replaceField.widthAnchor.constraint(greaterThanOrEqualToConstant: 170),
+      findFieldMinWidthConstraint,
+      replaceFieldMinWidthConstraint,
     ])
 
     agentRow.orientation = .horizontal
@@ -391,42 +505,328 @@ final class EditorViewController: NSViewController {
     agentButton.refusesFirstResponder = true
     agentRow.addArrangedSubview(agentButton)
     agentButton.setContentHuggingPriority(.required, for: .horizontal)
+    chatButton.target = self
+    chatButton.action = #selector(openDraftingChat)
+    chatButton.refusesFirstResponder = true
+    agentRow.addArrangedSubview(chatButton)
+    chatButton.setContentHuggingPriority(.required, for: .horizontal)
+
+    draftingSidebar.material = .hudWindow
+    draftingSidebar.blendingMode = .withinWindow
+    draftingSidebar.state = .active
+    draftingSidebar.translatesAutoresizingMaskIntoConstraints = false
+    draftingSidebar.wantsLayer = true
+    draftingSidebar.layer?.borderWidth = 1
+    draftingSidebar.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.25).cgColor
+    draftingSidebar.isHidden = true
+
+    draftingSidebarResizeHandle.translatesAutoresizingMaskIntoConstraints = false
+    draftingSidebarResizeHandle.wantsLayer = true
+    draftingSidebarResizeHandle.isHidden = true
+    draftingSidebarResizeHandle.onDragBegan = { [weak self] windowX in
+      self?.beginDraftingSidebarResize(at: windowX)
+    }
+    draftingSidebarResizeHandle.onDragChanged = { [weak self] windowX in
+      self?.updateDraftingSidebarResize(at: windowX)
+    }
+    draftingSidebarResizeHandle.onDragEnded = { [weak self] in
+      self?.endDraftingSidebarResize()
+    }
+
+    draftingSidebarStack.orientation = .vertical
+    draftingSidebarStack.spacing = 8
+    draftingSidebarStack.edgeInsets = NSEdgeInsets(top: 14, left: 12, bottom: 12, right: 12)
+    draftingSidebarStack.translatesAutoresizingMaskIntoConstraints = false
+
+    draftingChatTitle.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+    draftingChatSubtitle.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+    draftingChatSubtitle.lineBreakMode = .byWordWrapping
+    draftingChatSubtitle.maximumNumberOfLines = 0
+
+    draftingChatTranscript.isEditable = false
+    draftingChatTranscript.isSelectable = true
+    draftingChatTranscript.drawsBackground = false
+    let sidebarFontSize = max(12, CGFloat(max(11, min(config.fontSize, 72))) - 1)
+    draftingChatTranscript.font = NSFont.monospacedSystemFont(ofSize: sidebarFontSize, weight: .regular)
+    draftingChatTranscript.textColor = colorTheme.foreground
+    draftingChatTranscript.textContainerInset = NSSize(width: 6, height: 6)
+    draftingChatTranscript.string = ""
+
+    draftingChatScroll.drawsBackground = false
+    draftingChatScroll.borderType = .noBorder
+    draftingChatScroll.hasVerticalScroller = true
+    draftingChatScroll.documentView = draftingChatTranscript
+    applyModernScrollerStyle(to: draftingChatScroll)
+
+    draftingChatInput.isEditable = true
+    draftingChatInput.isSelectable = true
+    draftingChatInput.drawsBackground = true
+    draftingChatInput.font = NSFont.monospacedSystemFont(ofSize: sidebarFontSize, weight: .regular)
+    draftingChatInput.textContainerInset = NSSize(width: 6, height: 6)
+    draftingChatInput.isVerticallyResizable = true
+    draftingChatInput.isHorizontallyResizable = false
+    draftingChatInput.delegate = self
+    draftingChatInput.textContainer?.widthTracksTextView = true
+    draftingChatInput.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+    draftingChatInput.string = ""
+    draftingChatInput.onSubmit = { [weak self] in
+      _ = self?.sendDraftingChatMessage()
+    }
+    draftingChatInput.onCancel = { [weak self] in
+      guard let self, self.draftingSidebarVisible else { return }
+      self.setDraftingSidebarVisible(false)
+    }
+    draftingChatInput.onImageDrop = { [weak self] images in
+      self?.enqueueDraftingSidebarImages(images)
+    }
+    draftingChatInput.onFileDrop = { [weak self] urls in
+      self?.enqueueDraftingSidebarFiles(urls)
+    }
+    draftingChatInput.onTextChanged = { [weak self] in
+      self?.updateDraftingChatInputHeight()
+    }
+
+    draftingChatInputScroll.drawsBackground = false
+    draftingChatInputScroll.borderType = .noBorder
+    draftingChatInputScroll.hasVerticalScroller = true
+    draftingChatInputScroll.documentView = draftingChatInput
+    applyModernScrollerStyle(to: draftingChatInputScroll)
+    draftingChatInputScroll.wantsLayer = true
+    draftingChatInputScroll.layer?.cornerRadius = 6
+    draftingChatInputScroll.layer?.borderWidth = 0.8
+
+    draftingChatAttachmentSummary.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+    draftingChatAttachmentSummary.lineBreakMode = .byTruncatingTail
+    draftingChatAttachmentSummary.stringValue = "No attachments"
+    draftingChatAttachmentSummary.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+    draftingChatAttachButton.target = self
+    draftingChatAttachButton.action = #selector(draftingChatAttachAction(_:))
+    draftingChatAttachButton.controlSize = .small
+    draftingChatAttachButton.bezelStyle = .texturedRounded
+    draftingChatAttachButton.refusesFirstResponder = true
+
+    draftingChatClearAttachmentsButton.target = self
+    draftingChatClearAttachmentsButton.action = #selector(draftingChatClearAttachmentsAction(_:))
+    draftingChatClearAttachmentsButton.controlSize = .small
+    draftingChatClearAttachmentsButton.bezelStyle = .texturedRounded
+    draftingChatClearAttachmentsButton.refusesFirstResponder = true
+    draftingChatClearAttachmentsButton.isEnabled = false
+
+    draftingChatAttachmentRow.orientation = .horizontal
+    draftingChatAttachmentRow.spacing = 8
+    draftingChatAttachmentRow.alignment = .centerY
+    draftingChatAttachmentRow.distribution = .fill
+    draftingChatAttachmentRow.addArrangedSubview(draftingChatAttachmentSummary)
+    draftingChatAttachmentRow.addArrangedSubview(draftingChatAttachButton)
+    draftingChatAttachmentRow.addArrangedSubview(draftingChatClearAttachmentsButton)
+
+    draftingAnnotationTypePicker.removeAllItems()
+    draftingAnnotationTypePicker.addItems(withTitles: DraftingAnnotationType.allCases.map(\.menuTitle))
+    draftingAnnotationTypePicker.selectItem(withTitle: DraftingAnnotationType.note.menuTitle)
+    draftingAnnotationTypePicker.controlSize = .small
+    draftingAnnotationTypePicker.setContentHuggingPriority(.required, for: .horizontal)
+    draftingAnnotationTypePicker.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+    draftingChatContextButton.target = self
+    draftingChatContextButton.action = #selector(draftingChatToggleContextAction(_:))
+    draftingChatContextButton.controlSize = .small
+    draftingChatContextButton.bezelStyle = .texturedRounded
+    draftingChatContextButton.refusesFirstResponder = true
+
+    draftingChatDiffButton.target = self
+    draftingChatDiffButton.action = #selector(draftingChatToggleDiffAction(_:))
+    draftingChatDiffButton.controlSize = .small
+    draftingChatDiffButton.bezelStyle = .texturedRounded
+    draftingChatDiffButton.refusesFirstResponder = true
+
+    draftingChatAddImproveButton.target = self
+    draftingChatAddImproveButton.action = #selector(draftingChatAddImproveAction(_:))
+    draftingChatAddImproveButton.controlSize = .small
+    draftingChatAddImproveButton.bezelStyle = .texturedRounded
+    draftingChatAddImproveButton.refusesFirstResponder = true
+
+    draftingChatSendButton.target = self
+    draftingChatSendButton.action = #selector(draftingChatSendAction(_:))
+    draftingChatSendButton.controlSize = .small
+    draftingChatSendButton.bezelStyle = .texturedRounded
+    draftingChatSendButton.refusesFirstResponder = true
+
+    draftingChatAddNoteButton.target = self
+    draftingChatAddNoteButton.action = #selector(draftingChatAddNoteAction(_:))
+    draftingChatAddNoteButton.controlSize = .small
+    draftingChatAddNoteButton.bezelStyle = .texturedRounded
+    draftingChatAddNoteButton.refusesFirstResponder = true
+
+    draftingChatApplySuggestionButton.target = self
+    draftingChatApplySuggestionButton.action = #selector(draftingChatApplySuggestionAction(_:))
+    draftingChatApplySuggestionButton.controlSize = .small
+    draftingChatApplySuggestionButton.bezelStyle = .texturedRounded
+    draftingChatApplySuggestionButton.refusesFirstResponder = true
+    draftingChatApplySuggestionButton.isEnabled = false
+
+    draftingChatCloseButton.target = self
+    draftingChatCloseButton.action = #selector(draftingChatCloseAction(_:))
+    draftingChatCloseButton.controlSize = .small
+    draftingChatCloseButton.bezelStyle = .texturedRounded
+    draftingChatCloseButton.refusesFirstResponder = true
+
+    draftingContextView.isEditable = false
+    draftingContextView.isSelectable = true
+    draftingContextView.drawsBackground = false
+    draftingContextView.font = NSFont.monospacedSystemFont(ofSize: max(11, sidebarFontSize - 1), weight: .regular)
+    draftingContextView.textContainerInset = NSSize(width: 6, height: 6)
+    draftingContextView.string = "No sent context yet."
+    draftingContextScroll.drawsBackground = false
+    draftingContextScroll.borderType = .noBorder
+    draftingContextScroll.hasVerticalScroller = true
+    draftingContextScroll.documentView = draftingContextView
+    applyModernScrollerStyle(to: draftingContextScroll)
+    draftingContextScroll.wantsLayer = true
+    draftingContextScroll.layer?.cornerRadius = 6
+    draftingContextScroll.layer?.borderWidth = 0.8
+    draftingContextScroll.isHidden = true
+
+    draftingDiffView.isEditable = false
+    draftingDiffView.isSelectable = true
+    draftingDiffView.drawsBackground = false
+    draftingDiffView.font = NSFont.monospacedSystemFont(ofSize: max(11, sidebarFontSize - 1), weight: .regular)
+    draftingDiffView.textContainerInset = NSSize(width: 6, height: 6)
+    draftingDiffView.string = "No suggestion diff yet."
+    draftingDiffScroll.drawsBackground = false
+    draftingDiffScroll.borderType = .noBorder
+    draftingDiffScroll.hasVerticalScroller = true
+    draftingDiffScroll.documentView = draftingDiffView
+    applyModernScrollerStyle(to: draftingDiffScroll)
+    draftingDiffScroll.wantsLayer = true
+    draftingDiffScroll.layer?.cornerRadius = 6
+    draftingDiffScroll.layer?.borderWidth = 0.8
+    draftingDiffScroll.isHidden = true
+
+    let draftingUtilityRow = NSStackView(
+      views: [
+        NSTextField(labelWithString: "Type"),
+        draftingAnnotationTypePicker,
+        draftingChatContextButton,
+        draftingChatDiffButton,
+        draftingChatApplySuggestionButton,
+      ]
+    )
+    draftingUtilityRow.orientation = .horizontal
+    draftingUtilityRow.spacing = 8
+    draftingUtilityRow.alignment = .centerY
+    draftingUtilityRow.distribution = .fill
+    if let typeLabel = draftingUtilityRow.arrangedSubviews.first as? NSTextField {
+      typeLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+      typeLabel.textColor = colorTheme.secondaryText
+      typeLabel.setContentHuggingPriority(.required, for: .horizontal)
+    }
+
+    let draftingButtonsRow = NSStackView(
+      views: [draftingChatSendButton, draftingChatAddImproveButton, draftingChatAddNoteButton, draftingChatCloseButton]
+    )
+    draftingButtonsRow.orientation = .horizontal
+    draftingButtonsRow.spacing = 8
+    draftingButtonsRow.alignment = .centerY
+    draftingButtonsRow.distribution = .fillProportionally
+
+    draftingSidebarStack.addArrangedSubview(draftingChatTitle)
+    draftingSidebarStack.addArrangedSubview(draftingChatSubtitle)
+    draftingSidebarStack.addArrangedSubview(draftingChatScroll)
+    draftingSidebarStack.addArrangedSubview(draftingContextScroll)
+    draftingSidebarStack.addArrangedSubview(draftingDiffScroll)
+    draftingSidebarStack.addArrangedSubview(draftingChatInputScroll)
+    draftingSidebarStack.addArrangedSubview(draftingChatAttachmentRow)
+    draftingSidebarStack.addArrangedSubview(draftingUtilityRow)
+    draftingSidebarStack.addArrangedSubview(draftingButtonsRow)
+    draftingChatScroll.setContentHuggingPriority(.defaultLow, for: .vertical)
+    draftingChatScroll.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+    draftingSidebar.addSubview(draftingSidebarStack)
+    draftingChatInputHeightConstraint = draftingChatInputScroll.heightAnchor.constraint(equalToConstant: draftingChatInputMinHeight)
+    draftingContextHeightConstraint = draftingContextScroll.heightAnchor.constraint(equalToConstant: 0)
+    draftingDiffHeightConstraint = draftingDiffScroll.heightAnchor.constraint(equalToConstant: 0)
+    let draftingChatScrollMinHeightConstraint = draftingChatScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 140)
+    draftingChatScrollMinHeightConstraint.priority = .defaultLow
+    let draftingChatInputMinHeightConstraint = draftingChatInputScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: draftingChatInputMinHeight)
+    draftingChatInputMinHeightConstraint.priority = .defaultLow
+
+    NSLayoutConstraint.activate([
+      draftingSidebarStack.leadingAnchor.constraint(equalTo: draftingSidebar.leadingAnchor),
+      draftingSidebarStack.trailingAnchor.constraint(equalTo: draftingSidebar.trailingAnchor),
+      draftingSidebarStack.topAnchor.constraint(equalTo: draftingSidebar.topAnchor),
+      draftingSidebarStack.bottomAnchor.constraint(equalTo: draftingSidebar.bottomAnchor),
+      draftingChatScrollMinHeightConstraint,
+      draftingContextHeightConstraint!,
+      draftingDiffHeightConstraint!,
+      draftingChatInputMinHeightConstraint,
+      draftingChatInputScroll.heightAnchor.constraint(lessThanOrEqualToConstant: draftingChatInputMaxHeight),
+      draftingChatInputHeightConstraint!,
+    ])
 
     let stack = NSStackView()
     stack.orientation = .vertical
     stack.spacing = 10
     stack.translatesAutoresizingMaskIntoConstraints = false
+    stack.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    stack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     stack.addArrangedSubview(banner)
     stack.addArrangedSubview(scrollView)
     stack.addArrangedSubview(agentRow)
+    scrollView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    scrollView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    draftingSidebar.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    draftingSidebar.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     view.addSubview(stack)
+    view.addSubview(draftingSidebarResizeHandle)
+    view.addSubview(draftingSidebar)
     view.addSubview(saveStatus)
     view.addSubview(findContainer)
 
+    mainStackTrailingConstraint = stack.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+    draftingSidebarWidthConstraint = draftingSidebar.widthAnchor.constraint(equalToConstant: 0)
+
     NSLayoutConstraint.activate([
       stack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-      stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      mainStackTrailingConstraint!,
       stack.topAnchor.constraint(equalTo: view.topAnchor),
       stack.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      draftingSidebarResizeHandle.trailingAnchor.constraint(equalTo: draftingSidebar.leadingAnchor),
+      draftingSidebarResizeHandle.widthAnchor.constraint(equalToConstant: 8),
+      draftingSidebarResizeHandle.topAnchor.constraint(equalTo: view.topAnchor),
+      draftingSidebarResizeHandle.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      draftingSidebar.topAnchor.constraint(equalTo: view.topAnchor),
+      draftingSidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      draftingSidebar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      draftingSidebarWidthConstraint!,
       banner.heightAnchor.constraint(greaterThanOrEqualToConstant: 0),
       saveStatus.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor, constant: 22),
       saveStatus.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: 2),
       findContainer.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: 8),
       findContainer.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: -12),
       findContainer.leadingAnchor.constraint(greaterThanOrEqualTo: scrollView.leadingAnchor, constant: 12),
-      findContainer.widthAnchor.constraint(greaterThanOrEqualToConstant: 420),
       findContainer.widthAnchor.constraint(lessThanOrEqualToConstant: 620),
     ])
 
     applyAgentConfig()
 
     applyTheme()
+    updateDraftingChatInputHeight()
+    updateDraftingSidebarControlState()
   }
 
   override func viewDidAppear() {
     super.viewDidAppear()
     setSaveState(saveState)
     focusEditor()
+  }
+
+  override func viewDidLayout() {
+    super.viewDidLayout()
+    guard draftingSidebarVisible else { return }
+    let clampedWidth = clampedDraftingSidebarWidth(draftingSidebarPreferredWidth)
+    if abs((draftingSidebarWidthConstraint?.constant ?? 0) - clampedWidth) > 0.5 {
+      applyDraftingSidebarWidth(clampedWidth, animated: false)
+    }
   }
 
   func setAgentConfig(_ agent: TurboDraftConfig.Agent) {
@@ -677,25 +1077,717 @@ final class EditorViewController: NSViewController {
     return ids
   }
 
-  private func promptAndImagesForAgent(from text: String) -> (prompt: String, images: [URL]) {
-    let ns = text as NSString
-    let matches = imagePlaceholderRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
-    guard !matches.isEmpty else { return (text, []) }
+  private struct DraftingAnnotation {
+    let type: String
+    let content: String
+  }
 
-    let mutable = NSMutableString(string: text)
-    var images: [URL] = []
-    var seen = Set<String>()
-    for match in matches.reversed() {
-      let id = ns.substring(with: match.range(at: 1))
-      guard let url = attachedImages[id] else { continue }
-      mutable.replaceCharacters(in: match.range, with: "@\(url.path)")
-      if seen.insert(id).inserted {
-        images.append(url)
+  private func parseDraftingAnnotations(in text: String) -> [DraftingAnnotation] {
+    let ns = text as NSString
+    var out: [DraftingAnnotation] = []
+    let commentMatches = draftingAnnotationRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+    out.reserveCapacity(commentMatches.count)
+    for match in commentMatches {
+      if let parsed = parseAnnotationMatch(match, in: ns) {
+        out.append(parsed)
       }
     }
 
-    images.reverse()
-    return (mutable as String, images)
+    // Also support lightweight inline annotation prefix:
+    //   @@ note: tighten scope
+    //   @@ question: should this include tests?
+    let lineMatches = draftingAnnotationLineRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+    for match in lineMatches {
+      guard match.numberOfRanges >= 3 else { continue }
+      let rawType: String
+      if match.range(at: 1).location != NSNotFound {
+        rawType = ns.substring(with: match.range(at: 1)).lowercased()
+      } else {
+        rawType = "note"
+      }
+      let rawContent = ns.substring(with: match.range(at: 2))
+      let content = normalizeAnnotationContent(rawContent)
+      guard !content.isEmpty else { continue }
+      out.append(DraftingAnnotation(type: rawType, content: content))
+    }
+    return out
+  }
+
+  private func parseAnnotationMatch(_ match: NSTextCheckingResult, in ns: NSString) -> DraftingAnnotation? {
+    guard match.numberOfRanges >= 3 else { return nil }
+    let rawType = ns.substring(with: match.range(at: 1)).lowercased()
+    let rawContent = ns.substring(with: match.range(at: 2))
+    let content = normalizeAnnotationContent(rawContent)
+    guard !content.isEmpty else { return nil }
+    return DraftingAnnotation(type: rawType, content: content)
+  }
+
+  private func normalizeAnnotationContent(_ raw: String) -> String {
+    raw
+      .split(whereSeparator: \.isNewline)
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+      .joined(separator: " ")
+  }
+
+  private func insertDraftingAnnotation(type: String) {
+    guard agentConfig.annotationEnabled else { return }
+    let sel = textView.selectedRange()
+    let ns = textView.string as NSString
+    let selectedText = sel.length > 0 && sel.location + sel.length <= ns.length
+      ? ns.substring(with: sel)
+      : ""
+    let templatePrefix = "<!-- @td(\(type)): "
+    let replacement = "\(templatePrefix)\(selectedText) -->"
+    let cursor = sel.location + templatePrefix.count + selectedText.count
+    _ = applyTextEdit(
+      replacementRange: sel,
+      replacement: replacement,
+      selectedLocation: cursor,
+      actionName: "Insert Drafting Annotation"
+    )
+  }
+
+  func insertDraftingAnnotationFromMenu() {
+    insertDraftingAnnotation(type: "note")
+  }
+
+  @objc private func openDraftingChat() {
+    guard agentConfig.chatPanelEnabled else {
+      NSSound.beep()
+      return
+    }
+    setDraftingSidebarVisible(true, focusInput: true)
+  }
+
+  private func selectedDraftingAnnotationType() -> DraftingAnnotationType {
+    guard let title = draftingAnnotationTypePicker.selectedItem?.title else { return .note }
+    return DraftingAnnotationType.allCases.first { $0.menuTitle == title } ?? .note
+  }
+
+  private func setSelectedDraftingAnnotationType(_ type: DraftingAnnotationType) {
+    draftingAnnotationTypePicker.selectItem(withTitle: type.menuTitle)
+  }
+
+  private func appendDraftingChatAnnotation(note: String, type: String = "question") -> Bool {
+    let clean = normalizeAnnotationContent(note)
+    guard !clean.isEmpty else { return false }
+    let ns = textView.string as NSString
+    let fullLen = ns.length
+    var prefix = "\n"
+    if fullLen == 0 {
+      prefix = ""
+    } else if textView.string.hasSuffix("\n") {
+      prefix = ""
+    }
+    let snippet = "\(prefix)<!-- @td(\(type)): \(clean) -->\n"
+    if applyTextEdit(
+      replacementRange: NSRange(location: fullLen, length: 0),
+      replacement: snippet,
+      selectedLocation: fullLen + (snippet as NSString).length,
+      actionName: "Add Drafting Note"
+    ) {
+      return true
+    }
+
+    // Fallback for edge cases where TextKit refuses the edit because the editor
+    // is not current first responder (e.g. sidebar-focused submit paths).
+    isApplyingProgrammaticUpdate = true
+    textView.string += snippet
+    isApplyingProgrammaticUpdate = false
+    textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
+    applyStyling(forChangedRange: NSRange(location: 0, length: (textView.string as NSString).length))
+    autosavePending = true
+    return true
+  }
+
+  func openDraftingChatFromMenu() {
+    openDraftingChat()
+  }
+
+  private func draftingSidebarWidthBounds() -> ClosedRange<CGFloat> {
+    let minWidth: CGFloat = 0
+    let maxWidth = max(minWidth, view.bounds.width)
+    return minWidth...maxWidth
+  }
+
+  private func clampedDraftingSidebarWidth(_ width: CGFloat) -> CGFloat {
+    let bounds = draftingSidebarWidthBounds()
+    return min(max(width, bounds.lowerBound), bounds.upperBound)
+  }
+
+  private func applyDraftingSidebarWidth(_ width: CGFloat, animated: Bool) {
+    let clampedWidth = clampedDraftingSidebarWidth(width)
+    draftingSidebarPreferredWidth = clampedWidth
+    draftingSidebarWidthConstraint?.constant = clampedWidth
+
+    if animated {
+      NSAnimationContext.runAnimationGroup { ctx in
+        ctx.duration = 0.12
+        view.layoutSubtreeIfNeeded()
+        view.animator().layoutSubtreeIfNeeded()
+      }
+    } else {
+      view.layoutSubtreeIfNeeded()
+    }
+  }
+
+  private func beginDraftingSidebarResize(at windowX: CGFloat) {
+    guard draftingSidebarVisible else { return }
+    draftingSidebarDragStartWindowX = windowX
+    draftingSidebarDragStartWidth = draftingSidebarWidthConstraint?.constant ?? draftingSidebarPreferredWidth
+  }
+
+  private func updateDraftingSidebarResize(at windowX: CGFloat) {
+    guard draftingSidebarVisible, let startWindowX = draftingSidebarDragStartWindowX else { return }
+    let deltaX = windowX - startWindowX
+    let proposedWidth = draftingSidebarDragStartWidth - deltaX
+    applyDraftingSidebarWidth(proposedWidth, animated: false)
+  }
+
+  private func endDraftingSidebarResize() {
+    draftingSidebarDragStartWindowX = nil
+    draftingSidebarDragStartWidth = 0
+  }
+
+  private func setDraftingSidebarVisible(_ visible: Bool, focusInput: Bool = false) {
+    guard draftingSidebarVisible != visible || focusInput else { return }
+    draftingSidebarVisible = visible
+
+    if visible {
+      if draftingChatMessages.isEmpty {
+        appendDraftingChatTranscript("system: drafting sidebar ready")
+      }
+      draftingSidebar.isHidden = false
+    } else {
+      draftingStreamingLineIndex = nil
+      draftingContextVisible = false
+      draftingDiffVisible = false
+      draftingContextScroll.isHidden = true
+      draftingDiffScroll.isHidden = true
+      draftingContextHeightConstraint?.constant = 0
+      draftingDiffHeightConstraint?.constant = 0
+      draftingChatContextButton.title = "Context"
+      draftingChatDiffButton.title = "Diff"
+      clearDraftingSidebarPendingAttachments()
+      (agentAdapter as? AgentSidebarChatAdapting)?.resetChatSession()
+      draftingSidebarChatAdapter?.resetChatSession()
+      endDraftingSidebarResize()
+    }
+
+    if visible {
+      draftingSidebarResizeHandle.isHidden = false
+      draftingSidebarResizeHandle.layer?.backgroundColor = colorTheme.secondaryText.withAlphaComponent(0.14).cgColor
+      mainStackTrailingConstraint?.constant = 0
+      applyDraftingSidebarWidth(draftingSidebarPreferredWidth, animated: true)
+    } else {
+      draftingSidebarResizeHandle.isHidden = true
+      draftingSidebarResizeHandle.layer?.backgroundColor = colorTheme.secondaryText.withAlphaComponent(0.0).cgColor
+      mainStackTrailingConstraint?.constant = 0
+      draftingSidebarWidthConstraint?.constant = 0
+      NSAnimationContext.runAnimationGroup { ctx in
+        ctx.duration = 0.12
+        view.layoutSubtreeIfNeeded()
+        view.animator().layoutSubtreeIfNeeded()
+      }
+    }
+
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      if !visible {
+        self.draftingSidebar.isHidden = true
+      }
+      if focusInput, visible {
+        self.view.window?.makeFirstResponder(self.draftingChatInput)
+      } else if !visible {
+        self.view.window?.makeFirstResponder(self.textView)
+      }
+    }
+  }
+
+  private func renderDraftingChatTranscript() {
+    let joined = draftingChatMessages.joined(separator: "\n") + (draftingChatMessages.isEmpty ? "" : "\n")
+    draftingChatTranscript.string = joined
+    let end = (joined as NSString).length
+    draftingChatTranscript.scrollRangeToVisible(NSRange(location: end, length: 0))
+  }
+
+  private func appendDraftingChatTranscript(_ line: String) {
+    draftingChatMessages.append(line)
+    renderDraftingChatTranscript()
+  }
+
+  private func beginDraftingAssistantStreamingLine() {
+    if draftingStreamingLineIndex == nil {
+      draftingStreamingLineIndex = draftingChatMessages.count
+      draftingChatMessages.append("assistant: ")
+      renderDraftingChatTranscript()
+    }
+  }
+
+  private func appendDraftingAssistantStreamingDelta(_ delta: String) {
+    guard !delta.isEmpty else { return }
+    beginDraftingAssistantStreamingLine()
+    guard let idx = draftingStreamingLineIndex, idx < draftingChatMessages.count else { return }
+    draftingChatMessages[idx].append(delta)
+    renderDraftingChatTranscript()
+  }
+
+  private func finalizeDraftingAssistantStreamingLine(finalText: String, routeLabel: String?) {
+    let prefix: String = {
+      if let routeLabel, !routeLabel.isEmpty {
+        return "assistant (\(routeLabel)): "
+      }
+      return "assistant: "
+    }()
+    if let idx = draftingStreamingLineIndex, idx < draftingChatMessages.count {
+      draftingChatMessages[idx] = "\(prefix)\(finalText)"
+    } else {
+      draftingChatMessages.append("\(prefix)\(finalText)")
+    }
+    draftingStreamingLineIndex = nil
+    renderDraftingChatTranscript()
+  }
+
+  @objc private func draftingChatAddNoteAction(_ sender: Any?) {
+    _ = submitDraftingChatNote(runImprove: false, annotationType: selectedDraftingAnnotationType())
+  }
+
+  @objc private func draftingChatAddImproveAction(_ sender: Any?) {
+    _ = submitDraftingChatNote(runImprove: true, annotationType: selectedDraftingAnnotationType())
+  }
+
+  @objc private func draftingChatSendAction(_ sender: Any?) {
+    _ = sendDraftingChatMessage()
+  }
+
+  @objc private func draftingChatCloseAction(_ sender: Any?) {
+    setDraftingSidebarVisible(false)
+  }
+
+  @objc private func draftingChatToggleContextAction(_ sender: Any?) {
+    draftingContextVisible.toggle()
+    draftingContextScroll.isHidden = !draftingContextVisible
+    draftingContextHeightConstraint?.constant = draftingContextVisible ? 140 : 0
+    draftingChatContextButton.title = draftingContextVisible ? "Hide Context" : "Context"
+    view.layoutSubtreeIfNeeded()
+  }
+
+  @objc private func draftingChatToggleDiffAction(_ sender: Any?) {
+    draftingDiffVisible.toggle()
+    draftingDiffScroll.isHidden = !draftingDiffVisible
+    draftingDiffHeightConstraint?.constant = draftingDiffVisible ? 170 : 0
+    draftingChatDiffButton.title = draftingDiffVisible ? "Hide Diff" : "Diff"
+    view.layoutSubtreeIfNeeded()
+  }
+
+  @objc private func draftingChatApplySuggestionAction(_ sender: Any?) {
+    guard let suggestion = draftingSidebarSuggestedDraft else {
+      NSSound.beep()
+      return
+    }
+    let current = textView.string
+    guard current != suggestion else {
+      banner.set(message: "Suggestion already matches current draft.", snapshotId: nil)
+      banner.isHidden = false
+      return
+    }
+    let diffSummary = lineDiffSummary(from: current, to: suggestion)
+    replaceEntireDocumentWithUndo(suggestion, actionName: "Apply Drafting Suggestion")
+    breakUndoCoalescingBoundary()
+    pruneUnreferencedAttachedImages(using: textView.string)
+    draftingSidebarSuggestedDraft = nil
+    draftingLastDiffPreview = "Suggestion applied."
+    draftingDiffView.string = draftingLastDiffPreview
+    updateDraftingSidebarControlState()
+    banner.set(message: "Applied sidebar suggestion.", snapshotId: nil)
+    banner.isHidden = false
+    appendDraftingChatTranscript("assistant: applied sidebar suggestion (Δ +\(diffSummary.insertions)/-\(diffSummary.removals) lines)")
+  }
+
+  @objc private func draftingChatAttachAction(_ sender: Any?) {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = false
+    panel.allowsMultipleSelection = true
+    panel.prompt = "Attach"
+    if let window = view.window ?? NSApp.mainWindow {
+      panel.beginSheetModal(for: window) { [weak self] response in
+        guard response == .OK else { return }
+        self?.enqueueDraftingSidebarFiles(panel.urls)
+      }
+    } else {
+      let response = panel.runModal()
+      guard response == .OK else { return }
+      enqueueDraftingSidebarFiles(panel.urls)
+    }
+  }
+
+  @objc private func draftingChatClearAttachmentsAction(_ sender: Any?) {
+    clearDraftingSidebarPendingAttachments()
+  }
+
+  private func draftingChatInputText() -> String {
+    draftingChatInput.textStorage?.string ?? draftingChatInput.string
+  }
+
+  private func setDraftingChatInputText(_ text: String) {
+    let existing = draftingChatInputText()
+    let ns = existing as NSString
+    draftingChatInput.setSelectedRange(NSRange(location: ns.length, length: 0))
+    draftingChatInput.insertText(
+      text,
+      replacementRange: NSRange(location: 0, length: ns.length)
+    )
+    updateDraftingChatInputHeight()
+  }
+
+  private func updateDraftingSidebarControlState() {
+    let busy = agentRunning || draftingChatRunning
+    draftingChatSendButton.isEnabled = !busy
+    draftingChatAddImproveButton.isEnabled = !busy
+    draftingChatAddNoteButton.isEnabled = !busy
+    draftingChatAttachButton.isEnabled = !busy
+    draftingAnnotationTypePicker.isEnabled = !busy
+    draftingChatContextButton.isEnabled = true
+    draftingChatDiffButton.isEnabled = true
+    draftingChatApplySuggestionButton.isEnabled = !busy && draftingSidebarSuggestedDraft != nil
+    draftingChatClearAttachmentsButton.isEnabled = !busy && !draftingSidebarPendingAttachmentDisplay.isEmpty
+  }
+
+  private func updateDraftingChatInputHeight() {
+    guard let textContainer = draftingChatInput.textContainer else { return }
+    draftingChatInput.layoutManager?.ensureLayout(for: textContainer)
+    let used = draftingChatInput.layoutManager?.usedRect(for: textContainer).height ?? 0
+    let inset = draftingChatInput.textContainerInset
+    let desired = ceil(used + inset.height * 2 + 2)
+    let clamped = max(draftingChatInputMinHeight, min(draftingChatInputMaxHeight, desired))
+    draftingChatInputHeightConstraint?.constant = clamped
+    draftingChatInputScroll.hasVerticalScroller = desired > draftingChatInputMaxHeight
+  }
+
+  @discardableResult
+  private func submitDraftingChatNote(runImprove: Bool, annotationType: DraftingAnnotationType) -> Bool {
+    let note = draftingChatInputText().trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+    guard !note.isEmpty else {
+      NSSound.beep()
+      return false
+    }
+    var noteWithAttachments = note
+    if !draftingSidebarPendingAttachmentRefs.isEmpty {
+      noteWithAttachments += "\n" + draftingSidebarPendingAttachmentRefs.joined(separator: "\n")
+    }
+
+    let window = view.window
+    let previousResponder = window?.firstResponder
+    if let window {
+      _ = window.makeFirstResponder(textView)
+    }
+    guard appendDraftingChatAnnotation(note: noteWithAttachments, type: annotationType.rawValue) else {
+      if let window, draftingSidebarVisible {
+        _ = window.makeFirstResponder(previousResponder)
+      }
+      NSSound.beep()
+      return false
+    }
+    let attachmentSummary = draftingSidebarPendingAttachmentDisplay.isEmpty
+      ? ""
+      : " [\(draftingSidebarPendingAttachmentDisplay.count) attachment\(draftingSidebarPendingAttachmentDisplay.count == 1 ? "" : "s")]"
+    appendDraftingChatTranscript("you: \(normalizeAnnotationContent(note))\(attachmentSummary)")
+    setDraftingChatInputText("")
+    clearDraftingSidebarPendingAttachments()
+
+    if runImprove {
+      appendDraftingChatTranscript("system: running drafting_agent improve")
+      runAgent()
+    } else {
+      banner.set(message: "Added drafting \(annotationType.rawValue) annotation.", snapshotId: nil)
+      banner.isHidden = false
+    }
+    if let window, draftingSidebarVisible {
+      _ = window.makeFirstResponder(draftingChatInput)
+    }
+    return true
+  }
+
+  @discardableResult
+  private func sendDraftingChatMessage() -> Bool {
+    guard !draftingChatRunning, !agentRunning else {
+      NSSound.beep()
+      return false
+    }
+    guard agentConfig.enabled else {
+      banner.set(
+        message: "Drafting agent is disabled. Added note instead.",
+        snapshotId: nil
+      )
+      banner.isHidden = false
+      return submitDraftingChatNote(runImprove: false, annotationType: selectedDraftingAnnotationType())
+    }
+    if agentAdapter == nil {
+      agentAdapter = makeAgentAdapter()
+    }
+    guard let adapter = agentAdapter else {
+      banner.set(
+        message: "Drafting agent is not configured. Added note instead.",
+        snapshotId: nil
+      )
+      banner.isHidden = false
+      return submitDraftingChatNote(runImprove: false, annotationType: selectedDraftingAnnotationType())
+    }
+    guard let chatAdapter = makeSidebarChatAdapter() ?? (adapter as? AgentSidebarChatAdapting) else {
+      banner.set(message: "Sidebar chat unavailable for current backend. Added note instead.", snapshotId: nil)
+      banner.isHidden = false
+      return submitDraftingChatNote(runImprove: false, annotationType: selectedDraftingAnnotationType())
+    }
+
+    let note = draftingChatInputText().trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !note.isEmpty else {
+      NSSound.beep()
+      return false
+    }
+    var messageWithAttachments = note
+    if !draftingSidebarPendingAttachmentRefs.isEmpty {
+      messageWithAttachments += "\n" + draftingSidebarPendingAttachmentRefs.joined(separator: "\n")
+    }
+
+    let resolvedMessage = promptAndImagesForAgent(from: messageWithAttachments)
+    let currentDraft = textView.string
+    updateDraftingContextInspector(
+      rawMessage: note,
+      resolvedMessage: resolvedMessage.prompt,
+      draftSnapshot: currentDraft,
+      images: resolvedMessage.images,
+      cwd: sessionCwd
+    )
+    resetDraftingDiffPreview()
+    let attachmentSummary = draftingSidebarPendingAttachmentDisplay.isEmpty
+      ? ""
+      : " [\(draftingSidebarPendingAttachmentDisplay.count) attachment\(draftingSidebarPendingAttachmentDisplay.count == 1 ? "" : "s")]"
+    appendDraftingChatTranscript("you: \(normalizeAnnotationContent(note))\(attachmentSummary)")
+    setDraftingChatInputText("")
+    clearDraftingSidebarPendingAttachments()
+
+    draftingChatRunning = true
+    updateDraftingSidebarControlState()
+    appendDraftingChatTranscript("system: drafting_agent is thinking…")
+
+    Task.detached(priority: .userInitiated) { [weak self, adapter, chatAdapter, resolvedMessage, currentDraft] in
+      guard let self else { return }
+      do {
+        let reply: String
+        if let streamingAdapter = chatAdapter as? AgentSidebarStreamingChatAdapting {
+          reply = try await streamingAdapter.chat(
+            message: resolvedMessage.prompt,
+            draft: currentDraft,
+            images: resolvedMessage.images,
+            cwd: self.sessionCwd,
+            onDelta: { [weak self] delta in
+              guard !delta.isEmpty else { return }
+              Task { @MainActor in
+                self?.appendDraftingAssistantStreamingDelta(delta)
+              }
+            }
+          )
+        } else {
+          reply = try await chatAdapter.chat(
+            message: resolvedMessage.prompt,
+            draft: currentDraft,
+            images: resolvedMessage.images,
+            cwd: self.sessionCwd
+          )
+        }
+        await MainActor.run {
+          let route = (adapter as? AgentRouteReporting)?.lastRouteLabel
+          self.finalizeDraftingAssistantStreamingLine(finalText: reply, routeLabel: route)
+          self.updateDraftingDiffPreview(fromAssistantReply: reply, draftSnapshot: currentDraft)
+        }
+      } catch {
+        await MainActor.run {
+          self.finalizeDraftingAssistantStreamingLine(finalText: "failed (\(error))", routeLabel: nil)
+          self.banner.set(message: "Drafting chat failed: \(error)", snapshotId: nil)
+          self.banner.isHidden = false
+        }
+      }
+      await MainActor.run {
+        self.draftingChatRunning = false
+        self.updateDraftingSidebarControlState()
+      }
+    }
+
+    return true
+  }
+
+  private func updateDraftingContextInspector(
+    rawMessage: String,
+    resolvedMessage: String,
+    draftSnapshot: String,
+    images: [URL],
+    cwd: String?
+  ) {
+    var lines: [String] = []
+    lines.append("### Sent Context")
+    lines.append("cwd: \(cwd ?? FileManager.default.currentDirectoryPath)")
+    if images.isEmpty {
+      lines.append("images: none")
+    } else {
+      lines.append("images (\(images.count)):")
+      lines.append(contentsOf: images.map { "- \($0.path)" })
+    }
+    lines.append("")
+    lines.append("## Raw Message")
+    lines.append(rawMessage)
+    lines.append("")
+    lines.append("## Resolved Message Sent To drafting_agent")
+    lines.append(resolvedMessage)
+    lines.append("")
+    lines.append("## Draft Snapshot Sent")
+    lines.append(draftSnapshot)
+    draftingLastSentContext = lines.joined(separator: "\n")
+    draftingContextView.string = draftingLastSentContext
+  }
+
+  private func resetDraftingDiffPreview() {
+    draftingSidebarSuggestedDraft = nil
+    draftingLastDiffPreview = "No suggestion diff yet."
+    draftingDiffView.string = draftingLastDiffPreview
+    updateDraftingSidebarControlState()
+  }
+
+  private func updateDraftingDiffPreview(fromAssistantReply reply: String, draftSnapshot: String) {
+    if let diffBlock = Self.extractDiffCodeBlock(from: reply), !diffBlock.isEmpty {
+      draftingSidebarSuggestedDraft = nil
+      draftingLastDiffPreview = diffBlock
+      draftingDiffView.string = diffBlock
+      draftingDiffVisible = true
+      draftingDiffScroll.isHidden = false
+      draftingDiffHeightConstraint?.constant = 170
+      draftingChatDiffButton.title = "Hide Diff"
+      updateDraftingSidebarControlState()
+      return
+    }
+
+    guard let suggestedDraft = Self.extractSuggestedDraft(from: reply),
+          !suggestedDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          suggestedDraft != draftSnapshot
+    else {
+      draftingSidebarSuggestedDraft = nil
+      draftingLastDiffPreview = "No apply-ready suggested draft detected in assistant response."
+      draftingDiffView.string = draftingLastDiffPreview
+      updateDraftingSidebarControlState()
+      return
+    }
+
+    let diffText = Self.unifiedLineDiff(from: draftSnapshot, to: suggestedDraft)
+    draftingSidebarSuggestedDraft = suggestedDraft
+    draftingLastDiffPreview = diffText
+    draftingDiffView.string = diffText
+    draftingDiffVisible = true
+    draftingDiffScroll.isHidden = false
+    draftingDiffHeightConstraint?.constant = 170
+    draftingChatDiffButton.title = "Hide Diff"
+    updateDraftingSidebarControlState()
+  }
+
+  private func enqueueDraftingSidebarImages(_ images: [NSImage]) {
+    guard !images.isEmpty else { return }
+    var added = 0
+    for image in images {
+      guard let url = Self.saveTempImageBackground(image) else { continue }
+      let id = String(UUID().uuidString.prefix(8).lowercased())
+      attachedImages[id] = url
+      queueDraftingSidebarAttachment(
+        ref: "[image-\(id)]",
+        displayName: "image-\(id).png"
+      )
+      added += 1
+    }
+    if added > 0 {
+      appendDraftingChatTranscript("system: queued \(added) image attachment\(added == 1 ? "" : "s")")
+    } else {
+      NSSound.beep()
+    }
+  }
+
+  private func enqueueDraftingSidebarFiles(_ urls: [URL]) {
+    guard !urls.isEmpty else { return }
+    let imageURLs = urls.filter { Self.supportedImageExtensions.contains($0.pathExtension.lowercased()) }
+    let fileURLs = urls.filter { !Self.supportedImageExtensions.contains($0.pathExtension.lowercased()) }
+
+    if !imageURLs.isEmpty {
+      let images = imageURLs.compactMap { NSImage(contentsOf: $0) }
+      enqueueDraftingSidebarImages(images)
+    }
+
+    var addedFiles = 0
+    for url in fileURLs {
+      queueDraftingSidebarAttachment(ref: "@\(url.path)", displayName: url.lastPathComponent)
+      addedFiles += 1
+    }
+    if addedFiles > 0 {
+      appendDraftingChatTranscript("system: queued \(addedFiles) file attachment\(addedFiles == 1 ? "" : "s")")
+    }
+  }
+
+  private func queueDraftingSidebarAttachment(ref: String, displayName: String) {
+    guard !ref.isEmpty else { return }
+    guard draftingSidebarPendingAttachmentRefSet.insert(ref).inserted else { return }
+    draftingSidebarPendingAttachmentRefs.append(ref)
+    draftingSidebarPendingAttachmentDisplay.append(displayName)
+    updateDraftingSidebarAttachmentSummary()
+  }
+
+  private func clearDraftingSidebarPendingAttachments() {
+    draftingSidebarPendingAttachmentRefs.removeAll()
+    draftingSidebarPendingAttachmentRefSet.removeAll()
+    draftingSidebarPendingAttachmentDisplay.removeAll()
+    updateDraftingSidebarAttachmentSummary()
+  }
+
+  private func updateDraftingSidebarAttachmentSummary() {
+    if draftingSidebarPendingAttachmentDisplay.isEmpty {
+      draftingChatAttachmentSummary.stringValue = "No attachments"
+      updateDraftingSidebarControlState()
+      return
+    }
+    let preview = draftingSidebarPendingAttachmentDisplay.prefix(2).joined(separator: ", ")
+    let extra = draftingSidebarPendingAttachmentDisplay.count > 2
+      ? " +\(draftingSidebarPendingAttachmentDisplay.count - 2) more"
+      : ""
+    draftingChatAttachmentSummary.stringValue = "\(draftingSidebarPendingAttachmentDisplay.count) attached: \(preview)\(extra)"
+    updateDraftingSidebarControlState()
+  }
+
+  private func promptAndImagesForAgent(from text: String) -> (prompt: String, images: [URL]) {
+    let ns = text as NSString
+    let matches = imagePlaceholderRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+    var promptText = text
+    var images: [URL] = []
+
+    if !matches.isEmpty {
+      let mutable = NSMutableString(string: text)
+      var seen = Set<String>()
+      for match in matches.reversed() {
+        let id = ns.substring(with: match.range(at: 1))
+        guard let url = attachedImages[id] else { continue }
+        mutable.replaceCharacters(in: match.range, with: "@\(url.path)")
+        if seen.insert(id).inserted {
+          images.append(url)
+        }
+      }
+      promptText = mutable as String
+      images.reverse()
+    }
+
+    if agentConfig.annotationEnabled {
+      let annotations = parseDraftingAnnotations(in: promptText)
+      if !annotations.isEmpty {
+        let lines = annotations.map { "- [\($0.type)] \($0.content)" }.joined(separator: "\n")
+        promptText += "\n\n## Drafting Annotations\n\(lines)\n"
+      }
+    }
+
+    return (promptText, images)
   }
 
   private func pruneUnreferencedAttachedImages(using text: String) {
@@ -730,6 +1822,32 @@ final class EditorViewController: NSViewController {
     replaceField.layer?.borderColor = fieldBorder.cgColor
     findField.backgroundColor = t.background.withAlphaComponent(0.55)
     replaceField.backgroundColor = t.background.withAlphaComponent(0.55)
+    draftingSidebar.layer?.backgroundColor = t.banner.withAlphaComponent(0.97).cgColor
+    draftingSidebar.layer?.borderColor = t.secondaryText.withAlphaComponent(0.28).cgColor
+    draftingSidebarResizeHandle.layer?.backgroundColor = t.secondaryText.withAlphaComponent(draftingSidebarVisible ? 0.14 : 0.0).cgColor
+    draftingChatTitle.textColor = t.foreground
+    draftingChatSubtitle.textColor = t.secondaryText
+    draftingChatTranscript.textColor = t.foreground
+    draftingChatInput.textColor = t.foreground
+    draftingChatInput.insertionPointColor = t.caret
+    draftingChatInput.backgroundColor = t.background.withAlphaComponent(0.55)
+    draftingChatInputScroll.layer?.backgroundColor = t.background.withAlphaComponent(0.42).cgColor
+    draftingChatInputScroll.layer?.borderColor = t.secondaryText.withAlphaComponent(0.38).cgColor
+    draftingContextView.textColor = t.foreground
+    draftingContextScroll.layer?.backgroundColor = t.background.withAlphaComponent(0.42).cgColor
+    draftingContextScroll.layer?.borderColor = t.secondaryText.withAlphaComponent(0.38).cgColor
+    draftingDiffView.textColor = t.foreground
+    draftingDiffScroll.layer?.backgroundColor = t.background.withAlphaComponent(0.42).cgColor
+    draftingDiffScroll.layer?.borderColor = t.secondaryText.withAlphaComponent(0.38).cgColor
+    draftingChatAttachmentSummary.textColor = t.secondaryText
+    draftingChatAttachButton.contentTintColor = t.link
+    draftingChatClearAttachmentsButton.contentTintColor = t.secondaryText.withAlphaComponent(0.95)
+    draftingChatContextButton.contentTintColor = t.link
+    draftingChatDiffButton.contentTintColor = t.link
+    draftingChatAddImproveButton.contentTintColor = t.link
+    draftingChatAddNoteButton.contentTintColor = t.secondaryText.withAlphaComponent(0.95)
+    draftingChatApplySuggestionButton.contentTintColor = t.link
+    draftingChatCloseButton.contentTintColor = t.secondaryText.withAlphaComponent(0.95)
     applyFindControlTintTheme()
     if !findContainer.isHidden {
       updateCurrentFindHighlight()
@@ -752,6 +1870,11 @@ final class EditorViewController: NSViewController {
     let sz = CGFloat(max(9, min(size, 72)))
     styler.rebuildFonts(family: family, size: sz)
     textView.font = styler.baseFont
+    let sidebarSize = max(12, sz - 1)
+    draftingChatTranscript.font = NSFont.monospacedSystemFont(ofSize: sidebarSize, weight: .regular)
+    draftingChatInput.font = NSFont.monospacedSystemFont(ofSize: sidebarSize, weight: .regular)
+    draftingContextView.font = NSFont.monospacedSystemFont(ofSize: max(11, sidebarSize - 1), weight: .regular)
+    draftingDiffView.font = NSFont.monospacedSystemFont(ofSize: max(11, sidebarSize - 1), weight: .regular)
     let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
     if fullRange.length > 0 {
       applyStyling(forChangedRange: fullRange)
@@ -1061,7 +2184,7 @@ final class EditorViewController: NSViewController {
     editorFont = textView.font
     editorTextColor = colorTheme.foreground
     #else
-    editorFont = textView.font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    editorFont = textView.font ?? NSFont.monospacedSystemFont(ofSize: 15, weight: .regular)
     // Don't read textView.textColor — NSTextView derives it from the text
     // storage, so our own highlight attributes (marker, heading) corrupt it.
     editorTextColor = colorTheme.foreground
@@ -1468,7 +2591,7 @@ final class EditorViewController: NSViewController {
   @objc private func runAgent() {
     guard !agentRunning else { return }
     guard agentConfig.enabled else {
-      banner.set(message: "Prompt engineer is disabled. Enable it from the Agent menu.", snapshotId: nil)
+      banner.set(message: "Drafting agent is disabled. Enable it from the Drafting menu.", snapshotId: nil)
       banner.isHidden = false
       return
     }
@@ -1478,19 +2601,20 @@ final class EditorViewController: NSViewController {
     }
 
     guard let adapter = agentAdapter else {
-      banner.set(message: "Prompt engineer is not configured (install Codex CLI and ensure `codex` is in PATH).", snapshotId: nil)
+      banner.set(message: "Drafting agent is not configured (install Codex/Claude CLI and ensure command is in PATH).", snapshotId: nil)
       banner.isHidden = false
       return
     }
 
-    let instruction = "" // adapter applies a default instruction when empty
+    let instruction = draftingAdditionalInstruction()
     let basePrompt = textView.string
 
     let oldTitle = agentButton.title
     agentButton.title = "Improving..."
     agentButton.isEnabled = false
     agentRunning = true
-    banner.set(message: "Running prompt engineer...", snapshotId: nil)
+    updateDraftingSidebarControlState()
+    banner.set(message: "Running drafting agent...", snapshotId: nil)
     banner.isHidden = false
 
     Task {
@@ -1505,9 +2629,16 @@ final class EditorViewController: NSViewController {
         let draft = try await adapter.draft(prompt: resolved.prompt, instruction: instruction, images: resolved.images, cwd: self.sessionCwd)
 
         let currentText = await MainActor.run { self.textView.string }
+        let diffSummary = lineDiffSummary(from: currentText, to: draft)
         await session.updateBufferContent(currentText)
         let restoreId = await session.snapshot(reason: "before_agent_apply")
         await MainActor.run {
+          let diffLabel = "Δ +\(diffSummary.insertions)/-\(diffSummary.removals) lines"
+          if let route = (adapter as? AgentRouteReporting)?.lastRouteLabel, !route.isEmpty {
+            self.appendDraftingChatTranscript("assistant: applied improved draft (\(route), \(diffLabel))")
+          } else {
+            self.appendDraftingChatTranscript("assistant: applied improved draft (\(diffLabel))")
+          }
           self.replaceEntireDocumentWithUndo(draft, actionName: "Improve Prompt")
           self.breakUndoCoalescingBoundary()
           self.banner.set(message: "Applied agent output. You can restore your previous buffer.", snapshotId: restoreId)
@@ -1516,6 +2647,7 @@ final class EditorViewController: NSViewController {
         }
       } catch {
         await MainActor.run {
+          self.appendDraftingChatTranscript("assistant: failed (\(error))")
           self.banner.set(message: "Agent failed: \(error)", snapshotId: nil)
           self.banner.isHidden = false
         }
@@ -1525,6 +2657,7 @@ final class EditorViewController: NSViewController {
         self.agentButton.title = oldTitle
         self.agentButton.isEnabled = true
         self.agentRunning = false
+        self.updateDraftingSidebarControlState()
       }
     }
   }
@@ -1534,10 +2667,165 @@ final class EditorViewController: NSViewController {
     attachedImages.removeAll()
   }
 
+  private nonisolated func lineDiffSummary(from old: String, to new: String) -> (insertions: Int, removals: Int) {
+    let oldLines = old.components(separatedBy: "\n")
+    let newLines = new.components(separatedBy: "\n")
+    let diff = newLines.difference(from: oldLines)
+    var insertions = 0
+    var removals = 0
+    for change in diff {
+      switch change {
+      case .insert:
+        insertions += 1
+      case .remove:
+        removals += 1
+      }
+    }
+    return (insertions, removals)
+  }
+
+  static func extractSuggestedDraft(from assistantReply: String) -> String? {
+    let blocks = fencedCodeBlocks(in: assistantReply)
+    let preferred = blocks
+      .filter { block in
+        let lang = block.language.lowercased()
+        if lang == "diff" || lang == "patch" { return false }
+        if lang.isEmpty { return true }
+        return ["markdown", "md", "text", "txt", "prompt"].contains(lang)
+      }
+      .sorted { $0.content.count > $1.content.count }
+    if let first = preferred.first {
+      let trimmed = first.content.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty { return trimmed }
+    }
+
+    let fallback = assistantReply.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !fallback.isEmpty else { return nil }
+    if fallback.hasPrefix("#") || fallback.hasPrefix("- ") || fallback.hasPrefix("1. ") {
+      return fallback
+    }
+    return nil
+  }
+
+  static func extractDiffCodeBlock(from assistantReply: String) -> String? {
+    let blocks = fencedCodeBlocks(in: assistantReply)
+    if let diff = blocks.first(where: { ["diff", "patch"].contains($0.language.lowercased()) }) {
+      let trimmed = diff.content.trimmingCharacters(in: .whitespacesAndNewlines)
+      return trimmed.isEmpty ? nil : trimmed
+    }
+    let trimmed = assistantReply.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.hasPrefix("--- ") && trimmed.contains("\n+++ ") {
+      return trimmed
+    }
+    return nil
+  }
+
+  static func unifiedLineDiff(from old: String, to new: String) -> String {
+    if old == new {
+      return "No line changes."
+    }
+
+    let oldLines = old.components(separatedBy: "\n")
+    let newLines = new.components(separatedBy: "\n")
+    let diff = newLines.difference(from: oldLines)
+    struct Operation {
+      let offset: Int
+      let priority: Int
+      let line: String
+    }
+    var ops: [Operation] = []
+    ops.reserveCapacity(diff.count)
+    for change in diff {
+      switch change {
+      case let .remove(offset, element, _):
+        ops.append(Operation(offset: offset, priority: 0, line: "-\(element)"))
+      case let .insert(offset, element, _):
+        ops.append(Operation(offset: offset, priority: 1, line: "+\(element)"))
+      }
+    }
+    ops.sort {
+      if $0.offset == $1.offset { return $0.priority < $1.priority }
+      return $0.offset < $1.offset
+    }
+
+    var lines: [String] = ["--- current", "+++ suggested", "@@"]
+    lines.append(contentsOf: ops.map(\.line))
+    return lines.joined(separator: "\n")
+  }
+
+  private static func fencedCodeBlocks(in text: String) -> [(language: String, content: String)] {
+    let ns = text as NSString
+    let matches = fencedCodeBlockRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+    var out: [(language: String, content: String)] = []
+    out.reserveCapacity(matches.count)
+    for match in matches {
+      guard match.numberOfRanges >= 3 else { continue }
+      let language = match.range(at: 1).location == NSNotFound ? "" : ns.substring(with: match.range(at: 1))
+      let content = match.range(at: 2).location == NSNotFound ? "" : ns.substring(with: match.range(at: 2))
+      out.append((language: language, content: content))
+    }
+    return out
+  }
+
+  private func draftingAdditionalInstruction() -> String {
+    var lines: [String] = []
+    let preset = agentConfig.draftingPreset
+    let isPivotPreset: Bool = {
+      switch preset {
+      case .pivotKrEnTranslate, .pivotKrEnReasonKo, .pivotKrEnOptimizeKo:
+        return true
+      default:
+        return false
+      }
+    }()
+
+    lines.append("- In the final refined prompt text, do not mention drafting_agent or execution_agent.")
+
+    switch agentConfig.pluginPolicy {
+    case .denyAll:
+      lines.append("- Plugin/tool usage policy for drafting_agent: do not use any plugins/tools.")
+    case .allowAll:
+      lines.append("- Plugin/tool usage policy for drafting_agent: plugin/tool usage is allowed if necessary.")
+    case .curatedAllowlist:
+      if agentConfig.pluginAllowlist.isEmpty {
+        lines.append("- Plugin/tool usage policy for drafting_agent: default deny (no plugins allowed unless explicitly listed).")
+      } else {
+        let safeAllowlist = agentConfig.pluginAllowlist.map { Self.sanitizeInstructionToken($0) }
+        lines.append("- Plugin/tool usage policy for drafting_agent: allow only [\(safeAllowlist.joined(separator: ", "))].")
+      }
+    }
+
+    if agentConfig.askQuestionScope == .refinementOnly {
+      lines.append("- If you need clarification, ask only prompt-refinement questions, never task-execution questions.")
+    }
+
+    if agentConfig.taskInstructionMode == .abstract && !isPivotPreset {
+      lines.append("- Include a task-planning instruction that tells the downstream model to create/manage a checklist or task list while executing.")
+    }
+
+    return lines.joined(separator: "\n")
+  }
+
+  private static func sanitizeInstructionToken(_ value: String) -> String {
+    let collapsed = value
+      .replacingOccurrences(of: "\r", with: " ")
+      .replacingOccurrences(of: "\n", with: " ")
+      .split(whereSeparator: \.isWhitespace)
+      .joined(separator: " ")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return collapsed
+  }
+
   private func applyAgentConfig() {
     agentRow.isHidden = false
     agentButton.isHidden = !agentConfig.enabled
+    chatButton.isHidden = !agentConfig.enabled || !agentConfig.chatPanelEnabled
+    if !agentConfig.enabled || !agentConfig.chatPanelEnabled {
+      setDraftingSidebarVisible(false)
+    }
     agentAdapter = agentConfig.enabled ? makeAgentAdapter() : nil
+    draftingSidebarChatAdapter = nil
+    updateDraftingSidebarControlState()
   }
 
   private func setSaveState(_ state: SaveState) {
@@ -1563,37 +2851,148 @@ final class EditorViewController: NSViewController {
   private func makeAgentAdapter() -> AgentAdapting? {
     switch agentConfig.backend {
     case .exec:
+      if agentConfig.providerBackend == .litellm {
+        let primary = CodexPromptEngineerAdapter(
+          command: agentConfig.command,
+          model: agentConfig.model,
+          timeoutMs: agentConfig.timeoutMs,
+          webSearch: agentConfig.webSearch.rawValue,
+          promptProfile: agentConfig.promptProfile.rawValue,
+          draftingPreset: agentConfig.draftingPreset.rawValue,
+          reasoningEffort: agentConfig.reasoningEffort.rawValue,
+          reasoningSummary: agentConfig.reasoningSummary.rawValue,
+          extraArgs: agentConfig.args,
+          environmentOverrides: [:]
+        )
+        let fallback = CodexPromptEngineerAdapter(
+          command: agentConfig.command,
+          model: agentConfig.model,
+          timeoutMs: agentConfig.timeoutMs,
+          webSearch: agentConfig.webSearch.rawValue,
+          promptProfile: agentConfig.promptProfile.rawValue,
+          draftingPreset: agentConfig.draftingPreset.rawValue,
+          reasoningEffort: agentConfig.reasoningEffort.rawValue,
+          reasoningSummary: agentConfig.reasoningSummary.rawValue,
+          extraArgs: agentConfig.args,
+          environmentOverrides: liteLLMEnvironmentOverrides()
+        )
+        return FallbackPromptEngineerAdapter(
+          primary: primary,
+          fallback: fallback,
+          primaryLabel: "codex exec (direct)",
+          fallbackLabel: "codex exec (litellm)"
+        )
+      }
       return CodexPromptEngineerAdapter(
         command: agentConfig.command,
         model: agentConfig.model,
         timeoutMs: agentConfig.timeoutMs,
         webSearch: agentConfig.webSearch.rawValue,
         promptProfile: agentConfig.promptProfile.rawValue,
+        draftingPreset: agentConfig.draftingPreset.rawValue,
         reasoningEffort: agentConfig.reasoningEffort.rawValue,
         reasoningSummary: agentConfig.reasoningSummary.rawValue,
-        extraArgs: agentConfig.args
+        extraArgs: agentConfig.args,
+        environmentOverrides: [:]
       )
     case .appServer:
-      return CodexAppServerPromptEngineerAdapter(
-        command: agentConfig.command,
-        model: agentConfig.model,
-        timeoutMs: agentConfig.timeoutMs,
-        webSearch: agentConfig.webSearch.rawValue,
-        promptProfile: agentConfig.promptProfile.rawValue,
-        reasoningEffort: agentConfig.reasoningEffort.rawValue,
-        reasoningSummary: agentConfig.reasoningSummary.rawValue,
-        extraArgs: agentConfig.args
-      )
+      return makeCodexAppServerAdapter()
     case .claude:
       return ClaudePromptEngineerAdapter(
         command: agentConfig.command,
         model: agentConfig.model,
         timeoutMs: agentConfig.timeoutMs,
         promptProfile: agentConfig.promptProfile.rawValue,
+        draftingPreset: agentConfig.draftingPreset.rawValue,
         reasoningEffort: agentConfig.reasoningEffort.rawValue,
         extraArgs: agentConfig.args
       )
     }
+  }
+
+  private func makeSidebarChatAdapter() -> AgentSidebarChatAdapting? {
+    if let existing = draftingSidebarChatAdapter {
+      return existing
+    }
+    if let existing = agentAdapter as? AgentSidebarChatAdapting {
+      draftingSidebarChatAdapter = existing
+      return existing
+    }
+
+    // Sidebar chat targets codex app-server as primary even when draft apply
+    // backend is configured to exec, so Enter in chat remains actionable.
+    guard agentConfig.command == "codex", agentConfig.backend != .claude else {
+      return nil
+    }
+    guard let chatAdapter = makeCodexAppServerAdapter() as? AgentSidebarChatAdapting else {
+      return nil
+    }
+    draftingSidebarChatAdapter = chatAdapter
+    appendDraftingChatTranscript("system: using codex app-server route for sidebar chat")
+    return chatAdapter
+  }
+
+  private func makeCodexAppServerAdapter() -> AgentAdapting {
+    if agentConfig.providerBackend == .litellm {
+      let primary = CodexAppServerPromptEngineerAdapter(
+        command: agentConfig.command,
+        model: agentConfig.model,
+        timeoutMs: agentConfig.timeoutMs,
+        webSearch: agentConfig.webSearch.rawValue,
+        promptProfile: agentConfig.promptProfile.rawValue,
+        draftingPreset: agentConfig.draftingPreset.rawValue,
+        reasoningEffort: agentConfig.reasoningEffort.rawValue,
+        reasoningSummary: agentConfig.reasoningSummary.rawValue,
+        extraArgs: agentConfig.args,
+        environmentOverrides: [:]
+      )
+      let fallback = CodexAppServerPromptEngineerAdapter(
+        command: agentConfig.command,
+        model: agentConfig.model,
+        timeoutMs: agentConfig.timeoutMs,
+        webSearch: agentConfig.webSearch.rawValue,
+        promptProfile: agentConfig.promptProfile.rawValue,
+        draftingPreset: agentConfig.draftingPreset.rawValue,
+        reasoningEffort: agentConfig.reasoningEffort.rawValue,
+        reasoningSummary: agentConfig.reasoningSummary.rawValue,
+        extraArgs: agentConfig.args,
+        environmentOverrides: liteLLMEnvironmentOverrides()
+      )
+      return FallbackPromptEngineerAdapter(
+        primary: primary,
+        fallback: fallback,
+        primaryLabel: "codex app-server (direct)",
+        fallbackLabel: "codex app-server (litellm)"
+      )
+    }
+    return CodexAppServerPromptEngineerAdapter(
+      command: agentConfig.command,
+      model: agentConfig.model,
+      timeoutMs: agentConfig.timeoutMs,
+      webSearch: agentConfig.webSearch.rawValue,
+      promptProfile: agentConfig.promptProfile.rawValue,
+      draftingPreset: agentConfig.draftingPreset.rawValue,
+      reasoningEffort: agentConfig.reasoningEffort.rawValue,
+      reasoningSummary: agentConfig.reasoningSummary.rawValue,
+      extraArgs: agentConfig.args,
+      environmentOverrides: [:]
+    )
+  }
+
+  private func liteLLMEnvironmentOverrides() -> [String: String] {
+    guard agentConfig.providerBackend == .litellm else { return [:] }
+    let env = ProcessInfo.processInfo.environment
+    let baseURL = env["TURBODRAFT_LITELLM_BASE_URL"]
+      ?? env["LITELLM_BASE_URL"]
+      ?? "http://127.0.0.1:4000"
+    var out: [String: String] = [
+      "OPENAI_BASE_URL": baseURL,
+      "TURBODRAFT_PROVIDER_BACKEND": "litellm",
+    ]
+    if let key = env["TURBODRAFT_LITELLM_API_KEY"] ?? env["LITELLM_API_KEY"], !key.isEmpty {
+      out["OPENAI_API_KEY"] = key
+    }
+    return out
   }
 }
 
@@ -1601,8 +3000,10 @@ final class EditorViewController: NSViewController {
 extension EditorViewController: NSSearchFieldDelegate, NSTextFieldDelegate {
   func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
     if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-      hideFind()
-      return true
+      if !findContainer.isHidden {
+        hideFind()
+        return true
+      }
     }
     return false
   }
@@ -1610,6 +3011,18 @@ extension EditorViewController: NSSearchFieldDelegate, NSTextFieldDelegate {
 
 extension EditorViewController: NSTextViewDelegate {
   func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+    if textView === draftingChatInput {
+      if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+        return sendDraftingChatMessage()
+      }
+      if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+        guard draftingSidebarVisible else { return false }
+        setDraftingSidebarVisible(false)
+        return true
+      }
+      return false
+    }
+
     guard textView === self.textView else { return false }
 
     if commandSelector == #selector(NSResponder.insertNewline(_:)) {
@@ -1897,6 +3310,156 @@ extension EditorViewController: NSTextViewDelegate {
 #endif
 
 #if !TURBODRAFT_USE_CODEEDIT_TEXTVIEW
+final class SidebarComposerTextView: NSTextView {
+  var onSubmit: (() -> Void)?
+  var onCancel: (() -> Void)?
+  var onImageDrop: (([NSImage]) -> Void)?
+  var onFileDrop: (([URL]) -> Void)?
+  var onTextChanged: (() -> Void)?
+
+  private static let imageExtensions: Set<String> = [
+    "png", "jpg", "jpeg", "gif", "tiff", "tif", "bmp", "webp", "heic",
+  ]
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    commonInit()
+  }
+
+  override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
+    super.init(frame: frameRect, textContainer: container)
+    commonInit()
+  }
+
+  private func commonInit() {
+    registerForDraggedTypes([.fileURL])
+    isAutomaticQuoteSubstitutionEnabled = false
+    isAutomaticDashSubstitutionEnabled = false
+    isAutomaticTextReplacementEnabled = false
+    isAutomaticSpellingCorrectionEnabled = false
+    isContinuousSpellCheckingEnabled = false
+    isAutomaticLinkDetectionEnabled = false
+    smartInsertDeleteEnabled = false
+    importsGraphics = false
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    commonInit()
+  }
+
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    let chars = event.charactersIgnoringModifiers ?? ""
+    if mods == .command, chars == "v", handlePaste() {
+      return true
+    }
+    return super.performKeyEquivalent(with: event)
+  }
+
+  override func keyDown(with event: NSEvent) {
+    let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    let normalizedMods = mods.subtracting([.numericPad])
+    let chars = event.charactersIgnoringModifiers ?? ""
+
+    if normalizedMods == .control, chars == "v", handlePaste() {
+      return
+    }
+    if normalizedMods.isEmpty, event.keyCode == 53 {
+      onCancel?()
+      return
+    }
+    if (event.keyCode == 36 || event.keyCode == 76),
+       (normalizedMods.isEmpty || normalizedMods == .command)
+    {
+      onSubmit?()
+      return
+    }
+    super.keyDown(with: event)
+  }
+
+  override func paste(_ sender: Any?) {
+    if handlePaste() { return }
+    super.paste(sender)
+  }
+
+  override func didChangeText() {
+    super.didChangeText()
+    onTextChanged?()
+  }
+
+  private func handlePaste() -> Bool {
+    let pb = NSPasteboard.general
+    var handled = false
+
+    for type in [NSPasteboard.PasteboardType.tiff, .png] {
+      if let data = pb.data(forType: type), let image = NSImage(data: data) {
+        onImageDrop?([image])
+        handled = true
+      }
+    }
+
+    if let urls = pb.readObjects(
+      forClasses: [NSURL.self],
+      options: [.urlReadingFileURLsOnly: true]
+    ) as? [URL], !urls.isEmpty {
+      let imageURLs = urls.filter { Self.imageExtensions.contains($0.pathExtension.lowercased()) }
+      let fileURLs = urls.filter { !Self.imageExtensions.contains($0.pathExtension.lowercased()) }
+      if !imageURLs.isEmpty {
+        let images = imageURLs.compactMap { NSImage(contentsOf: $0) }
+        if !images.isEmpty {
+          onImageDrop?(images)
+          handled = true
+        }
+      }
+      if !fileURLs.isEmpty {
+        onFileDrop?(fileURLs)
+        handled = true
+      }
+    }
+
+    return handled
+  }
+
+  private func fileURLs(from sender: NSDraggingInfo) -> [URL] {
+    guard let urls = sender.draggingPasteboard.readObjects(
+      forClasses: [NSURL.self],
+      options: [.urlReadingFileURLsOnly: true]
+    ) as? [URL] else { return [] }
+    return urls
+  }
+
+  override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+    if !fileURLs(from: sender).isEmpty { return .copy }
+    return super.draggingEntered(sender)
+  }
+
+  override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+    if !fileURLs(from: sender).isEmpty { return .copy }
+    return super.draggingUpdated(sender)
+  }
+
+  override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    let urls = fileURLs(from: sender)
+    guard !urls.isEmpty else { return super.performDragOperation(sender) }
+    let imageURLs = urls.filter { Self.imageExtensions.contains($0.pathExtension.lowercased()) }
+    let fileURLs = urls.filter { !Self.imageExtensions.contains($0.pathExtension.lowercased()) }
+    var handled = false
+    if !imageURLs.isEmpty {
+      let images = imageURLs.compactMap { NSImage(contentsOf: $0) }
+      if !images.isEmpty {
+        onImageDrop?(images)
+        handled = true
+      }
+    }
+    if !fileURLs.isEmpty {
+      onFileDrop?(fileURLs)
+      handled = true
+    }
+    return handled || super.performDragOperation(sender)
+  }
+}
+
 /// Thin NSTextView subclass that adds drag-and-drop and paste support for images.
 /// Non-image drags/pastes fall through to NSTextView's default behavior.
 final class EditorTextView: NSTextView {
@@ -1907,7 +3470,11 @@ final class EditorTextView: NSTextView {
   var onFindNext: (() -> Void)?
   var onFindPrevious: (() -> Void)?
   var onUseSelectionForFind: (() -> Void)?
+  var onOpenDraftingChat: (() -> Void)?
+  var onInsertDraftingAnnotation: (() -> Void)?
   var onCloseFind: (() -> Bool)?
+  var onCloseDraftingSidebar: (() -> Bool)?
+  var onEscape: (() -> Bool)?
 
   private static let imageExtensions: Set<String> = [
     "png", "jpg", "jpeg", "gif", "tiff", "tif", "bmp", "webp", "heic",
@@ -1961,6 +3528,14 @@ final class EditorTextView: NSTextView {
       onUseSelectionForFind?()
       return true
     }
+    if mods == [.command, .shift], chars.lowercased() == "a" {
+      onInsertDraftingAnnotation?()
+      return true
+    }
+    if mods == [.command, .option], chars.lowercased() == "r" {
+      onOpenDraftingChat?()
+      return true
+    }
 
     if mods == .command, chars == "v" {
       if handleImagePaste() { return true }
@@ -1972,8 +3547,10 @@ final class EditorTextView: NSTextView {
 
   override func keyDown(with event: NSEvent) {
     let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-    if mods.isEmpty, event.keyCode == 53, onCloseFind?() == true {  // Esc
-      return
+    if mods.isEmpty, event.keyCode == 53 {  // Esc
+      if onCloseFind?() == true { return }
+      if onCloseDraftingSidebar?() == true { return }
+      if onEscape?() == true { return }
     }
 
     let chars = event.charactersIgnoringModifiers ?? ""
@@ -2156,6 +3733,32 @@ final class AppearanceTrackingView: NSView {
   }
 }
 
+final class SidebarResizeHandleView: NSView {
+  var onDragBegan: ((CGFloat) -> Void)?
+  var onDragChanged: ((CGFloat) -> Void)?
+  var onDragEnded: (() -> Void)?
+
+  override var acceptsFirstResponder: Bool { false }
+
+  override func resetCursorRects() {
+    super.resetCursorRects()
+    addCursorRect(bounds, cursor: .resizeLeftRight)
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    onDragBegan?(event.locationInWindow.x)
+  }
+
+  override func mouseDragged(with event: NSEvent) {
+    onDragChanged?(event.locationInWindow.x)
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    onDragChanged?(event.locationInWindow.x)
+    onDragEnded?()
+  }
+}
+
 #if DEBUG
 @MainActor
 extension EditorViewController {
@@ -2213,6 +3816,53 @@ extension EditorViewController {
 
   func _testingShowFind(replace: Bool) { showFind(replace: replace) }
   func _testingHideFind() { hideFind() }
+  func _testingOpenDraftingChat() { openDraftingChatFromMenu() }
+  func _testingCloseDraftingSidebar() { setDraftingSidebarVisible(false) }
+  func _testingIsDraftingSidebarVisible() -> Bool { draftingSidebarVisible && !draftingSidebar.isHidden }
+  func _testingDraftingChatInputHeight() -> CGFloat { draftingChatInputHeightConstraint?.constant ?? 0 }
+  func _testingSetDraftingChatInput(_ text: String) { setDraftingChatInputText(text) }
+  func _testingDraftingChatInput() -> String { draftingChatInputText() }
+  func _testingDraftingChatTranscript() -> String { draftingChatTranscript.string }
+  func _testingSetDraftingAnnotationType(_ rawType: String) {
+    if let type = DraftingAnnotationType(rawValue: rawType.lowercased()) {
+      setSelectedDraftingAnnotationType(type)
+    }
+  }
+  func _testingDraftingContextText() -> String { draftingContextView.string }
+  func _testingDraftingDiffText() -> String { draftingDiffView.string }
+  func _testingHasDraftingSuggestedDraft() -> Bool { draftingSidebarSuggestedDraft != nil }
+  func _testingIsDraftingChatRunning() -> Bool { draftingChatRunning }
+  func _testingApplyDraftingSuggestion() { draftingChatApplySuggestionAction(nil) }
+  func _testingToggleDraftingContextPanel() { draftingChatToggleContextAction(nil) }
+  func _testingToggleDraftingDiffPanel() { draftingChatToggleDiffAction(nil) }
+  func _testingIsDraftingContextVisible() -> Bool { draftingContextVisible && !draftingContextScroll.isHidden }
+  func _testingIsDraftingDiffVisible() -> Bool { draftingDiffVisible && !draftingDiffScroll.isHidden }
+  func _testingSetAgentAdapter(_ adapter: AgentAdapting?) {
+    agentAdapter = adapter
+    draftingSidebarChatAdapter = nil
+  }
+  @discardableResult
+  func _testingSubmitDraftingChatNote(runImprove: Bool = false) -> Bool {
+    submitDraftingChatNote(runImprove: runImprove, annotationType: selectedDraftingAnnotationType())
+  }
+  @discardableResult
+  func _testingSendDraftingChatMessage() -> Bool {
+    sendDraftingChatMessage()
+  }
+  @discardableResult
+  func _testingSidebarDoCommand(_ selector: Selector) -> Bool {
+    self.textView(draftingChatInput, doCommandBy: selector)
+  }
+  func _testingQueueDraftingSidebarFileAttachment(url: URL) {
+    enqueueDraftingSidebarFiles([url])
+  }
+  func _testingQueueDraftingSidebarImageAttachment(id: String, url: URL) {
+    attachedImages[id] = url
+    queueDraftingSidebarAttachment(ref: "[image-\(id)]", displayName: "image-\(id).png")
+  }
+  func _testingDraftingSidebarPendingAttachmentRefs() -> [String] {
+    draftingSidebarPendingAttachmentRefs
+  }
   func _testingSetFindQuery(_ text: String) {
     findField.stringValue = text
     updateFindCountLabel()
@@ -2294,6 +3944,14 @@ extension EditorViewController {
 
   func _testingAttachImage(id: String, url: URL) {
     attachedImages[id] = url
+  }
+
+  func _testingInsertDraftingAnnotation(type: String = "note") {
+    insertDraftingAnnotation(type: type)
+  }
+
+  func _testingAppendDraftingChatNote(_ note: String, type: String = "question") -> Bool {
+    appendDraftingChatAnnotation(note: note, type: type)
   }
 
   func _testingResolvePromptAndImages(_ text: String) -> (String, [URL]) {

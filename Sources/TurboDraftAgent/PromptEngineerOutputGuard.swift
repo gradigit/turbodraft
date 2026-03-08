@@ -18,6 +18,10 @@ public enum PromptEngineerOutputGuard {
   }
 
   public static func check(draft: String, output: String) -> Result {
+    check(draft: draft, output: output, preset: .legacy)
+  }
+
+  public static func check(draft: String, output: String, preset: PromptEngineerPrompts.DraftingPreset) -> Result {
     let out = normalize(output: output).trimmingCharacters(in: .whitespacesAndNewlines)
     let lc = out.lowercased()
     let lines = out.split(whereSeparator: \.isNewline).map { String($0) }
@@ -57,8 +61,43 @@ public enum PromptEngineerOutputGuard {
       reasons.append("contains_todo_paste_placeholders")
     }
 
-    if !hasActionableNumberedImplementationStepsSection(lines: lines) {
-      reasons.append("missing_actionable_numbered_step_section")
+    switch preset {
+    case .legacy:
+      if !hasActionableNumberedImplementationStepsSection(lines: lines) {
+        reasons.append("missing_actionable_numbered_step_section")
+      }
+
+    case .pivotKrEnTranslate:
+      break
+
+    case .pivotKrEnReasonKo:
+      if !hasPivotLanguageContract(lc: lc) {
+        reasons.append("missing_pivot_language_contract")
+      }
+
+    case .pivotKrEnOptimizeKo:
+      if !hasExecutionStructure(lines: lines) {
+        reasons.append("missing_execution_structure")
+      }
+      if !hasPivotLanguageContract(lc: lc) {
+        reasons.append("missing_pivot_language_contract")
+      }
+
+    default:
+      if preset.isExecutionOriented {
+        if !hasExecutionStructure(lines: lines) {
+          reasons.append("missing_execution_structure")
+        }
+        if !hasTaskPlanningInstruction(lc: lc) {
+          reasons.append("missing_task_planning_instruction")
+        }
+      } else if !hasExplorationStructure(lines: lines) {
+        reasons.append("missing_exploration_structure")
+      }
+    }
+
+    if preset != .legacy, containsInternalAgentRoleNames(lc: lc) {
+      reasons.append("contains_internal_agent_role_names")
     }
 
     return Result(needsRepair: !reasons.isEmpty, reasons: reasons)
@@ -76,13 +115,47 @@ public enum PromptEngineerOutputGuard {
     }
   }
 
+  private static func containsInternalAgentRoleNames(lc: String) -> Bool {
+    lc.contains("drafting_agent") || lc.contains("execution_agent")
+  }
+
+  private static func hasPivotLanguageContract(lc: String) -> Bool {
+    let hasKoreanOutput = lc.contains("respond in korean")
+      || lc.contains("answer in korean")
+      || lc.contains("output in korean")
+      || lc.contains("final response in korean")
+      || lc.contains("final answer in korean")
+    let hasEnglishReasoning = lc.contains("reason in english")
+      || lc.contains("analyze in english")
+      || lc.contains("analysis in english")
+      || lc.contains("think in english")
+      || lc.contains("internally in english")
+    return hasKoreanOutput && hasEnglishReasoning
+  }
+
   private static func containsDraftPrefix(draft: String, output: String) -> Bool {
     let d = collapseWhitespace(draft)
     let o = collapseWhitespace(output)
-    guard d.count >= 220 else { return false }
-    let idx = d.index(d.startIndex, offsetBy: 220)
-    let prefix = String(d[..<idx])
-    return o.contains(prefix)
+    guard !d.isEmpty else { return false }
+
+    // Avoid false positives on tiny drafts, but catch full echoes for most practical drafts.
+    if d.count >= 60, o.contains(d) {
+      return true
+    }
+
+    let window = min(220, d.count)
+    guard window >= 60 else { return false }
+    let step = max(1, window / 2)
+    let chars = Array(d)
+    var i = 0
+    while i + window <= chars.count {
+      let snippet = String(chars[i..<(i + window)])
+      if o.contains(snippet) {
+        return true
+      }
+      i += step
+    }
+    return false
   }
 
   private static func usesInputsNeededHeading(lines: [String]) -> Bool {
@@ -168,6 +241,120 @@ public enum PromptEngineerOutputGuard {
       }
     }
     return false
+  }
+
+  private static func hasExecutionStructure(lines: [String]) -> Bool {
+    let hasGoal = hasHeading(lines: lines, anyOf: [
+      "goal",
+      "objective",
+      "goal / objective",
+      "goal/objective",
+    ])
+    let hasScope = hasHeading(lines: lines, anyOf: [
+      "scope and constraints",
+      "constraints",
+      "scope",
+    ])
+    let hasPlan = hasActionableNumberedImplementationStepsSection(lines: lines) || hasListItemsInHeading(
+      lines: lines,
+      heading: "review plan",
+      minimumItems: 2
+    )
+    let hasValidation = hasHeading(lines: lines, anyOf: [
+      "validation",
+      "acceptance criteria",
+      "acceptance checks",
+      "validation / acceptance checks",
+    ])
+    return hasGoal && hasScope && hasPlan && hasValidation
+  }
+
+  private static func hasExplorationStructure(lines: [String]) -> Bool {
+    let hasGoal = hasHeading(lines: lines, anyOf: [
+      "goal",
+      "goal / framing",
+      "goal/framing",
+      "framing",
+      "question framing",
+    ])
+    let hasOpenQuestions = hasHeading(lines: lines, anyOf: [
+      "open questions",
+      "questions",
+    ])
+    let hasOptions = hasHeading(lines: lines, anyOf: [
+      "option space",
+      "tradeoffs",
+      "option space / tradeoffs",
+      "options",
+    ])
+    let hasNextSteps = hasListItemsInHeading(lines: lines, heading: "recommended next steps", minimumItems: 2)
+    let hasEval = hasHeading(lines: lines, anyOf: [
+      "evaluation criteria",
+      "criteria",
+    ])
+    return hasGoal && hasOpenQuestions && hasOptions && hasNextSteps && hasEval
+  }
+
+  private static func hasTaskPlanningInstruction(lc: String) -> Bool {
+    let mentionsTaskArtifact = lc.contains("task checklist")
+      || lc.contains("task list")
+      || lc.contains("checklist")
+      || lc.contains("create/manage tasks")
+      || lc.contains("manage tasks")
+      || lc.contains("create tasks")
+      || lc.contains("track tasks")
+    let mentionsTaskAction = lc.contains("create")
+      || lc.contains("maintain")
+      || lc.contains("manage")
+      || lc.contains("track")
+      || lc.contains("keep")
+    return mentionsTaskArtifact && mentionsTaskAction
+  }
+
+  private static func hasHeading(lines: [String], anyOf titles: [String]) -> Bool {
+    let wanted = Set(titles.map(normalizeHeadingText))
+    for line in lines {
+      guard let (_, title) = parseHeading(line) else { continue }
+      if wanted.contains(normalizeHeadingText(title)) {
+        return true
+      }
+    }
+    return false
+  }
+
+  private static func hasListItemsInHeading(lines: [String], heading: String, minimumItems: Int) -> Bool {
+    var inTarget = false
+    var itemCount = 0
+    let wanted = normalizeHeadingText(heading)
+
+    for line in lines {
+      if let (_, title) = parseHeading(line) {
+        inTarget = (normalizeHeadingText(title) == wanted)
+        continue
+      }
+      guard inTarget else { continue }
+      if isNumberedListItem(line) || isBulletedListItem(line) {
+        itemCount += 1
+        if itemCount >= minimumItems {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  private static func isBulletedListItem(_ line: String) -> Bool {
+    let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    return t.hasPrefix("- ") || t.hasPrefix("* ")
+  }
+
+  private static func normalizeHeadingText(_ s: String) -> String {
+    s
+      .lowercased()
+      .replacingOccurrences(of: "_", with: " ")
+      .replacingOccurrences(of: "-", with: " ")
+      .split(whereSeparator: \.isWhitespace)
+      .joined(separator: " ")
   }
 
   private static func isNumberedListItem(_ line: String) -> Bool {

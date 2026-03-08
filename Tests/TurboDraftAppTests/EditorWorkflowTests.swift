@@ -1,4 +1,5 @@
 import AppKit
+import TurboDraftAgent
 import TurboDraftConfig
 import TurboDraftCore
 import XCTest
@@ -6,6 +7,82 @@ import XCTest
 
 @MainActor
 final class EditorWorkflowTests: XCTestCase {
+  private struct StaticDraftAdapter: AgentAdapting {
+    let value: String
+    func draft(prompt: String, instruction: String, images: [URL], cwd: String?) async throws -> String {
+      _ = prompt
+      _ = instruction
+      _ = images
+      _ = cwd
+      return value
+    }
+  }
+
+  private final class MockSidebarChatAdapter: AgentAdapting, AgentSidebarChatAdapting, @unchecked Sendable {
+    var lastMessage: String = ""
+    var lastDraft: String = ""
+    var lastImages: [URL] = []
+    let reply: String
+
+    init(reply: String) {
+      self.reply = reply
+    }
+
+    func draft(prompt: String, instruction: String, images: [URL], cwd: String?) async throws -> String {
+      prompt + instruction + images.description + (cwd ?? "")
+    }
+
+    func chat(message: String, draft: String, images: [URL], cwd: String?) async throws -> String {
+      lastMessage = message
+      lastDraft = draft
+      lastImages = images
+      _ = cwd
+      return reply
+    }
+  }
+
+  private final class MockStreamingSidebarChatAdapter: AgentAdapting, AgentSidebarStreamingChatAdapting, @unchecked Sendable {
+    let finalReply: String
+    let firstDelta: String
+    let secondDelta: String
+
+    init(finalReply: String, firstDelta: String, secondDelta: String) {
+      self.finalReply = finalReply
+      self.firstDelta = firstDelta
+      self.secondDelta = secondDelta
+    }
+
+    func draft(prompt: String, instruction: String, images: [URL], cwd: String?) async throws -> String {
+      prompt + instruction + images.description + (cwd ?? "")
+    }
+
+    func chat(message: String, draft: String, images: [URL], cwd: String?) async throws -> String {
+      _ = message
+      _ = draft
+      _ = images
+      _ = cwd
+      return finalReply
+    }
+
+    func chat(
+      message: String,
+      draft: String,
+      images: [URL],
+      cwd: String?,
+      onDelta: @escaping @Sendable (String) -> Void
+    ) async throws -> String {
+      _ = message
+      _ = draft
+      _ = images
+      _ = cwd
+      onDelta(firstDelta)
+      try? await Task.sleep(nanoseconds: 60_000_000)
+      onDelta(secondDelta)
+      try? await Task.sleep(nanoseconds: 60_000_000)
+      return finalReply
+    }
+  }
+
   private var tempURLs: [URL] = []
   private var windows: [NSWindow] = []
   private var controllers: [EditorViewController] = []
@@ -56,6 +133,13 @@ final class EditorWorkflowTests: XCTestCase {
   func testFindReplaceAndImageSmoke() async throws {
     let pump: (Int) -> Void = { ms in
       RunLoop.main.run(until: Date().addingTimeInterval(Double(ms) / 1_000.0))
+    }
+    func waitUntil(_ condition: @escaping () -> Bool, timeoutMs: Int) async {
+      let iterations = max(1, timeoutMs / 10)
+      for _ in 0..<iterations {
+        if condition() { return }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+      }
     }
 
     let vc = try await makeController(initialText: "alpha\nbeta\n")
@@ -212,5 +296,144 @@ final class EditorWorkflowTests: XCTestCase {
     XCTAssertTrue(resolved.0.contains("@\(imageURL.path)"))
     XCTAssertEqual(resolved.1.count, 1)
     XCTAssertEqual(resolved.1.first, imageURL)
+
+    vc._testingSetDocumentText("alpha", actionName: nil)
+    vc._testingSetSelection(NSRange(location: 5, length: 0))
+    vc._testingInsertDraftingAnnotation(type: "note")
+    XCTAssertTrue(vc._testingDocumentText().contains("<!-- @td(note):  -->"))
+
+    let withAnnotation = """
+    draft text
+    <!-- @td(question): confirm required API version -->
+    @@ constraint: keep this under 300 words
+    more text
+    """
+    let annoResolved = vc._testingResolvePromptAndImages(withAnnotation)
+    XCTAssertTrue(annoResolved.0.contains("## Drafting Annotations"))
+    XCTAssertTrue(annoResolved.0.contains("- [question] confirm required API version"))
+    XCTAssertTrue(annoResolved.0.contains("- [constraint] keep this under 300 words"))
+    XCTAssertTrue(annoResolved.1.isEmpty)
+
+    XCTAssertTrue(vc._testingAppendDraftingChatNote("narrow scope to install flow only"))
+    XCTAssertTrue(vc._testingDocumentText().contains("<!-- @td(question): narrow scope to install flow only -->"))
+
+    var cfg = TurboDraftConfig()
+    cfg.agent.enabled = true
+    cfg.agent.chatPanelEnabled = true
+    vc.setAgentConfig(cfg.agent)
+    let mockChat = MockSidebarChatAdapter(reply: "Got it — I’ll keep scope tight.")
+    vc._testingSetAgentAdapter(mockChat)
+    vc._testingOpenDraftingChat()
+    XCTAssertTrue(vc._testingIsDraftingSidebarVisible())
+    let initialInputHeight = vc._testingDraftingChatInputHeight()
+    vc._testingSetDocumentText("chat-base")
+    vc._testingSetDraftingChatInput("can you suggest tighter wording?")
+    XCTAssertTrue(vc._testingSendDraftingChatMessage())
+    await waitUntil({ vc._testingDraftingChatTranscript().contains("assistant: Got it — I’ll keep scope tight.") }, timeoutMs: 1000)
+    await waitUntil({ !vc._testingIsDraftingChatRunning() }, timeoutMs: 1000)
+    let transcript = vc._testingDraftingChatTranscript()
+    XCTAssertTrue(transcript.contains("you: can you suggest tighter wording?"))
+    XCTAssertTrue(transcript.contains("assistant: Got it — I’ll keep scope tight."))
+    XCTAssertEqual(vc._testingDocumentText(), "chat-base")
+    XCTAssertEqual(mockChat.lastDraft, "chat-base")
+
+    vc._testingSetDraftingChatInput("enter key submit")
+    XCTAssertTrue(vc._testingSidebarDoCommand(#selector(NSResponder.insertNewline(_:))))
+    await waitUntil({ vc._testingDraftingChatTranscript().contains("you: enter key submit") }, timeoutMs: 500)
+    await waitUntil({
+      let transcript = vc._testingDraftingChatTranscript()
+      return transcript.components(separatedBy: "assistant: Got it — I’ll keep scope tight.").count >= 2
+    }, timeoutMs: 1000)
+
+    vc._testingSetDraftingChatInput("keep constraints but simplify wording")
+    XCTAssertEqual(vc._testingDraftingChatInput(), "keep constraints but simplify wording")
+    XCTAssertTrue(vc._testingSubmitDraftingChatNote())
+    XCTAssertTrue(vc._testingDocumentText().contains("<!-- @td(note): keep constraints but simplify wording -->"))
+    XCTAssertEqual(vc._testingDraftingChatInputHeight(), initialInputHeight, accuracy: 0.5)
+
+    vc._testingSetDraftingAnnotationType("constraint")
+    vc._testingSetDraftingChatInput("must keep output under 250 words")
+    XCTAssertTrue(vc._testingSubmitDraftingChatNote())
+    XCTAssertTrue(vc._testingDocumentText().contains("<!-- @td(constraint): must keep output under 250 words -->"))
+
+    vc._testingSetDraftingChatInput("line1\nline2\nline3\nline4\nline5\nline6")
+    XCTAssertGreaterThan(vc._testingDraftingChatInputHeight(), initialInputHeight)
+
+    let fileURL = dir.appendingPathComponent("notes.md")
+    try Data("todo".utf8).write(to: fileURL)
+    tempURLs.append(fileURL)
+    vc._testingQueueDraftingSidebarFileAttachment(url: fileURL)
+    XCTAssertEqual(vc._testingDraftingSidebarPendingAttachmentRefs(), ["@\(fileURL.path)"])
+    vc._testingSetDraftingChatInput("include this attachment")
+    XCTAssertEqual(vc._testingDraftingChatInput(), "include this attachment")
+    XCTAssertTrue(vc._testingSubmitDraftingChatNote())
+    XCTAssertTrue(vc._testingDocumentText().contains("@\(fileURL.path)"))
+
+    vc._testingQueueDraftingSidebarImageAttachment(id: "feedbabe", url: imageURL)
+    XCTAssertEqual(vc._testingDraftingSidebarPendingAttachmentRefs(), ["[image-feedbabe]"])
+    vc._testingSetDraftingChatInput("use this image")
+    XCTAssertEqual(vc._testingDraftingChatInput(), "use this image")
+    XCTAssertTrue(vc._testingSubmitDraftingChatNote())
+    let withSidebarImage = vc._testingResolvePromptAndImages(vc._testingDocumentText())
+    XCTAssertTrue(withSidebarImage.0.contains("@\(imageURL.path)"))
+    XCTAssertTrue(withSidebarImage.1.contains(imageURL))
+
+    vc._testingQueueDraftingSidebarFileAttachment(url: fileURL)
+    XCTAssertFalse(vc._testingDraftingSidebarPendingAttachmentRefs().isEmpty)
+    vc._testingCloseDraftingSidebar()
+    XCTAssertTrue(vc._testingDraftingSidebarPendingAttachmentRefs().isEmpty)
+    await waitUntil({ !vc._testingIsDraftingChatRunning() }, timeoutMs: 1000)
+
+    vc._testingOpenDraftingChat()
+    vc._testingSetDocumentText("old line 1\nold line 2", actionName: nil)
+    let streamingReply = """
+    Here is a cleaner rewrite:
+    ```markdown
+    new line 1
+    new line 2
+    ```
+    """
+    let streaming = MockStreamingSidebarChatAdapter(
+      finalReply: streamingReply,
+      firstDelta: "Here is ",
+      secondDelta: "a cleaner rewrite:"
+    )
+    vc._testingSetAgentAdapter(streaming)
+    vc._testingSetDraftingChatInput("stream and suggest")
+    XCTAssertTrue(vc._testingSendDraftingChatMessage())
+    await waitUntil({ vc._testingDraftingChatTranscript().contains("assistant: Here is ") }, timeoutMs: 400)
+    await waitUntil({ vc._testingDraftingChatTranscript().contains("assistant: Here is a cleaner rewrite:") }, timeoutMs: 600)
+    await waitUntil({ vc._testingHasDraftingSuggestedDraft() }, timeoutMs: 1000)
+    XCTAssertTrue(vc._testingIsDraftingDiffVisible())
+    XCTAssertTrue(vc._testingDraftingDiffText().contains("--- current"))
+    XCTAssertTrue(vc._testingDraftingContextText().contains("## Resolved Message Sent To drafting_agent"))
+    XCTAssertTrue(vc._testingDraftingContextText().contains("## Draft Snapshot Sent"))
+    vc._testingApplyDraftingSuggestion()
+    XCTAssertEqual(vc._testingDocumentText(), "new line 1\nnew line 2")
+    await waitUntil({ !vc._testingIsDraftingChatRunning() }, timeoutMs: 1000)
+
+    var cfgFallback = TurboDraftConfig()
+    cfgFallback.agent.enabled = true
+    cfgFallback.agent.chatPanelEnabled = true
+    cfgFallback.agent.backend = .claude
+    cfgFallback.agent.command = "claude"
+    cfgFallback.agent.model = "claude-sonnet-4-6"
+    vc.setAgentConfig(cfgFallback.agent)
+    vc._testingSetDraftingAnnotationType("note")
+    vc._testingSetAgentAdapter(StaticDraftAdapter(value: "noop"))
+    vc._testingSetDocumentText("fallback-base", actionName: nil)
+    vc._testingSetDraftingChatInput("fallback note path")
+    XCTAssertTrue(vc._testingSendDraftingChatMessage())
+    XCTAssertTrue(vc._testingDocumentText().contains("<!-- @td(note): fallback note path -->"))
+
+    var cfgDisabled = TurboDraftConfig()
+    cfgDisabled.agent.enabled = false
+    cfgDisabled.agent.chatPanelEnabled = true
+    vc.setAgentConfig(cfgDisabled.agent)
+    vc._testingSetDraftingAnnotationType("question")
+    vc._testingSetDocumentText("disabled-base", actionName: nil)
+    vc._testingSetDraftingChatInput("disabled fallback note")
+    XCTAssertTrue(vc._testingSidebarDoCommand(#selector(NSResponder.insertNewline(_:))))
+    XCTAssertTrue(vc._testingDocumentText().contains("<!-- @td(question): disabled fallback note -->"))
   }
 }

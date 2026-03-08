@@ -1,0 +1,25 @@
+{
+  "version": "v1",
+  "providers": {
+    "drafting": {
+      "runner": "codex",
+      "model": "gpt-5.3-codex-spark",
+      "reasoning_effort": "xhigh"
+    },
+    "judge_primary": {
+      "runner": "codex",
+      "model": "gpt-5.4",
+      "reasoning_effort": "xhigh"
+    },
+    "judge_secondary": {
+      "runner": "auggie",
+      "model": "gpt5.4",
+      "reasoning_effort": "high"
+    },
+    "judge_shadow": {
+      "runner": "claude",
+      "model": "claude-opus-4-6",
+      "reasoning_effort": "high"
+    }
+  }
+}

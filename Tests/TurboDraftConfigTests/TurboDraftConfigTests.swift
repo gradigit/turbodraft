@@ -13,9 +13,19 @@ final class TurboDraftConfigTests: XCTestCase {
   func testDecodeDefaultsAgentSettings() throws {
     let cfg = try JSONDecoder().decode(TurboDraftConfig.self, from: Data("{}".utf8))
     XCTAssertEqual(cfg.agent.enabled, false)
-    XCTAssertEqual(cfg.agent.backend, .exec)
+    XCTAssertEqual(cfg.agent.backend, .appServer)
+    XCTAssertEqual(cfg.agent.providerBackend, .direct)
     XCTAssertEqual(cfg.agent.webSearch, .cached)
+    XCTAssertEqual(cfg.agent.pluginPolicy, .curatedAllowlist)
+    XCTAssertEqual(cfg.agent.pluginAllowlist, [])
     XCTAssertEqual(cfg.agent.promptProfile, .largeOpt)
+    XCTAssertEqual(cfg.agent.draftingPreset, .legacy)
+    XCTAssertEqual(cfg.agent.taskInstructionMode, .abstract)
+    XCTAssertEqual(cfg.agent.askQuestionScope, .refinementOnly)
+    XCTAssertEqual(cfg.agent.annotationEnabled, true)
+    XCTAssertEqual(cfg.agent.annotationFormat, .tdCommentV1)
+    XCTAssertEqual(cfg.agent.chatPanelEnabled, true)
+    XCTAssertEqual(cfg.agent.experimentalTerminalChatEnabled, false)
     XCTAssertEqual(cfg.agent.reasoningEffort, .low)
     XCTAssertEqual(cfg.agent.reasoningSummary, .auto)
   }
@@ -83,5 +93,21 @@ final class TurboDraftConfigTests: XCTestCase {
       from: Data(#"{"agent":{"backend":"claude","command":"codex"}}"#.utf8)
     ).sanitized()
     XCTAssertEqual(claudeCfg.agent.command, "claude")
+  }
+
+  func testSanitizedPluginAllowlistNormalization() throws {
+    let cfg = try JSONDecoder().decode(
+      TurboDraftConfig.self,
+      from: Data(#"{"agent":{"pluginAllowlist":["  alpha ","beta","alpha","","   "]}}"#.utf8)
+    ).sanitized()
+    XCTAssertEqual(cfg.agent.pluginAllowlist, ["alpha", "beta"])
+  }
+
+  func testDecodePivotPreset() throws {
+    let cfg = try JSONDecoder().decode(
+      TurboDraftConfig.self,
+      from: Data(#"{"agent":{"draftingPreset":"pivot_kr_en_reason_ko"}}"#.utf8)
+    )
+    XCTAssertEqual(cfg.agent.draftingPreset, .pivotKrEnReasonKo)
   }
 }

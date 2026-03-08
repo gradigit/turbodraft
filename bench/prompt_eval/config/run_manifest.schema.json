@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "turbodraft://prompt-eval/run-manifest.schema.json",
+  "title": "Prompt Eval Run Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "cycle_id",
+    "phase",
+    "created_at",
+    "policy_version",
+    "gate_manifest_path",
+    "gate_manifest_sha256",
+    "judge_prompt_path",
+    "judge_prompt_sha256",
+    "judge_model",
+    "draft_model",
+    "dataset_split",
+    "dataset_paths",
+    "dataset_hashes",
+    "config_paths",
+    "config_hashes",
+    "sequential_mode",
+    "reason_codes"
+  ],
+  "properties": {
+    "cycle_id": { "type": "string", "minLength": 1 },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "phase0_bootstrap",
+        "phaseA_policy_freeze",
+        "phaseB_judge_reliability",
+        "phaseC_candidate_generation",
+        "phaseD_dev",
+        "phaseE_adversarial",
+        "phaseF_holdout",
+        "phaseG_promotion"
+      ]
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "policy_version": { "type": "string", "minLength": 1 },
+    "gate_manifest_path": { "type": "string", "minLength": 1 },
+    "gate_manifest_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "judge_prompt_path": { "type": "string", "minLength": 1 },
+    "judge_prompt_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "judge_model": { "type": "string", "minLength": 1 },
+    "draft_model": { "type": "string", "minLength": 1 },
+    "dataset_split": {
+      "type": "string",
+      "enum": ["calibration", "dev", "adversarial", "holdout"]
+    },
+    "dataset_paths": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "dataset_hashes": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+    },
+    "config_paths": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "config_hashes": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+    },
+    "sequential_mode": { "type": "boolean" },
+    "reason_codes": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "notes": { "type": "string" }
+  }
+}

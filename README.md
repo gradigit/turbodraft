@@ -67,8 +67,16 @@ Make sure `~/.local/bin` is on your `PATH`.
   - Ordered-list auto-renumbering after structural edits
   - Better task-list continuation and checkbox handling
 - Prompt-improve workflow:
+  - Canonical roles: `drafting_agent` (rewrite only) and `execution_agent` (executes tasks)
   - Undo/redo across repeated improve runs
   - Restore behavior aligned with active working buffer expectations
+  - Adaptive drafting presets: coding, refactor, review, research, brainstorm
+  - Pivot presets for Korean-first prompting:
+    - `pivot_kr_en_translate` (faithful KR→EN translation)
+    - `pivot_kr_en_reason_ko` (EN reasoning contract + final KO output)
+    - `pivot_kr_en_optimize_ko` (KR→EN optimization + KO output contract)
+  - Annotation channel support via strict markers (`<!-- @td(type): ... -->`) and quick inline prefixes (`@@ question: ...`)
+  - Chat-refine sidebar with interactive assistant turns, iterative annotation, and optional immediate improve
 - Native find + replace:
   - Inline find UI, replace next/all, match case, whole word, regex
   - Selection-to-find (`⌘E`), next/previous match navigation
@@ -183,7 +191,9 @@ Tables, footnotes, and full CommonMark/GFM edge cases are out of scope. This is 
 ## Keyboard highlights
 
 - `⌘R` Improve Prompt
+- `⌥⌘R` Chat with Drafting Agent (add refinement note / add+improve)
 - `⌘Enter` Submit and close window (return control to calling CLI)
+- `⇧⌘A` Insert drafting annotation marker (`<!-- @td(note): ... -->`)
 - `⌘F` Find
 - `⌥⌘F` Replace
 - `⌘G` / `⇧⌘G` Find next / previous
@@ -217,10 +227,24 @@ Config lives at `~/Library/Application Support/TurboDraft/config.json`.
 | `autosaveDebounceMs` | `50` | Autosave debounce in milliseconds |
 | `theme` | `"system"` | `"system"`, `"light"`, or `"dark"` |
 | `editorMode` | `"reliable"` | `"reliable"` or `"ultra_fast"` |
-| `agent.enabled` | `false` | Enable prompt-engineering agent |
+| `agent.enabled` | `false` | Enable drafting agent |
 | `agent.command` | `"codex"` | Path to Codex CLI |
-| `agent.model` | `"gpt-5.3-codex-spark"` | Model for prompt engineering |
-| `agent.backend` | `"exec"` | `"exec"`, `"app_server"`, or `"claude"` |
+| `agent.model` | `"gpt-5.3-codex-spark"` | Model for drafting |
+| `agent.backend` | `"app_server"` | `"exec"`, `"app_server"`, or `"claude"` |
+| `agent.draftingPreset` | `"legacy"` | `"legacy"`, `"research"`, `"coding"`, `"refactor"`, `"review"`, `"brainstorm"`, `"pivot_kr_en_translate"`, `"pivot_kr_en_reason_ko"`, `"pivot_kr_en_optimize_ko"` |
+| `agent.pluginPolicy` | `"curated_allowlist"` | `"curated_allowlist"`, `"deny_all"`, `"allow_all"` |
+| `agent.pluginAllowlist` | `[]` | Allowed plugins/tools when policy is curated allowlist |
+| `agent.providerBackend` | `"direct"` | `"direct"` or `"litellm"` (`litellm` = direct primary + LiteLLM fallback) |
+| `agent.taskInstructionMode` | `"abstract"` | How drafting instructs execution-agent task workflow |
+| `agent.askQuestionScope` | `"refinement_only"` | Restrict drafting clarifications to refinement-only questions |
+| `agent.annotationEnabled` | `true` | Enables drafting annotations |
+| `agent.annotationFormat` | `"td_comment_v1"` | Drafting annotation syntax version |
+| `agent.chatPanelEnabled` | `true` | Enables drafting chat panel mode (when available) |
+| `agent.experimentalTerminalChatEnabled` | `false` | Experimental terminal-backed drafting chat integration |
+
+For LiteLLM fallback mode (`agent.providerBackend = "litellm"`), TurboDraft keeps direct Codex as primary and forwards these env vars for fallback Codex runs:
+- `OPENAI_BASE_URL` from `TURBODRAFT_LITELLM_BASE_URL` or `LITELLM_BASE_URL` (fallback: `http://127.0.0.1:4000`)
+- `OPENAI_API_KEY` from `TURBODRAFT_LITELLM_API_KEY` or `LITELLM_API_KEY` (if present)
 
 Override socket or config path:
 ```sh
@@ -273,6 +297,38 @@ scripts/bench_ram_nightly.sh
 Methodology + schema: `docs/RAM_BENCHMARK.md`
 
 Baseline thresholds are in `bench/editor/baseline.json`. P95 values have headroom for CI variance.
+
+## Prompt preset evaluation (autonomous pipeline)
+
+TurboDraft includes a Promptfoo + custom-harness pipeline for drafting preset evaluation.
+
+Core artifacts:
+- `bench/prompt_eval/config/*.promptfoo.yaml` — Promptfoo split configs
+- `bench/prompt_eval/config/gate_manifest.v1.json` — fail-closed gate policy
+- `bench/prompt_eval/tools/phase_orchestrator.py` — phase runner (0/A/B/C/D/E/F/G)
+
+Quick validation:
+```sh
+npx --yes promptfoo@0.120.25 validate config \
+  -c bench/prompt_eval/config/base.promptfoo.yaml \
+  -c bench/prompt_eval/config/dev.promptfoo.yaml \
+  -c bench/prompt_eval/config/adversarial.promptfoo.yaml \
+  -c bench/prompt_eval/config/holdout.promptfoo.yaml
+python3 -m unittest discover -s bench/prompt_eval/tests -p 'test_*.py'
+```
+
+Run autonomous phases (local):
+```sh
+python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phase0_bootstrap --cycle-id local-cycle
+python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phaseB_judge_reliability --cycle-id local-cycle --max-cases 6
+python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phaseD_dev --cycle-id local-cycle --max-cases 3 --simulate-no-provider
+```
+
+Holdout phase requires explicit opt-in:
+```sh
+PROMPT_EVAL_ALLOW_HOLDOUT=1 \
+python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phaseF_holdout --cycle-id local-cycle --simulate-no-provider
+```
 
 ## Architecture
 

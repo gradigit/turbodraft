@@ -32,19 +32,27 @@ public enum CodexAppServerPromptEngineerError: Error, CustomStringConvertible {
 ///
 /// This adapter keeps a warm app-server process for low per-turn latency.
 /// Transport is stdio with JSON Lines messages (one JSON object per line).
-public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecked Sendable {
+public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSidebarStreamingChatAdapting, @unchecked Sendable {
   private let command: String
   private let model: String
   private let timeoutMs: Int
   private let webSearch: String
   private let promptProfile: String
+  private let draftingPreset: String
   private let reasoningEffort: String
   private let reasoningSummary: String
   private let extraArgs: [String]
+  private let environmentOverrides: [String: String]
   private let maxOutputBytes: Int
 
   private let queue = DispatchQueue(label: "TurboDraft.CodexAppServerPromptEngineer")
   private var server: ServerProcess?
+  private var chatSession: ChatSession?
+
+  private struct ChatSession {
+    let threadId: String
+    let cwd: String
+  }
 
   public init(
     command: String = "codex",
@@ -52,9 +60,11 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     timeoutMs: Int = 60_000,
     webSearch: String = "disabled",
     promptProfile: String = "large_opt",
+    draftingPreset: String = "legacy",
     reasoningEffort: String = "low",
     reasoningSummary: String = "auto",
     extraArgs: [String] = [],
+    environmentOverrides: [String: String] = [:],
     maxOutputBytes: Int = 2 * 1024 * 1024
   ) {
     self.command = command
@@ -62,9 +72,11 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     self.timeoutMs = timeoutMs
     self.webSearch = webSearch
     self.promptProfile = promptProfile
+    self.draftingPreset = draftingPreset
     self.reasoningEffort = reasoningEffort
     self.reasoningSummary = reasoningSummary
     self.extraArgs = extraArgs
+    self.environmentOverrides = environmentOverrides
     self.maxOutputBytes = maxOutputBytes
   }
 
@@ -87,15 +99,50 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     }
   }
 
+  public func chat(message: String, draft: String, images: [URL], cwd: String?) async throws -> String {
+    try await chat(message: message, draft: draft, images: images, cwd: cwd, onDelta: { _ in })
+  }
+
+  public func chat(
+    message: String,
+    draft: String,
+    images: [URL],
+    cwd: String?,
+    onDelta: @escaping @Sendable (String) -> Void
+  ) async throws -> String {
+    try await withCheckedThrowingContinuation { cont in
+      queue.async {
+        do {
+          cont.resume(
+            returning: try self.chatSync(
+              message: message,
+              draft: draft,
+              images: images,
+              cwd: cwd,
+              onDelta: onDelta
+            )
+          )
+        } catch {
+          cont.resume(throwing: error)
+        }
+      }
+    }
+  }
+
+  public func resetChatSession() {
+    queue.async {
+      self.chatSession = nil
+    }
+  }
+
   private func runTurn(
     s: ServerProcess,
     threadId: String,
-    prompt: String,
-    instruction: String,
+    userText: String,
     effortOverride: String?,
-    images: [URL]
+    images: [URL],
+    onDelta: (@Sendable (String) -> Void)? = nil
   ) throws -> String {
-    let userText = PromptEngineerPrompts.userTurnText(prompt: prompt, instruction: instruction)
     var inputItems: [[String: Any]] = [["type": "text", "text": userText]]
     let maxImageBytes = 20 * 1024 * 1024  // 20 MB limit
     for imgURL in images {
@@ -144,6 +191,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
         {
           if agentText.count + delta.utf8.count <= maxOutputBytes {
             agentText += delta
+            onDelta?(delta)
           }
           continue
         }
@@ -200,10 +248,55 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     throw CodexAppServerPromptEngineerError.timedOut
   }
 
+  private func chatSync(
+    message: String,
+    draft: String,
+    images: [URL],
+    cwd: String?,
+    onDelta: @escaping @Sendable (String) -> Void
+  ) throws -> String {
+    let trimmedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedMessage.isEmpty else { return "" }
+
+    let s = try ensureServer()
+    try s.ensureInitialized(timeoutMs: 10_000)
+
+    let effectiveCwd = cwd ?? FileManager.default.currentDirectoryPath
+    let threadId = try ensureChatThread(s: s, cwd: effectiveCwd)
+    let userText = PromptEngineerPrompts.draftingChatUserTurn(draft: draft, message: trimmedMessage)
+
+    do {
+      return try runTurn(
+        s: s,
+        threadId: threadId,
+        userText: userText,
+        effortOverride: PromptEngineerPrompts.effectiveReasoningEffort(model: model, requested: reasoningEffort),
+        images: images,
+        onDelta: onDelta
+      )
+    } catch CodexAppServerPromptEngineerError.serverClosed {
+      chatSession = nil
+      throw CodexAppServerPromptEngineerError.serverClosed
+    } catch {
+      // If thread/session drifted, retry once on a fresh chat thread.
+      chatSession = nil
+      let retryThread = try ensureChatThread(s: s, cwd: effectiveCwd)
+      return try runTurn(
+        s: s,
+        threadId: retryThread,
+        userText: userText,
+        effortOverride: PromptEngineerPrompts.effectiveReasoningEffort(model: model, requested: reasoningEffort),
+        images: images,
+        onDelta: onDelta
+      )
+    }
+  }
+
   private func draftSync(prompt: String, instruction: String, images: [URL], cwd: String?) throws -> String {
     let s = try ensureServer()
     try s.ensureInitialized(timeoutMs: 10_000)
     let profile = PromptEngineerPrompts.Profile(rawValue: promptProfile) ?? .largeOpt
+    let preset = PromptEngineerPrompts.DraftingPreset(rawValue: draftingPreset) ?? .coding
     let preamble = PromptEngineerPrompts.preamble(for: profile)
 
     let cwd = cwd ?? FileManager.default.currentDirectoryPath
@@ -227,9 +320,17 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     }
 
     let baseEff = PromptEngineerPrompts.effectiveReasoningEffort(model: model, requested: reasoningEffort)
-    let out1Raw = try runTurn(s: s, threadId: threadId, prompt: prompt, instruction: instruction, effortOverride: baseEff, images: images)
+    let userText = PromptEngineerPrompts.userTurnText(prompt: prompt, instruction: instruction, preset: preset)
+    let out1Raw = try runTurn(
+      s: s,
+      threadId: threadId,
+      userText: userText,
+      effortOverride: baseEff,
+      images: images,
+      onDelta: nil
+    )
     let out1 = PromptEngineerOutputGuard.normalize(output: out1Raw).trimmingCharacters(in: .whitespacesAndNewlines)
-    let check = PromptEngineerOutputGuard.check(draft: prompt, output: out1)
+    let check = PromptEngineerOutputGuard.check(draft: prompt, output: out1, preset: preset)
     if !check.needsRepair {
       return out1
     }
@@ -238,17 +339,57 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
     let out2Raw = try runTurn(
       s: s,
       threadId: threadId,
-      prompt: prompt,
-      instruction: PromptEngineerPrompts.repairInstruction,
+      userText: PromptEngineerPrompts.userTurnText(
+        prompt: prompt,
+        instruction: PromptEngineerPrompts.repairInstruction,
+        preset: preset
+      ),
       effortOverride: repairEff.isEmpty ? baseEff : repairEff,
-      images: []
+      images: [],
+      onDelta: nil
     )
     let out2 = PromptEngineerOutputGuard.normalize(output: out2Raw).trimmingCharacters(in: .whitespacesAndNewlines)
-    let check2 = PromptEngineerOutputGuard.check(draft: prompt, output: out2)
-    if check2.reasons.contains("missing_actionable_numbered_step_section") {
+    let check2 = PromptEngineerOutputGuard.check(draft: prompt, output: out2, preset: preset)
+    if preset == .legacy, check2.needsRepair {
+      throw CodexAppServerPromptEngineerError.invalidOutput(check2.reasons)
+    }
+    if check2.reasons.contains("missing_execution_structure")
+      || check2.reasons.contains("missing_exploration_structure")
+      || check2.reasons.contains("missing_task_planning_instruction")
+      || check2.reasons.contains("missing_pivot_language_contract")
+      || check2.reasons.contains("contains_internal_agent_role_names")
+      || check2.reasons.contains("missing_actionable_numbered_step_section")
+    {
       throw CodexAppServerPromptEngineerError.invalidOutput(check2.reasons)
     }
     return out2
+  }
+
+  private func ensureChatThread(s: ServerProcess, cwd: String) throws -> String {
+    if let session = chatSession, session.cwd == cwd {
+      return session.threadId
+    }
+
+    let params: [String: Any] = [
+      "model": model,
+      "modelProvider": "openai",
+      "approvalPolicy": "never",
+      "sandbox": "read-only",
+      "ephemeral": true,
+      "cwd": cwd,
+      "baseInstructions": PromptEngineerPrompts.draftingChatSystemPreamble,
+      "developerInstructions": PromptEngineerPrompts.draftingChatSystemPreamble,
+      "personality": "pragmatic",
+    ]
+    let req = s.sendRequest(method: "thread/start", params: params)
+    let resp = try s.waitForResponse(id: req, timeoutMs: 30_000)
+    let threadId = try extractString(resp, ["result", "thread", "id"]) ?? ""
+    if threadId.isEmpty {
+      throw CodexAppServerPromptEngineerError.protocolError("chat thread/start missing thread.id")
+    }
+    let session = ChatSession(threadId: threadId, cwd: cwd)
+    chatSession = session
+    return session.threadId
   }
 
   private func ensureServer() throws -> ServerProcess {
@@ -274,8 +415,13 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
       return out
     }()
 
-    let spawned = try ServerProcess.spawn(executablePath: resolved, arguments: args)
+    let spawned = try ServerProcess.spawn(
+      executablePath: resolved,
+      arguments: args,
+      environmentOverrides: environmentOverrides
+    )
     server = spawned
+    chatSession = nil
     return spawned
   }
 
@@ -328,7 +474,11 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
       kill(pid, 0) == 0
     }
 
-    static func spawn(executablePath: String, arguments: [String]) throws -> ServerProcess {
+    static func spawn(
+      executablePath: String,
+      arguments: [String],
+      environmentOverrides: [String: String] = [:]
+    ) throws -> ServerProcess {
       var inFds: [Int32] = [0, 0]
       guard pipe(&inFds) == 0 else { throw CodexAppServerPromptEngineerError.spawnFailed(errno: errno) }
       var outFds: [Int32] = [0, 0]
@@ -370,7 +520,9 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, @unchecke
       }
 
       let execDir = URL(fileURLWithPath: executablePath).deletingLastPathComponent().path
-      var cEnv: [UnsafeMutablePointer<CChar>?] = CommandResolver.buildEnv(prependingToPath: execDir).map { strdup($0) }
+      let baseEnv = CommandResolver.buildEnv(prependingToPath: execDir)
+      let mergedEnv = SpawnEnvironment.merged(base: baseEnv, overrides: environmentOverrides)
+      var cEnv: [UnsafeMutablePointer<CChar>?] = mergedEnv.map { strdup($0) }
       cEnv.append(nil)
       defer { for p in cEnv where p != nil { free(p) } }
 

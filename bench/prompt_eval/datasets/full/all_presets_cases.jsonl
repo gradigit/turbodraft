@@ -1,0 +1,9 @@
+{"id":"full_coding_sidebar_resize","preset":"coding","draft_prompt":"Fix sidebar drag resizing so sidebar width changes only the sidebar and never the main window size. Add regression checks and rollback criteria."}
+{"id":"full_refactor_prompt_registry","preset":"refactor","draft_prompt":"Refactor preset selection registry to reduce duplication without changing behavior. Preserve existing outputs and add migration safety checks."}
+{"id":"full_review_install_security","preset":"review","draft_prompt":"Review install scripts for destructive command safety, path handling, and privilege boundary issues. Output severity-tagged findings."}
+{"id":"full_research_eval_pipeline","preset":"research","draft_prompt":"Design an objective prompt-eval pipeline with reproducible gates, judge calibration, adversarial checks, and cost budgets."}
+{"id":"full_brainstorm_architecture","preset":"brainstorm","draft_prompt":"Evaluate profile+preset architecture versus presets-only architecture with objective tradeoffs and migration risk analysis."}
+{"id":"full_pivot_translate_preserve_terms","preset":"pivot_kr_en_translate","draft_prompt":"API 이름 TurboDraftAPI_v2와 숫자 42는 절대 바꾸지 말고 영어로 정확히 번역해줘."}
+{"id":"full_pivot_reason_ko_quality","preset":"pivot_kr_en_reason_ko","draft_prompt":"최종 답변은 한국어 품질을 유지해야 하고, 기술 용어는 일관되게 유지해줘."}
+{"id":"full_pivot_optimize_release","preset":"pivot_kr_en_optimize_ko","draft_prompt":"릴리스 노트 초안: 창 리사이즈 버그 수정, 사이드바 드래그 개선, 프롬프트 평가 파이프라인 추가."}
+{"id":"full_legacy_clarity","preset":"legacy","draft_prompt":"Keep legacy behavior but rewrite for clarity, explicit acceptance criteria, and no hidden assumptions."}

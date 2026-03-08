@@ -1,0 +1,64 @@
+{
+  "version": "v1",
+  "goal": "deterministic preset selection with explicit user override",
+  "selection_order": [
+    "explicit_user_preset",
+    "persisted_user_default_preset",
+    "intent_classifier_guess",
+    "safe_fallback_preset"
+  ],
+  "safe_fallback_preset": "coding",
+  "explicit_override_rules": [
+    {
+      "if": "user_selected_preset_is_valid",
+      "then": "use_it_without_reclassification"
+    },
+    {
+      "if": "user_selected_unknown_preset",
+      "then": "fall_back_to_safe_fallback_and_warn"
+    }
+  ],
+  "intent_classifier_rules": [
+    {
+      "match_any": ["implement", "build", "fix", "add", "deploy", "script", "test"],
+      "preset": "coding"
+    },
+    {
+      "match_any": ["refactor", "cleanup", "restructure", "without behavior change"],
+      "preset": "refactor"
+    },
+    {
+      "match_any": ["review", "audit", "find issues", "risk"],
+      "preset": "review"
+    },
+    {
+      "match_any": ["research", "benchmark", "evidence", "compare approaches"],
+      "preset": "research"
+    },
+    {
+      "match_any": ["brainstorm", "ideas", "options", "tradeoffs"],
+      "preset": "brainstorm"
+    },
+    {
+      "match_any": ["translate", "한국어", "Korean", "English"],
+      "preset": "pivot_kr_en_translate"
+    }
+  ],
+  "render_pipeline": [
+    "load profile preamble (default large_opt)",
+    "load preset instruction",
+    "load preset contract if present",
+    "merge optional candidate overlay",
+    "append user draft prompt as quoted source block",
+    "run output guard + repair path if needed"
+  ],
+  "ui_policy": {
+    "show_presets_only": true,
+    "hide_profile_selector": true,
+    "advanced_settings": [
+      "profile",
+      "candidate_overlay",
+      "reasoning_effort"
+    ]
+  }
+}

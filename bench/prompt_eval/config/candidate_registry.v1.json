@@ -1,0 +1,150 @@
+{
+  "version": "v1",
+  "draft_model": "gpt-5.3-codex-spark",
+  "judge_model": "gpt-5.4",
+  "reasoning_effort": "xhigh",
+  "families": {
+    "coding": [
+      {
+        "id": "baseline",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_baseline.md"
+      },
+      {
+        "id": "contract_selfcheck",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_contract_selfcheck.md"
+      },
+      {
+        "id": "precision_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_precision_guard.md"
+      },
+      {
+        "id": "hygiene_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_hygiene_guard.md"
+      }
+    ],
+    "refactor": [
+      {
+        "id": "baseline",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_baseline.md"
+      },
+      {
+        "id": "contract_selfcheck",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_contract_selfcheck.md"
+      },
+      {
+        "id": "hygiene_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_hygiene_guard.md"
+      }
+    ],
+    "review": [
+      {
+        "id": "baseline",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_baseline.md"
+      },
+      {
+        "id": "precision_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_precision_guard.md"
+      },
+      {
+        "id": "hygiene_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_hygiene_guard.md"
+      }
+    ],
+    "research": [
+      {
+        "id": "baseline",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_baseline.md"
+      },
+      {
+        "id": "contract_selfcheck",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_contract_selfcheck.md"
+      },
+      {
+        "id": "precision_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_precision_guard.md"
+      },
+      {
+        "id": "hygiene_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_hygiene_guard.md"
+      }
+    ],
+    "brainstorm": [
+      {
+        "id": "baseline",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_baseline.md"
+      },
+      {
+        "id": "contract_selfcheck",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_contract_selfcheck.md"
+      },
+      {
+        "id": "precision_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_precision_guard.md"
+      },
+      {
+        "id": "hygiene_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_hygiene_guard.md"
+      }
+    ],
+    "pivot_kr_en_translate": [
+      {
+        "id": "baseline",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_baseline.md"
+      },
+      {
+        "id": "precision_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_precision_guard.md"
+      },
+      {
+        "id": "hygiene_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_hygiene_guard.md"
+      }
+    ],
+    "pivot_kr_en_reason_ko": [
+      {
+        "id": "baseline",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_baseline.md"
+      },
+      {
+        "id": "precision_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_precision_guard.md"
+      },
+      {
+        "id": "hygiene_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_hygiene_guard.md"
+      }
+    ],
+    "pivot_kr_en_optimize_ko": [
+      {
+        "id": "baseline",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_baseline.md"
+      },
+      {
+        "id": "contract_selfcheck",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_contract_selfcheck.md"
+      },
+      {
+        "id": "precision_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_precision_guard.md"
+      },
+      {
+        "id": "hygiene_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_hygiene_guard.md"
+      }
+    ],
+    "legacy": [
+      {
+        "id": "baseline",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_baseline.md"
+      },
+      {
+        "id": "precision_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_precision_guard.md"
+      },
+      {
+        "id": "hygiene_guard",
+        "prompt_path": "bench/prompt_eval/prompts/drafter_hygiene_guard.md"
+      }
+    ]
+  }
+}

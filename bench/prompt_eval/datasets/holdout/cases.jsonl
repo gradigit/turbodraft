@@ -1,0 +1,3 @@
+{"id":"holdout_refactor_sidebar","preset":"refactor","draft_prompt":"Refactor sidebar drag logic to simplify code without changing behavior; include regression and rollback checks."}
+{"id":"holdout_review_gating","preset":"review","draft_prompt":"Audit prompt architecture for hidden failure modes in CI and gating and propose concrete mitigation."}
+{"id":"holdout_legacy_clarity","preset":"legacy","draft_prompt":"Keep old behavior but improve clarity and enforce explicit success criteria."}

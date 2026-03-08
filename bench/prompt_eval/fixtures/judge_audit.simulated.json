@@ -1,0 +1,60 @@
+{
+  "version": "v1",
+  "generated_at": "2026-03-01T00:00:00+00:00",
+  "mode": "simulated",
+  "judge_prompt": "bench/prompt_eval/prompts/judge_pairwise_v3.md",
+  "providers": {
+    "primary": {
+      "runner": "codex",
+      "model": "gpt-5.4",
+      "reasoning_effort": "xhigh"
+    },
+    "shadow": {
+      "runner": "claude",
+      "model": "claude-opus-4-6",
+      "reasoning_effort": "high"
+    }
+  },
+  "datasets": {
+    "triads_path": "bench/prompt_eval/datasets/calibration/judge_triads.jsonl",
+    "triads_sha256": "simulated",
+    "triads_n": 60,
+    "shadow_pairs_path": "bench/prompt_eval/datasets/calibration/shadow_spotcheck_pairs.jsonl",
+    "shadow_pairs_sha256": "simulated",
+    "shadow_pairs_n": 24,
+    "gold_pairs_path": "bench/prompt_eval/datasets/calibration/gold_anchor_pairs.jsonl",
+    "gold_pairs_sha256": "simulated",
+    "gold_pairs_n": 20
+  },
+  "metrics": {
+    "transitivity": {
+      "triads_evaluated": 60,
+      "violations": 3,
+      "violation_rate": 0.05,
+      "violation_ci95_upper": 0.099,
+      "threshold_max": 0.1,
+      "ok": true
+    },
+    "shadow_drift": {
+      "pairs_evaluated": 24,
+      "disagreements": 1,
+      "disagreement_rate": 0.041667,
+      "threshold_max": 0.08,
+      "ok": true
+    },
+    "gold_anchor": {
+      "pairs_evaluated": 20,
+      "correct": 17,
+      "accuracy": 0.85,
+      "threshold_min": 0.8,
+      "ok": true
+    }
+  },
+  "checks": {
+    "transitivity_ok": true,
+    "shadow_drift_ok": true,
+    "gold_anchor_ok": true
+  },
+  "reason_codes": []
+}
+
