@@ -1880,7 +1880,8 @@ final class EditorViewController: NSViewController {
           )
         }
         await MainActor.run {
-          let route = (adapter as? AgentRouteReporting)?.lastRouteLabel
+          let route = (chatAdapter as? AgentRouteReporting)?.lastRouteLabel
+            ?? (adapter as? AgentRouteReporting)?.lastRouteLabel
           self.finalizeDraftingAssistantStreamingLine(finalText: reply, routeLabel: route)
           self.updateDraftingDiffPreview(fromAssistantReply: reply, draftSnapshot: currentDraft)
         }
@@ -3566,30 +3567,19 @@ final class EditorViewController: NSViewController {
   private func makeAgentAdapter() -> AgentAdapting? {
     switch agentConfig.backend {
     case .exec:
+      if agentConfig.command == "codex" {
+        return makeCodexAdaptiveDraftingAdapter(preferredBackend: .exec)
+      }
       if agentConfig.providerBackend == .litellm {
-        let primary = CodexPromptEngineerAdapter(
-          command: agentConfig.command,
-          model: agentConfig.model,
+        let primary = makeCodexExecAdapter(
           timeoutMs: agentConfig.timeoutMs,
-          webSearch: agentConfig.webSearch.rawValue,
-          promptProfile: agentConfig.promptProfile.rawValue,
-          draftingPreset: agentConfig.draftingPreset.rawValue,
-          reasoningEffort: agentConfig.reasoningEffort.rawValue,
-          reasoningSummary: agentConfig.reasoningSummary.rawValue,
-          extraArgs: agentConfig.args,
-          environmentOverrides: [:]
+          environmentOverrides: [:],
+          routeLabel: "codex exec (direct)"
         )
-        let fallback = CodexPromptEngineerAdapter(
-          command: agentConfig.command,
-          model: agentConfig.model,
+        let fallback = makeCodexExecAdapter(
           timeoutMs: agentConfig.timeoutMs,
-          webSearch: agentConfig.webSearch.rawValue,
-          promptProfile: agentConfig.promptProfile.rawValue,
-          draftingPreset: agentConfig.draftingPreset.rawValue,
-          reasoningEffort: agentConfig.reasoningEffort.rawValue,
-          reasoningSummary: agentConfig.reasoningSummary.rawValue,
-          extraArgs: agentConfig.args,
-          environmentOverrides: liteLLMEnvironmentOverrides()
+          environmentOverrides: liteLLMEnvironmentOverrides(),
+          routeLabel: "codex exec (litellm)"
         )
         return FallbackPromptEngineerAdapter(
           primary: primary,
@@ -3598,20 +3588,20 @@ final class EditorViewController: NSViewController {
           fallbackLabel: "codex exec (litellm)"
         )
       }
-      return CodexPromptEngineerAdapter(
-        command: agentConfig.command,
-        model: agentConfig.model,
+      return makeCodexExecAdapter(
         timeoutMs: agentConfig.timeoutMs,
-        webSearch: agentConfig.webSearch.rawValue,
-        promptProfile: agentConfig.promptProfile.rawValue,
-        draftingPreset: agentConfig.draftingPreset.rawValue,
-        reasoningEffort: agentConfig.reasoningEffort.rawValue,
-        reasoningSummary: agentConfig.reasoningSummary.rawValue,
-        extraArgs: agentConfig.args,
-        environmentOverrides: [:]
+        environmentOverrides: [:],
+        routeLabel: "codex exec (direct)"
       )
     case .appServer:
-      return makeCodexAppServerAdapter()
+      if agentConfig.command == "codex" {
+        return makeCodexAdaptiveDraftingAdapter(preferredBackend: .appServer)
+      }
+      return makeCodexAppServerAdapter(
+        timeoutMs: agentConfig.timeoutMs,
+        environmentOverrides: agentConfig.providerBackend == .litellm ? liteLLMEnvironmentOverrides() : [:],
+        routeLabel: agentConfig.providerBackend == .litellm ? "codex app-server (litellm)" : "codex app-server (direct)"
+      )
     case .claude:
       return ClaudePromptEngineerAdapter(
         command: agentConfig.command,
@@ -3629,69 +3619,172 @@ final class EditorViewController: NSViewController {
     if let existing = draftingSidebarChatAdapter {
       return existing
     }
+    if agentAdapter == nil {
+      agentAdapter = makeAgentAdapter()
+    }
     if let existing = agentAdapter as? AgentSidebarChatAdapting {
       draftingSidebarChatAdapter = existing
       return existing
     }
-
-    // Sidebar chat targets codex app-server as primary even when draft apply
-    // backend is configured to exec, so Enter in chat remains actionable.
-    guard agentConfig.command == "codex", agentConfig.backend != .claude else {
-      return nil
-    }
-    guard let chatAdapter = makeCodexAppServerAdapter() as? AgentSidebarChatAdapting else {
-      return nil
-    }
-    draftingSidebarChatAdapter = chatAdapter
-    appendDraftingChatTranscript("system: using codex app-server route for sidebar chat")
-    return chatAdapter
+    return nil
   }
 
-  private func makeCodexAppServerAdapter() -> AgentAdapting {
-    if agentConfig.providerBackend == .litellm {
-      let primary = CodexAppServerPromptEngineerAdapter(
-        command: agentConfig.command,
-        model: agentConfig.model,
-        timeoutMs: agentConfig.timeoutMs,
-        webSearch: agentConfig.webSearch.rawValue,
-        promptProfile: agentConfig.promptProfile.rawValue,
-        draftingPreset: agentConfig.draftingPreset.rawValue,
-        reasoningEffort: agentConfig.reasoningEffort.rawValue,
-        reasoningSummary: agentConfig.reasoningSummary.rawValue,
-        extraArgs: agentConfig.args,
-        environmentOverrides: [:]
-      )
-      let fallback = CodexAppServerPromptEngineerAdapter(
-        command: agentConfig.command,
-        model: agentConfig.model,
-        timeoutMs: agentConfig.timeoutMs,
-        webSearch: agentConfig.webSearch.rawValue,
-        promptProfile: agentConfig.promptProfile.rawValue,
-        draftingPreset: agentConfig.draftingPreset.rawValue,
-        reasoningEffort: agentConfig.reasoningEffort.rawValue,
-        reasoningSummary: agentConfig.reasoningSummary.rawValue,
-        extraArgs: agentConfig.args,
-        environmentOverrides: liteLLMEnvironmentOverrides()
-      )
-      return FallbackPromptEngineerAdapter(
-        primary: primary,
-        fallback: fallback,
-        primaryLabel: "codex app-server (direct)",
-        fallbackLabel: "codex app-server (litellm)"
-      )
-    }
-    return CodexAppServerPromptEngineerAdapter(
+  private func makeCodexAppServerAdapter(
+    timeoutMs: Int,
+    environmentOverrides: [String: String],
+    routeLabel: String
+  ) -> AgentAdapting {
+    CodexAppServerPromptEngineerAdapter(
       command: agentConfig.command,
       model: agentConfig.model,
-      timeoutMs: agentConfig.timeoutMs,
+      timeoutMs: timeoutMs,
       webSearch: agentConfig.webSearch.rawValue,
       promptProfile: agentConfig.promptProfile.rawValue,
       draftingPreset: agentConfig.draftingPreset.rawValue,
       reasoningEffort: agentConfig.reasoningEffort.rawValue,
       reasoningSummary: agentConfig.reasoningSummary.rawValue,
       extraArgs: agentConfig.args,
-      environmentOverrides: [:]
+      environmentOverrides: environmentOverrides,
+      routeLabel: routeLabel
     )
+  }
+
+  private func makeCodexExecAdapter(
+    timeoutMs: Int,
+    environmentOverrides: [String: String],
+    routeLabel: String
+  ) -> AgentAdapting {
+    CodexPromptEngineerAdapter(
+      command: agentConfig.command,
+      model: agentConfig.model,
+      timeoutMs: timeoutMs,
+      webSearch: agentConfig.webSearch.rawValue,
+      promptProfile: agentConfig.promptProfile.rawValue,
+      draftingPreset: agentConfig.draftingPreset.rawValue,
+      reasoningEffort: agentConfig.reasoningEffort.rawValue,
+      reasoningSummary: agentConfig.reasoningSummary.rawValue,
+      extraArgs: agentConfig.args,
+      environmentOverrides: environmentOverrides,
+      routeLabel: routeLabel
+    )
+  }
+
+  private func adaptiveCodexPrimaryTimeoutMs() -> Int {
+    let configured = max(2_000, agentConfig.timeoutMs)
+    let budget = configured / 4
+    return min(max(5_000, budget), 15_000)
+  }
+
+  private func makeCodexAdaptiveDraftingAdapter(
+    preferredBackend: TurboDraftConfig.Agent.Backend
+  ) -> AgentAdapting {
+    let direct = makeCodexAdaptiveProviderAdapter(
+      preferredBackend: preferredBackend,
+      environmentOverrides: [:],
+      providerLabel: "direct"
+    )
+    guard agentConfig.providerBackend == .litellm else {
+      return direct
+    }
+    let liteLLM = makeCodexAdaptiveProviderAdapter(
+      preferredBackend: preferredBackend,
+      environmentOverrides: liteLLMEnvironmentOverrides(),
+      providerLabel: "litellm"
+    )
+    return FallbackPromptEngineerAdapter(
+      primary: direct,
+      fallback: liteLLM,
+      primaryLabel: "codex direct",
+      fallbackLabel: "codex litellm",
+      shouldFallback: { error in
+        Self.shouldFallbackBetweenCodexRoutes(error)
+      }
+    )
+  }
+
+  private func makeCodexAdaptiveProviderAdapter(
+    preferredBackend: TurboDraftConfig.Agent.Backend,
+    environmentOverrides: [String: String],
+    providerLabel: String
+  ) -> AgentAdapting {
+    switch preferredBackend {
+    case .exec:
+      let primary = makeCodexExecAdapter(
+        timeoutMs: adaptiveCodexPrimaryTimeoutMs(),
+        environmentOverrides: environmentOverrides,
+        routeLabel: "codex exec (\(providerLabel))"
+      )
+      let fallback = makeCodexAppServerAdapter(
+        timeoutMs: agentConfig.timeoutMs,
+        environmentOverrides: environmentOverrides,
+        routeLabel: "codex app-server (\(providerLabel))"
+      )
+      return FallbackPromptEngineerAdapter(
+        primary: primary,
+        fallback: fallback,
+        primaryLabel: "codex exec (\(providerLabel))",
+        fallbackLabel: "codex app-server (\(providerLabel))",
+        shouldFallback: { error in
+          Self.shouldFallbackBetweenCodexRoutes(error)
+        }
+      )
+    case .appServer:
+      let primary = makeCodexAppServerAdapter(
+        timeoutMs: adaptiveCodexPrimaryTimeoutMs(),
+        environmentOverrides: environmentOverrides,
+        routeLabel: "codex app-server (\(providerLabel))"
+      )
+      let fallback = makeCodexExecAdapter(
+        timeoutMs: agentConfig.timeoutMs,
+        environmentOverrides: environmentOverrides,
+        routeLabel: "codex exec (\(providerLabel))"
+      )
+      return FallbackPromptEngineerAdapter(
+        primary: primary,
+        fallback: fallback,
+        primaryLabel: "codex app-server (\(providerLabel))",
+        fallbackLabel: "codex exec (\(providerLabel))",
+        shouldFallback: { error in
+          Self.shouldFallbackBetweenCodexRoutes(error)
+        }
+      )
+    case .claude:
+      return makeCodexAppServerAdapter(
+        timeoutMs: agentConfig.timeoutMs,
+        environmentOverrides: environmentOverrides,
+        routeLabel: "codex app-server (\(providerLabel))"
+      )
+    }
+  }
+
+  nonisolated private static func shouldFallbackBetweenCodexRoutes(_ error: Error) -> Bool {
+    switch error {
+    case is CancellationError:
+      return false
+    case let err as CodexPromptEngineerError:
+      switch err {
+      case .invalidOutput, .outputTooLarge:
+        return false
+      case .commandNotFound, .spawnFailed, .timedOut, .nonZeroExit, .missingOutputFile:
+        return true
+      }
+    case let err as CodexAppServerPromptEngineerError:
+      switch err {
+      case .invalidOutput, .outputTooLarge:
+        return false
+      case .commandNotFound, .spawnFailed, .writeFailed, .timedOut, .serverClosed, .protocolError, .nonZeroExit, .missingAgentMessage:
+        return true
+      }
+    case let err as FallbackPromptEngineerError:
+      switch err {
+      case .chatNotSupported:
+        return true
+      case .primaryAndFallbackFailed:
+        return false
+      }
+    default:
+      return true
+    }
   }
 
   private func liteLLMEnvironmentOverrides() -> [String: String] {

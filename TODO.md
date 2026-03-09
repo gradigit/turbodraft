@@ -174,3 +174,21 @@ Safely recover the stranded full sidebar-chat implementation from `wip/local-sna
 - Keep TurboDraft agent-agnostic; Claude Pager queue UI must be optional and metadata-driven.
 - Recovered panel resizing must never resize the entire app window.
 - Do **not** write shared queue files until the line contract and unknown-field preservation policy are frozen.
+
+---
+
+## Forge TODO — Codex Drafting Backend Stabilization (2026-03-09)
+
+### Goal
+Finish the TurboDraft backend implementation so Codex-backed drafting is production-ready before the prompt-eval campaign finishes, allowing prompt/preset swaps later without more transport/runtime work.
+
+### Milestones
+- [x] B1: Audit current Codex exec/app-server behavior and freeze the routing policy for `drafting_agent`
+- [x] B2: Fix app-server protocol/completion handling and make it a viable primary Codex route
+- [x] B3: Add adaptive fallback / health handling for Codex drafting routes plus clearer route/error surfacing
+- [x] B4: Add/expand regression coverage for real route semantics, review findings, install, and checkpoint commit
+
+### Constraints
+- Keep TurboDraft agent-agnostic at the product layer.
+- Do not require prompt-eval completion to finish backend transport/runtime work.
+- Do not hard-force app-server-only if exec remains needed as fallback.

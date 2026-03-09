@@ -51,22 +51,24 @@ public final class FallbackPromptEngineerAdapter: AgentAdapting, AgentSidebarStr
   public func draft(prompt: String, instruction: String, images: [URL], cwd: String?) async throws -> String {
     do {
       let out = try await primary.draft(prompt: prompt, instruction: instruction, images: images, cwd: cwd)
-      setLastRoute(primaryLabel)
+      setLastRoute(resolvedRouteLabel(for: primary, defaultLabel: primaryLabel))
       return out
     } catch {
       let primaryError = error
       guard shouldFallback(primaryError), let fallback else {
-        setLastRoute("\(primaryLabel) (failed)")
+        setLastRoute("\(resolvedRouteLabel(for: primary, defaultLabel: primaryLabel)) (failed)")
         throw primaryError
       }
 
       do {
         let out = try await fallback.draft(prompt: prompt, instruction: instruction, images: images, cwd: cwd)
-        setLastRoute("\(fallbackLabel) fallback")
+        setLastRoute("\(resolvedRouteLabel(for: fallback, defaultLabel: fallbackLabel)) fallback")
         return out
       } catch {
         let fallbackError = error
-        setLastRoute("\(primaryLabel) + \(fallbackLabel) (failed)")
+        setLastRoute(
+          "\(resolvedRouteLabel(for: primary, defaultLabel: primaryLabel)) + \(resolvedRouteLabel(for: fallback, defaultLabel: fallbackLabel)) (failed)"
+        )
         throw FallbackPromptEngineerError.primaryAndFallbackFailed(primary: primaryError, fallback: fallbackError)
       }
     }
@@ -98,12 +100,12 @@ public final class FallbackPromptEngineerAdapter: AgentAdapting, AgentSidebarStr
         out = try await primaryChat.chat(message: message, draft: draft, images: images, cwd: cwd)
         onDelta(out)
       }
-      setLastRoute("\(primaryLabel) chat")
+      setLastRoute("\(resolvedRouteLabel(for: primary, defaultLabel: primaryLabel)) chat")
       return out
     } catch {
       let primaryError = error
       guard shouldFallback(primaryError), let fallbackChat else {
-        setLastRoute("\(primaryLabel) chat (failed)")
+        setLastRoute("\(resolvedRouteLabel(for: primary, defaultLabel: primaryLabel)) chat (failed)")
         throw primaryError
       }
       do {
@@ -114,11 +116,13 @@ public final class FallbackPromptEngineerAdapter: AgentAdapting, AgentSidebarStr
           out = try await fallbackChat.chat(message: message, draft: draft, images: images, cwd: cwd)
           onDelta(out)
         }
-        setLastRoute("\(fallbackLabel) chat fallback")
+        setLastRoute("\(resolvedRouteLabel(for: fallbackChat, defaultLabel: fallbackLabel)) chat fallback")
         return out
       } catch {
         let fallbackError = error
-        setLastRoute("\(primaryLabel) + \(fallbackLabel) chat (failed)")
+        setLastRoute(
+          "\(resolvedRouteLabel(for: primary, defaultLabel: primaryLabel)) + \(resolvedRouteLabel(for: fallbackChat, defaultLabel: fallbackLabel)) chat (failed)"
+        )
         throw FallbackPromptEngineerError.primaryAndFallbackFailed(primary: primaryError, fallback: fallbackError)
       }
     }
@@ -133,5 +137,11 @@ public final class FallbackPromptEngineerAdapter: AgentAdapting, AgentSidebarStr
     lock.lock()
     _lastRouteLabel = value
     lock.unlock()
+  }
+
+  private func resolvedRouteLabel(for adapter: Any, defaultLabel: String) -> String {
+    guard let reporting = adapter as? AgentRouteReporting else { return defaultLabel }
+    let reported = reporting.lastRouteLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+    return reported.isEmpty || reported == "uninitialized" ? defaultLabel : reported
   }
 }

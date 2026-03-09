@@ -29,7 +29,7 @@ public enum CodexPromptEngineerError: Error, CustomStringConvertible {
 ///
 /// This adapter writes the final assistant message to a temp file via
 /// `--output-last-message` and returns that file content as the “draft”.
-public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendable {
+public final class CodexPromptEngineerAdapter: AgentAdapting, AgentRouteReporting, @unchecked Sendable {
   private let command: String
   private let model: String
   private let timeoutMs: Int
@@ -41,6 +41,9 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
   private let extraArgs: [String]
   private let environmentOverrides: [String: String]
   private let maxOutputBytes: Int
+  private let routeLabel: String
+  private let routeLabelLock = NSLock()
+  private var _lastRouteLabel: String = "uninitialized"
   private static let adapterLog = Logger(subsystem: "com.turbodraft", category: "CodexPromptEngineerAdapter")
   private actor State {
     var disableModelOverride = false
@@ -66,7 +69,8 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     reasoningSummary: String = "auto",
     extraArgs: [String] = [],
     environmentOverrides: [String: String] = [:],
-    maxOutputBytes: Int = 2 * 1024 * 1024
+    maxOutputBytes: Int = 2 * 1024 * 1024,
+    routeLabel: String? = nil
   ) {
     self.command = command
     self.model = model
@@ -79,6 +83,19 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     self.extraArgs = extraArgs
     self.environmentOverrides = environmentOverrides
     self.maxOutputBytes = maxOutputBytes
+    if let explicit = routeLabel?.trimmingCharacters(in: .whitespacesAndNewlines), !explicit.isEmpty {
+      self.routeLabel = explicit
+    } else if environmentOverrides["TURBODRAFT_PROVIDER_BACKEND"] == "litellm" {
+      self.routeLabel = "codex exec (litellm)"
+    } else {
+      self.routeLabel = "codex exec (direct)"
+    }
+  }
+
+  public var lastRouteLabel: String {
+    routeLabelLock.lock()
+    defer { routeLabelLock.unlock() }
+    return _lastRouteLabel
   }
 
   public func draft(prompt: String, instruction: String, images: [URL], cwd: String?) async throws -> String {
@@ -87,9 +104,16 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
     }
     // Run blocking posix_spawn + poll loop off the cooperative thread pool.
     let adapter = self
-    return try await Task.detached {
-      try await adapter.draftBlocking(resolved: resolved, prompt: prompt, instruction: instruction, images: images, cwd: cwd)
-    }.value
+    do {
+      let out = try await Task.detached {
+        try await adapter.draftBlocking(resolved: resolved, prompt: prompt, instruction: instruction, images: images, cwd: cwd)
+      }.value
+      setLastRoute(routeLabel)
+      return out
+    } catch {
+      setLastRoute("\(routeLabel) (failed)")
+      throw error
+    }
   }
 
   private func draftBlocking(resolved: String, prompt: String, instruction: String, images: [URL], cwd: String?) async throws -> String {
@@ -256,6 +280,12 @@ public final class CodexPromptEngineerAdapter: AgentAdapting, @unchecked Sendabl
       return String(tail[..<idx]) + "…"
     }
     return tail
+  }
+
+  private func setLastRoute(_ value: String) {
+    routeLabelLock.lock()
+    _lastRouteLabel = value
+    routeLabelLock.unlock()
   }
 
   private struct SpawnResult {

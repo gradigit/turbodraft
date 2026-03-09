@@ -5,6 +5,7 @@ import TurboDraftCore
 public enum CodexAppServerPromptEngineerError: Error, CustomStringConvertible {
   case commandNotFound
   case spawnFailed(errno: Int32)
+  case writeFailed(errno: Int32)
   case timedOut
   case serverClosed
   case protocolError(String)
@@ -17,6 +18,7 @@ public enum CodexAppServerPromptEngineerError: Error, CustomStringConvertible {
     switch self {
     case .commandNotFound: return "Codex CLI not found"
     case let .spawnFailed(e): return "Spawn failed errno=\(e)"
+    case let .writeFailed(e): return "Write failed errno=\(e)"
     case .timedOut: return "Timed out"
     case .serverClosed: return "App server closed unexpectedly"
     case let .protocolError(s): return "Protocol error: \(s)"
@@ -28,11 +30,21 @@ public enum CodexAppServerPromptEngineerError: Error, CustomStringConvertible {
   }
 }
 
+protocol CodexAppServerTransport: AnyObject {
+  var isAlive: Bool { get }
+  func shutdown()
+  func ensureInitialized(timeoutMs: Int) throws
+  func sendRequest(method: String, params: [String: Any]) throws -> Int
+  func sendNotification(method: String, params: [String: Any]) throws
+  func waitForResponse(id: Int, timeoutMs: Int) throws -> [String: Any]
+  func readNextMessage(timeoutMs: Int) throws -> [String: Any]?
+}
+
 /// Prompt engineering agent powered by Codex App Server (`codex app-server`).
 ///
 /// This adapter keeps a warm app-server process for low per-turn latency.
 /// Transport is stdio with JSON Lines messages (one JSON object per line).
-public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSidebarStreamingChatAdapting, @unchecked Sendable {
+public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSidebarStreamingChatAdapting, AgentRouteReporting, @unchecked Sendable {
   private let command: String
   private let model: String
   private let timeoutMs: Int
@@ -44,9 +56,13 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
   private let extraArgs: [String]
   private let environmentOverrides: [String: String]
   private let maxOutputBytes: Int
+  private let routeLabel: String
+  private let serverFactory: (() throws -> any CodexAppServerTransport)?
+  private let routeLabelLock = NSLock()
+  private var _lastRouteLabel: String = "uninitialized"
 
   private let queue = DispatchQueue(label: "TurboDraft.CodexAppServerPromptEngineer")
-  private var server: ServerProcess?
+  private var server: (any CodexAppServerTransport)?
   private var chatSession: ChatSession?
 
   private struct ChatSession {
@@ -54,7 +70,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
     let cwd: String
   }
 
-  public init(
+  public convenience init(
     command: String = "codex",
     model: String = "gpt-5.3-codex-spark",
     timeoutMs: Int = 60_000,
@@ -65,7 +81,40 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
     reasoningSummary: String = "auto",
     extraArgs: [String] = [],
     environmentOverrides: [String: String] = [:],
-    maxOutputBytes: Int = 2 * 1024 * 1024
+    maxOutputBytes: Int = 2 * 1024 * 1024,
+    routeLabel: String? = nil
+  ) {
+    self.init(
+      command: command,
+      model: model,
+      timeoutMs: timeoutMs,
+      webSearch: webSearch,
+      promptProfile: promptProfile,
+      draftingPreset: draftingPreset,
+      reasoningEffort: reasoningEffort,
+      reasoningSummary: reasoningSummary,
+      extraArgs: extraArgs,
+      environmentOverrides: environmentOverrides,
+      maxOutputBytes: maxOutputBytes,
+      routeLabel: routeLabel,
+      serverFactory: nil
+    )
+  }
+
+  init(
+    command: String = "codex",
+    model: String = "gpt-5.3-codex-spark",
+    timeoutMs: Int = 60_000,
+    webSearch: String = "disabled",
+    promptProfile: String = "large_opt",
+    draftingPreset: String = "legacy",
+    reasoningEffort: String = "low",
+    reasoningSummary: String = "auto",
+    extraArgs: [String] = [],
+    environmentOverrides: [String: String] = [:],
+    maxOutputBytes: Int = 2 * 1024 * 1024,
+    routeLabel: String? = nil,
+    serverFactory: (() throws -> any CodexAppServerTransport)?
   ) {
     self.command = command
     self.model = model
@@ -78,6 +127,20 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
     self.extraArgs = extraArgs
     self.environmentOverrides = environmentOverrides
     self.maxOutputBytes = maxOutputBytes
+    self.serverFactory = serverFactory
+    if let explicit = routeLabel?.trimmingCharacters(in: .whitespacesAndNewlines), !explicit.isEmpty {
+      self.routeLabel = explicit
+    } else if environmentOverrides["TURBODRAFT_PROVIDER_BACKEND"] == "litellm" {
+      self.routeLabel = "codex app-server (litellm)"
+    } else {
+      self.routeLabel = "codex app-server (direct)"
+    }
+  }
+
+  public var lastRouteLabel: String {
+    routeLabelLock.lock()
+    defer { routeLabelLock.unlock() }
+    return _lastRouteLabel
   }
 
   deinit {
@@ -91,8 +154,11 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
     try await withCheckedThrowingContinuation { cont in
       queue.async {
         do {
-          cont.resume(returning: try self.draftSync(prompt: prompt, instruction: instruction, images: images, cwd: cwd))
+          let out = try self.draftSync(prompt: prompt, instruction: instruction, images: images, cwd: cwd)
+          self.setLastRoute(self.routeLabel)
+          cont.resume(returning: out)
         } catch {
+          self.setLastRoute("\(self.routeLabel) (failed)")
           cont.resume(throwing: error)
         }
       }
@@ -113,16 +179,17 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
     try await withCheckedThrowingContinuation { cont in
       queue.async {
         do {
-          cont.resume(
-            returning: try self.chatSync(
-              message: message,
-              draft: draft,
-              images: images,
-              cwd: cwd,
-              onDelta: onDelta
-            )
+          let out = try self.chatSync(
+            message: message,
+            draft: draft,
+            images: images,
+            cwd: cwd,
+            onDelta: onDelta
           )
+          self.setLastRoute("\(self.routeLabel) chat")
+          cont.resume(returning: out)
         } catch {
+          self.setLastRoute("\(self.routeLabel) chat (failed)")
           cont.resume(throwing: error)
         }
       }
@@ -136,7 +203,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
   }
 
   private func runTurn(
-    s: ServerProcess,
+    s: any CodexAppServerTransport,
     threadId: String,
     userText: String,
     effortOverride: String?,
@@ -165,7 +232,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
       turnParams["summary"] = reasoningSummary
     }
 
-    let turnReq = s.sendRequest(method: "turn/start", params: turnParams)
+    let turnReq = try s.sendRequest(method: "turn/start", params: turnParams)
     let turnResp = try s.waitForResponse(id: turnReq, timeoutMs: 30_000)
     let turnId = try extractString(turnResp, ["result", "turn", "id"]) ?? ""
     if turnId.isEmpty {
@@ -174,7 +241,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
 
     let endByNs = DispatchTime.now().uptimeNanoseconds + UInt64(max(0, timeoutMs)) * 1_000_000
     var agentText = ""
-    var sawFinalAgent = false
+    var sawContentDelta = false
 
     while DispatchTime.now().uptimeNanoseconds < endByNs {
       let remainingMs = Int((endByNs - DispatchTime.now().uptimeNanoseconds) / 1_000_000)
@@ -183,11 +250,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
       }
 
       if let method = msg["method"] as? String, let params = msg["params"] as? [String: Any] {
-        if method == "item/agentMessage/delta",
-           let pTurnId = params["turnId"] as? String,
-           pTurnId == turnId,
-           !sawFinalAgent,
-           let delta = params["delta"] as? String
+        if let delta = deltaText(method: method, params: params, turnId: turnId, sawContentDelta: &sawContentDelta)
         {
           if agentText.count + delta.utf8.count <= maxOutputBytes {
             agentText += delta
@@ -197,7 +260,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
         }
 
         if method == "item/completed",
-           let pTurnId = params["turnId"] as? String,
+           let pTurnId = anyTurnID(in: params),
            pTurnId == turnId,
            let item = params["item"] as? [String: Any],
            let type = item["type"] as? String,
@@ -205,8 +268,11 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
            let text = item["text"] as? String
         {
           agentText = text
-          sawFinalAgent = true
-          continue
+          let phase = (item["phase"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+          if let phase, !phase.isEmpty, phase != "final_answer" {
+            continue
+          }
+          return try validatedAgentText(agentText)
         }
 
         if method == "turn/completed",
@@ -218,21 +284,14 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
         {
           let status = (turn["status"] as? String) ?? ""
           if status == "completed" {
-            let trimmed = agentText.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
-              throw CodexAppServerPromptEngineerError.missingAgentMessage
-            }
-            if trimmed.utf8.count > maxOutputBytes {
-              throw CodexAppServerPromptEngineerError.outputTooLarge
-            }
-            return trimmed
+            return try validatedAgentText(agentText)
           }
           let err = turn["error"] as? [String: Any]
           throw CodexAppServerPromptEngineerError.protocolError("turn status=\(status) error=\(String(describing: err))")
         }
 
         if method == "error",
-           let pTurnId = params["turnId"] as? String,
+           let pTurnId = anyTurnID(in: params),
            pTurnId == turnId
         {
           let willRetry = (params["willRetry"] as? Bool) ?? false
@@ -312,7 +371,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
       "personality": "pragmatic",
     ]
 
-    let threadReq = s.sendRequest(method: "thread/start", params: threadParams)
+    let threadReq = try s.sendRequest(method: "thread/start", params: threadParams)
     let threadResp = try s.waitForResponse(id: threadReq, timeoutMs: 30_000)
     let threadId = try extractString(threadResp, ["result", "thread", "id"]) ?? ""
     if threadId.isEmpty {
@@ -365,7 +424,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
     return out2
   }
 
-  private func ensureChatThread(s: ServerProcess, cwd: String) throws -> String {
+  private func ensureChatThread(s: any CodexAppServerTransport, cwd: String) throws -> String {
     if let session = chatSession, session.cwd == cwd {
       return session.threadId
     }
@@ -381,7 +440,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
       "developerInstructions": PromptEngineerPrompts.draftingChatSystemPreamble,
       "personality": "pragmatic",
     ]
-    let req = s.sendRequest(method: "thread/start", params: params)
+    let req = try s.sendRequest(method: "thread/start", params: params)
     let resp = try s.waitForResponse(id: req, timeoutMs: 30_000)
     let threadId = try extractString(resp, ["result", "thread", "id"]) ?? ""
     if threadId.isEmpty {
@@ -392,9 +451,16 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
     return session.threadId
   }
 
-  private func ensureServer() throws -> ServerProcess {
+  private func ensureServer() throws -> any CodexAppServerTransport {
     if let existing = server, existing.isAlive {
       return existing
+    }
+
+    if let serverFactory {
+      let created = try serverFactory()
+      server = created
+      chatSession = nil
+      return created
     }
 
     guard let resolved = CommandResolver.resolveInPATH(command) else {
@@ -452,9 +518,70 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
     return cur as? String
   }
 
+  private func anyTurnID(in params: [String: Any]) -> String? {
+    if let turnId = params["turnId"] as? String { return turnId }
+    if let turnId = params["turn_id"] as? String { return turnId }
+    if let msg = params["msg"] as? [String: Any] {
+      if let turnId = msg["turn_id"] as? String { return turnId }
+      if let turnId = msg["turnId"] as? String { return turnId }
+    }
+    return nil
+  }
+
+  private func deltaText(
+    method: String,
+    params: [String: Any],
+    turnId: String,
+    sawContentDelta: inout Bool
+  ) -> String? {
+    if method == "item/agentMessage/delta",
+       anyTurnID(in: params) == turnId,
+       let delta = params["delta"] as? String
+    {
+      return delta
+    }
+
+    if method == "codex/event/agent_message_content_delta",
+       anyTurnID(in: params) == turnId,
+       let msg = params["msg"] as? [String: Any],
+       let delta = msg["delta"] as? String
+    {
+      sawContentDelta = true
+      return delta
+    }
+
+    if method == "codex/event/agent_message_delta",
+       !sawContentDelta,
+       anyTurnID(in: params) == turnId,
+       let msg = params["msg"] as? [String: Any],
+       let delta = msg["delta"] as? String
+    {
+      return delta
+    }
+
+    return nil
+  }
+
+  private func validatedAgentText(_ text: String) throws -> String {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty {
+      throw CodexAppServerPromptEngineerError.missingAgentMessage
+    }
+    if trimmed.utf8.count > maxOutputBytes {
+      throw CodexAppServerPromptEngineerError.outputTooLarge
+    }
+    return trimmed
+  }
+
+  private func setLastRoute(_ value: String) {
+    routeLabelLock.lock()
+    _lastRouteLabel = value
+    routeLabelLock.unlock()
+  }
+
   // MARK: - ServerProcess
 
-  private final class ServerProcess {
+  final class ServerProcess: CodexAppServerTransport {
     let pid: pid_t
     private let stdinFD: Int32
     private let stdoutFD: Int32
@@ -462,6 +589,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
     private var buffer = Data()
     private var nextId: Int = 1
     private var initialized = false
+    private var pendingMessages: [[String: Any]] = []
 
     init(pid: pid_t, stdinFD: Int32, stdoutFD: Int32, stderrFD: Int32) {
       self.pid = pid
@@ -572,19 +700,46 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
         "clientInfo": ["name": "TurboDraft", "version": "0.0.1"],
         "capabilities": ["experimentalApi": true],
       ]
-      let reqId = sendRequest(method: "initialize", params: params)
+      let reqId = try sendRequest(method: "initialize", params: params)
       _ = try waitForResponse(id: reqId, timeoutMs: timeoutMs)
+      try sendNotification(method: "initialized", params: [:])
       initialized = true
     }
 
-    func sendRequest(method: String, params: [String: Any]) -> Int {
+    func sendNotification(method: String, params: [String: Any]) throws {
+      let obj: [String: Any] = ["method": method, "params": params]
+      let data: Data
+      do {
+        data = try JSONSerialization.data(withJSONObject: obj, options: [])
+      } catch {
+        throw CodexAppServerPromptEngineerError.protocolError("failed to serialize notification: \(error)")
+      }
+      var frame = data
+      frame.append(0x0A)
+      do {
+        try writeAll(fd: stdinFD, data: frame)
+      } catch {
+        throw CodexAppServerPromptEngineerError.writeFailed(errno: errno)
+      }
+    }
+
+    func sendRequest(method: String, params: [String: Any]) throws -> Int {
       let id = nextId
       nextId += 1
       let obj: [String: Any] = ["id": id, "method": method, "params": params]
-      let data = (try? JSONSerialization.data(withJSONObject: obj, options: [])) ?? Data()
+      let data: Data
+      do {
+        data = try JSONSerialization.data(withJSONObject: obj, options: [])
+      } catch {
+        throw CodexAppServerPromptEngineerError.protocolError("failed to serialize request: \(error)")
+      }
       var frame = data
       frame.append(0x0A) // \n
-      _ = try? writeAll(fd: stdinFD, data: frame)
+      do {
+        try writeAll(fd: stdinFD, data: frame)
+      } catch {
+        throw CodexAppServerPromptEngineerError.writeFailed(errno: errno)
+      }
       return id
     }
 
@@ -592,7 +747,7 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
       let endByNs = DispatchTime.now().uptimeNanoseconds + UInt64(max(0, timeoutMs)) * 1_000_000
       while DispatchTime.now().uptimeNanoseconds < endByNs {
         let remainingMs = Int((endByNs - DispatchTime.now().uptimeNanoseconds) / 1_000_000)
-        guard let msg = try readNextMessage(timeoutMs: max(10, min(500, remainingMs))) else {
+        guard let msg = try readNextRawMessage(timeoutMs: max(10, min(500, remainingMs))) else {
           continue
         }
         if let msgId = msg["id"] as? Int, msgId == id {
@@ -603,11 +758,19 @@ public final class CodexAppServerPromptEngineerAdapter: AgentAdapting, AgentSide
           }
           return msg
         }
+        pendingMessages.append(msg)
       }
       throw CodexAppServerPromptEngineerError.timedOut
     }
 
     func readNextMessage(timeoutMs: Int) throws -> [String: Any]? {
+      if !pendingMessages.isEmpty {
+        return pendingMessages.removeFirst()
+      }
+      return try readNextRawMessage(timeoutMs: timeoutMs)
+    }
+
+    private func readNextRawMessage(timeoutMs: Int) throws -> [String: Any]? {
       let endByNs = DispatchTime.now().uptimeNanoseconds + UInt64(max(0, timeoutMs)) * 1_000_000
       while DispatchTime.now().uptimeNanoseconds < endByNs {
         if let line = extractLine() {
