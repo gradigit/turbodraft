@@ -3567,9 +3567,6 @@ final class EditorViewController: NSViewController {
   private func makeAgentAdapter() -> AgentAdapting? {
     switch agentConfig.backend {
     case .exec:
-      if agentConfig.command == "codex" {
-        return makeCodexAdaptiveDraftingAdapter(preferredBackend: .exec)
-      }
       if agentConfig.providerBackend == .litellm {
         let primary = makeCodexExecAdapter(
           timeoutMs: agentConfig.timeoutMs,
@@ -3626,7 +3623,29 @@ final class EditorViewController: NSViewController {
       draftingSidebarChatAdapter = existing
       return existing
     }
-    return nil
+
+    // Preserve strict exec behavior for Improve Prompt while keeping Codex
+    // sidebar chat actionable through the app-server route.
+    guard agentConfig.command == "codex",
+          agentConfig.backend == .exec,
+          agentConfig.backend != .claude
+    else {
+      return nil
+    }
+    let envOverrides = agentConfig.providerBackend == .litellm ? liteLLMEnvironmentOverrides() : [:]
+    let routeLabel = agentConfig.providerBackend == .litellm
+      ? "codex app-server (litellm)"
+      : "codex app-server (direct)"
+    guard let chatAdapter = makeCodexAppServerAdapter(
+      timeoutMs: Self.codexAdaptivePrimaryTimeoutMs(configuredTimeoutMs: agentConfig.timeoutMs),
+      environmentOverrides: envOverrides,
+      routeLabel: routeLabel
+    ) as? AgentSidebarChatAdapting else {
+      return nil
+    }
+    draftingSidebarChatAdapter = chatAdapter
+    appendDraftingChatTranscript("system: backend is forced to exec; using codex app-server for sidebar chat")
+    return chatAdapter
   }
 
   private func makeCodexAppServerAdapter(
@@ -3669,10 +3688,17 @@ final class EditorViewController: NSViewController {
     )
   }
 
-  private func adaptiveCodexPrimaryTimeoutMs() -> Int {
-    let configured = max(2_000, agentConfig.timeoutMs)
-    let budget = configured / 4
-    return min(max(5_000, budget), 15_000)
+  nonisolated static func codexAdaptiveTimeoutBudget(configuredTimeoutMs: Int) -> (primaryMs: Int, fallbackMs: Int) {
+    let configured = max(2_000, configuredTimeoutMs)
+    let maxPrimary = max(1_000, configured - 1_000)
+    let desiredPrimary = max(2_000, min(6_000, configured / 5))
+    let primary = min(maxPrimary, desiredPrimary)
+    let fallback = max(1_000, configured - primary)
+    return (primaryMs: primary, fallbackMs: fallback)
+  }
+
+  nonisolated static func codexAdaptivePrimaryTimeoutMs(configuredTimeoutMs: Int) -> Int {
+    codexAdaptiveTimeoutBudget(configuredTimeoutMs: configuredTimeoutMs).primaryMs
   }
 
   private func makeCodexAdaptiveDraftingAdapter(
@@ -3707,15 +3733,16 @@ final class EditorViewController: NSViewController {
     environmentOverrides: [String: String],
     providerLabel: String
   ) -> AgentAdapting {
+    let timeoutBudget = Self.codexAdaptiveTimeoutBudget(configuredTimeoutMs: agentConfig.timeoutMs)
     switch preferredBackend {
     case .exec:
       let primary = makeCodexExecAdapter(
-        timeoutMs: adaptiveCodexPrimaryTimeoutMs(),
+        timeoutMs: timeoutBudget.primaryMs,
         environmentOverrides: environmentOverrides,
         routeLabel: "codex exec (\(providerLabel))"
       )
       let fallback = makeCodexAppServerAdapter(
-        timeoutMs: agentConfig.timeoutMs,
+        timeoutMs: timeoutBudget.fallbackMs,
         environmentOverrides: environmentOverrides,
         routeLabel: "codex app-server (\(providerLabel))"
       )
@@ -3730,12 +3757,12 @@ final class EditorViewController: NSViewController {
       )
     case .appServer:
       let primary = makeCodexAppServerAdapter(
-        timeoutMs: adaptiveCodexPrimaryTimeoutMs(),
+        timeoutMs: timeoutBudget.primaryMs,
         environmentOverrides: environmentOverrides,
         routeLabel: "codex app-server (\(providerLabel))"
       )
       let fallback = makeCodexExecAdapter(
-        timeoutMs: agentConfig.timeoutMs,
+        timeoutMs: timeoutBudget.fallbackMs,
         environmentOverrides: environmentOverrides,
         routeLabel: "codex exec (\(providerLabel))"
       )
