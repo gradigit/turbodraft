@@ -22,6 +22,8 @@ final class EditorWorkflowTests: XCTestCase {
     let value: String
     let label: String
     private var _lastRouteLabel: String = ""
+    private(set) var lastPrompt: String = ""
+    private(set) var lastInstruction: String = ""
 
     init(value: String, label: String) {
       self.value = value
@@ -31,8 +33,8 @@ final class EditorWorkflowTests: XCTestCase {
     var lastRouteLabel: String { _lastRouteLabel }
 
     func draft(prompt: String, instruction: String, images: [URL], cwd: String?) async throws -> String {
-      _ = prompt
-      _ = instruction
+      lastPrompt = prompt
+      lastInstruction = instruction
       _ = images
       _ = cwd
       _lastRouteLabel = label
@@ -573,5 +575,44 @@ final class EditorWorkflowTests: XCTestCase {
 
     await waitUntil({ !vc._testingIsDraftingChatRunning() }, timeoutMs: 2000)
     XCTAssertTrue(vc._testingIsAgentButtonEnabled())
+  }
+
+  func testImprovePromptIncludesAttachedSessionContext() async throws {
+    let vc = try await makeController(initialText: "rewrite this prompt")
+    var agent = TurboDraftConfig.Agent()
+    agent.enabled = true
+    vc.setAgentConfig(agent)
+
+    let adapter = RouteReportingDraftAdapter(value: "rewritten", label: "codex exec (direct)")
+    vc._testingSetAgentAdapter(adapter)
+
+    let dir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("turbodraft-editor-workflow-context", isDirectory: true)
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    tempURLs.append(dir)
+
+    let contextURL = dir.appendingPathComponent("session-context.txt")
+    try "Current task: fix the authentication error\nFiles: AuthManager.swift".write(
+      to: contextURL,
+      atomically: true,
+      encoding: .utf8
+    )
+
+    vc.setExternalSessionContextAttachment(
+      ExternalSessionContextAttachment(
+        source: "codex-cli",
+        contextPath: contextURL.path,
+        contextFormatVersion: 1
+      )
+    )
+    await waitUntil({ vc._testingExternalSessionContextSnapshot() != nil })
+
+    vc._testingRunAgent()
+    await waitUntil({ !vc._testingIsAgentRunning() })
+
+    XCTAssertTrue(adapter.lastPrompt.contains("## Invoking Session Context (background only)"))
+    XCTAssertTrue(adapter.lastPrompt.contains("Current task: fix the authentication error"))
+    XCTAssertTrue(adapter.lastInstruction.contains("do not mention drafting_agent or execution_agent"))
   }
 }

@@ -145,6 +145,9 @@ final class EditorViewController: NSViewController {
   private var draftingChatRunning = false
   private var sessionCwd: String?
   private var externalQueueAttachment: ExternalQueueAttachment?
+  private var externalSessionContextAttachment: ExternalSessionContextAttachment?
+  private var externalSessionContextSnapshot: ExternalSessionContextSnapshot?
+  private var externalSessionContextLoadTask: Task<Void, Never>?
   private var queueItems: [SharedQueueItem] = []
   private var queueSelectedLocalID: String?
   private var queueFingerprint: String?
@@ -1153,6 +1156,10 @@ final class EditorViewController: NSViewController {
     queueSaveTask?.cancel()
     queueSaveTask = nil
     externalQueueAttachment = nil
+    externalSessionContextAttachment = nil
+    externalSessionContextSnapshot = nil
+    externalSessionContextLoadTask?.cancel()
+    externalSessionContextLoadTask = nil
     queueItems.removeAll()
     queueSelectedLocalID = nil
     queueFingerprint = nil
@@ -1952,6 +1959,22 @@ final class EditorViewController: NSViewController {
       lines.append(contentsOf: images.map { "- \($0.path)" })
     }
     lines.append("")
+    if let attachment = externalSessionContextAttachment {
+      lines.append("## Received Session Context")
+      lines.append("source: \(attachment.source ?? "unknown")")
+      lines.append("path: \(attachment.contextPath)")
+      if let snapshot = externalSessionContextSnapshot {
+        lines.append("bytes: \(snapshot.byteCount)\(snapshot.wasTruncated ? " (truncated)" : "")")
+        lines.append("")
+        lines.append(snapshot.displayText)
+      } else if attachment.isSupportedFormat {
+        lines.append("status: pending or unavailable")
+      } else {
+        let version = attachment.contextFormatVersion ?? ExternalSessionContextAttachment.supportedFormatVersion
+        lines.append("status: unsupported format v\(version)")
+      }
+      lines.append("")
+    }
     lines.append("## Raw Message")
     lines.append(rawMessage)
     lines.append("")
@@ -1962,6 +1985,21 @@ final class EditorViewController: NSViewController {
     lines.append(draftSnapshot)
     draftingLastSentContext = lines.joined(separator: "\n")
     draftingContextView.string = draftingLastSentContext
+  }
+
+  private func externalSessionContextBlockForAgent() -> String? {
+    guard let attachment = externalSessionContextAttachment,
+          attachment.isSupportedFormat,
+          let snapshot = externalSessionContextSnapshot,
+          !snapshot.agentText.isEmpty else { return nil }
+    return """
+## Invoking Session Context (background only)
+- Source: \(attachment.source ?? "unknown")
+- Use this only as background context for rewriting the prompt.
+- Do not copy this section verbatim into the final refined prompt unless directly relevant.
+
+\(snapshot.agentText)
+"""
   }
 
   private func resetDraftingDiffPreview() {
@@ -2102,6 +2140,10 @@ final class EditorViewController: NSViewController {
         let lines = annotations.map { "- [\($0.type)] \($0.content)" }.joined(separator: "\n")
         promptText += "\n\n## Drafting Annotations\n\(lines)\n"
       }
+    }
+
+    if let contextBlock = externalSessionContextBlockForAgent() {
+      promptText += "\n\n\(contextBlock)\n"
     }
 
     return (promptText, images)
@@ -2392,6 +2434,25 @@ final class EditorViewController: NSViewController {
     }
     updateDraftingSidebarModeControls()
     updateDraftingSidebarControlState()
+  }
+
+  func setExternalSessionContextAttachment(_ attachment: ExternalSessionContextAttachment?) {
+    externalSessionContextLoadTask?.cancel()
+    externalSessionContextLoadTask = nil
+    externalSessionContextAttachment = attachment
+    externalSessionContextSnapshot = nil
+
+    guard let attachment, attachment.isSupportedFormat else { return }
+
+    externalSessionContextLoadTask = Task { @MainActor [weak self, attachment] in
+      let snapshot = try? await Task.detached(priority: .utility) {
+        try ExternalSessionContextSnapshot.load(from: attachment)
+      }.value
+      guard let self else { return }
+      guard self.externalSessionContextAttachment == attachment else { return }
+      self.externalSessionContextSnapshot = snapshot
+      self.externalSessionContextLoadTask = nil
+    }
   }
 
   @objc private func draftingSidebarModeChanged(_ sender: NSSegmentedControl) {
@@ -4768,6 +4829,9 @@ extension EditorViewController {
 
   func _testingDocumentText() -> String { textView.string }
   func _testingExternalQueueAttachment() -> ExternalQueueAttachment? { externalQueueAttachment }
+  func _testingExternalSessionContextAttachment() -> ExternalSessionContextAttachment? { externalSessionContextAttachment }
+  func _testingExternalSessionContextSnapshot() -> ExternalSessionContextSnapshot? { externalSessionContextSnapshot }
+  func _testingPromptForDraftingAgent(from text: String) -> String { promptAndImagesForAgent(from: text).prompt }
   func _testingOpenQueuePanel() { openQueuePanel() }
   func _testingIsQueueSidebarVisible() -> Bool {
     draftingSidebarVisible && !draftingSidebar.isHidden && draftingSidebarMode == .queue

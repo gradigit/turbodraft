@@ -529,6 +529,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           queueKey: params.queueKey,
           queueFormatVersion: params.queueFormatVersion
         )
+        let externalSessionContextAttachment = ExternalSessionContextAttachment(
+          source: params.source,
+          contextPath: params.contextPath,
+          contextFormatVersion: params.contextFormatVersion
+        )
         let editorSession: EditorSession
         let wc: EditorWindowController
         if let reuse = reusableSession(forPath: normalizedPath) {
@@ -537,6 +542,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           if let current = await editorSession.currentInfo(),
              current.fileURL.standardizedFileURL.path == normalizedPath {
             wc.setExternalQueueAttachment(externalQueueAttachment)
+            wc.setExternalSessionContextAttachment(externalSessionContextAttachment)
             externalQueueAttachmentBySessionId[current.sessionId] = externalQueueAttachment
             touchSession(current.sessionId)
             wc.focusExistingSessionWindow()
@@ -560,6 +566,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           editorSession = wc.session
         }
         wc.setExternalQueueAttachment(externalQueueAttachment)
+        wc.setExternalSessionContextAttachment(externalSessionContextAttachment)
         if NSApp.activationPolicy() == .accessory {
           NSApp.setActivationPolicy(.regular)
         }

@@ -159,6 +159,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     editorVC.setExternalQueueAttachment(attachment)
   }
 
+  func setExternalSessionContextAttachment(_ attachment: ExternalSessionContextAttachment?) {
+    editorVC.setExternalSessionContextAttachment(attachment)
+  }
+
   func focusExistingSessionWindow() {
     if !NSApp.isActive {
       NSApp.activate(ignoringOtherApps: true)

@@ -703,31 +703,70 @@ static bool json_extract_number_value(const char *json, const char *key, double 
   return true;
 }
 
-static char *format_open_request_json(const char *path_escaped, int line, int column, const char *cwd_escaped) {
-  const char *fmt = NULL;
-  if (line > 0 && column > 0) {
-    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\",\"line\":%d,\"column\":%d,\"cwd\":\"%s\",\"protocolVersion\":%d}}";
-  } else if (line > 0) {
-    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\",\"line\":%d,\"cwd\":\"%s\",\"protocolVersion\":%d}}";
-  } else {
-    fmt = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\",\"cwd\":\"%s\",\"protocolVersion\":%d}}";
-  }
+static char *format_open_request_json(
+  const char *path_escaped,
+  int line,
+  int column,
+  const char *cwd_escaped,
+  const char *source_escaped,
+  const char *context_path_escaped,
+  int context_format_version
+) {
+  const bool has_source = source_escaped && source_escaped[0] != '\0';
+  const bool has_context_path = context_path_escaped && context_path_escaped[0] != '\0';
+  const bool has_context_format = context_format_version > 0;
 
-  int n = (line > 0 && column > 0)
-    ? snprintf(NULL, 0, fmt, path_escaped, line, column, cwd_escaped, kProtocolVersion)
-    : (line > 0 ? snprintf(NULL, 0, fmt, path_escaped, line, cwd_escaped, kProtocolVersion) : snprintf(NULL, 0, fmt, path_escaped, cwd_escaped, kProtocolVersion));
-  if (n < 0) return NULL;
-
-  char *out = (char *)malloc((size_t)n + 1);
+  size_t cap = 1024
+    + strlen(path_escaped)
+    + strlen(cwd_escaped)
+    + (has_source ? strlen(source_escaped) : 0)
+    + (has_context_path ? strlen(context_path_escaped) : 0);
+  char *out = (char *)malloc(cap);
   if (!out) return NULL;
-  if (line > 0 && column > 0) {
-    snprintf(out, (size_t)n + 1, fmt, path_escaped, line, column, cwd_escaped, kProtocolVersion);
-  } else if (line > 0) {
-    snprintf(out, (size_t)n + 1, fmt, path_escaped, line, cwd_escaped, kProtocolVersion);
-  } else {
-    snprintf(out, (size_t)n + 1, fmt, path_escaped, cwd_escaped, kProtocolVersion);
+
+  int n = snprintf(
+    out, cap,
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"turbodraft.session.open\",\"params\":{\"path\":\"%s\"",
+    path_escaped
+  );
+  if (n < 0 || (size_t)n >= cap) goto fail;
+
+  size_t used = (size_t)n;
+  if (line > 0) {
+    n = snprintf(out + used, cap - used, ",\"line\":%d", line);
+    if (n < 0 || (size_t)n >= cap - used) goto fail;
+    used += (size_t)n;
   }
+  if (column > 0) {
+    n = snprintf(out + used, cap - used, ",\"column\":%d", column);
+    if (n < 0 || (size_t)n >= cap - used) goto fail;
+    used += (size_t)n;
+  }
+  n = snprintf(out + used, cap - used, ",\"cwd\":\"%s\"", cwd_escaped);
+  if (n < 0 || (size_t)n >= cap - used) goto fail;
+  used += (size_t)n;
+  if (has_source) {
+    n = snprintf(out + used, cap - used, ",\"source\":\"%s\"", source_escaped);
+    if (n < 0 || (size_t)n >= cap - used) goto fail;
+    used += (size_t)n;
+  }
+  if (has_context_path) {
+    n = snprintf(out + used, cap - used, ",\"contextPath\":\"%s\"", context_path_escaped);
+    if (n < 0 || (size_t)n >= cap - used) goto fail;
+    used += (size_t)n;
+  }
+  if (has_context_format) {
+    n = snprintf(out + used, cap - used, ",\"contextFormatVersion\":%d", context_format_version);
+    if (n < 0 || (size_t)n >= cap - used) goto fail;
+    used += (size_t)n;
+  }
+  n = snprintf(out + used, cap - used, ",\"protocolVersion\":%d}}", kProtocolVersion);
+  if (n < 0 || (size_t)n >= cap - used) goto fail;
   return out;
+
+fail:
+  free(out);
+  return NULL;
 }
 
 static char *format_wait_request_json(const char *session_id, int timeout_ms) {
@@ -892,10 +931,37 @@ int main(int argc, char **argv) {
   if (!cwd_raw) cwd_raw = "/";
   char *cwd_escaped = json_escape(cwd_raw);
   if (!cwd_escaped) cwd_escaped = json_escape("/");
+  const char *session_source_raw = getenv("TURBODRAFT_SESSION_SOURCE");
+  const char *context_path_raw = getenv("TURBODRAFT_SESSION_CONTEXT_PATH");
+  const char *context_format_raw = getenv("TURBODRAFT_SESSION_CONTEXT_FORMAT_VERSION");
+  int context_format_version = 0;
+  if (context_format_raw && context_format_raw[0] != '\0') {
+    context_format_version = atoi(context_format_raw);
+    if (context_format_version < 0) context_format_version = 0;
+  }
 
-  char *open_json = format_open_request_json(path_escaped, line, column, cwd_escaped);
+  char *source_escaped = NULL;
+  char *context_path_escaped = NULL;
+  if (session_source_raw && session_source_raw[0] != '\0') {
+    source_escaped = json_escape(session_source_raw);
+  }
+  if (context_path_raw && context_path_raw[0] != '\0') {
+    context_path_escaped = json_escape(context_path_raw);
+  }
+
+  char *open_json = format_open_request_json(
+    path_escaped,
+    line,
+    column,
+    cwd_escaped,
+    source_escaped,
+    context_path_escaped,
+    context_format_version
+  );
   free(path_escaped);
   free(cwd_escaped);
+  free(source_escaped);
+  free(context_path_escaped);
   if (!open_json) {
     fprintf(stderr, "error: failed to format open request\n");
     close(fd);

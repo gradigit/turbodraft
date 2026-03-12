@@ -14,9 +14,11 @@ final class TurboDraftMessagesTests: XCTestCase {
     XCTAssertNil(params.queuePath)
     XCTAssertNil(params.queueKey)
     XCTAssertNil(params.queueFormatVersion)
+    XCTAssertNil(params.contextPath)
+    XCTAssertNil(params.contextFormatVersion)
   }
 
-  func testSessionOpenParamsRoundTripWithQueueAttachmentFields() throws {
+  func testSessionOpenParamsRoundTripWithQueueAndContextAttachmentFields() throws {
     let params = SessionOpenParams(
       path: "/tmp/x.md",
       line: 3,
@@ -26,7 +28,9 @@ final class TurboDraftMessagesTests: XCTestCase {
       source: "claude-pager",
       queuePath: "/Users/test/.claude/queues/abc.queue",
       queueKey: "abc",
-      queueFormatVersion: 1
+      queueFormatVersion: 1,
+      contextPath: "/Users/test/.claude/context/abc.json",
+      contextFormatVersion: 1
     )
     let data = try JSONEncoder().encode(params)
     let decoded = try JSONDecoder().decode(SessionOpenParams.self, from: data)

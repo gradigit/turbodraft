@@ -107,6 +107,17 @@ If you use Claude Code and want to keep session context visible during editor ha
 
 `turbodraft` accepts positional file paths, `+N` line jump syntax, and `--line N`/`--column N` flags. It blocks until you close the editor tab, then returns focus to your terminal.
 
+Optional invoking-session context handoff is also supported via environment variables:
+
+```sh
+export TURBODRAFT_SESSION_SOURCE=codex-cli
+export TURBODRAFT_SESSION_CONTEXT_PATH=/absolute/path/to/context.json
+export TURBODRAFT_SESSION_CONTEXT_FORMAT_VERSION=1
+```
+
+When set, TurboDraft forwards the context attachment through `session.open` and the `drafting_agent` receives it as background-only context during `Improve Prompt` / `Chat Refine`.
+Details: `docs/SESSION_CONTEXT_HANDOFF.md`
+
 ## LaunchAgent (recommended)
 
 Keep `turbodraft-app` resident so opens are instant (~10ms) instead of cold-starting (~150ms):
