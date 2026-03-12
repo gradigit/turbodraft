@@ -1,3 +1,10 @@
+## Prompt Eval Repo Split (2026-03-12)
+
+- [x] Bootstrap standalone prompt-eval repo: `../prompt-eval-turbodraft`
+- [x] Keep TurboDraft runtime repo focused on product/runtime/integration work
+- [ ] Design PromptPack/import boundary so prompt content ownership can move cleanly
+- [ ] Update TurboDraft runtime to consume exported prompt artifacts instead of repo-local prompt content
+
 # Forge TODO — Prompt Eval Recommendation Execution
 
 ## Goal

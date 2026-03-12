@@ -298,37 +298,23 @@ Methodology + schema: `docs/RAM_BENCHMARK.md`
 
 Baseline thresholds are in `bench/editor/baseline.json`. P95 values have headroom for CI variance.
 
-## Prompt preset evaluation (autonomous pipeline)
+## Prompt preset evaluation
 
-TurboDraft includes a Promptfoo + custom-harness pipeline for drafting preset evaluation.
+The authoritative prompt-eval / judge-lock program now lives in the standalone repo:
 
-Core artifacts:
-- `bench/prompt_eval/config/*.promptfoo.yaml` — Promptfoo split configs
-- `bench/prompt_eval/config/gate_manifest.v1.json` — fail-closed gate policy
-- `bench/prompt_eval/tools/phase_orchestrator.py` — phase runner (0/A/B/C/D/E/F/G)
+- `../prompt-eval-turbodraft`
 
-Quick validation:
-```sh
-npx --yes promptfoo@0.120.25 validate config \
-  -c bench/prompt_eval/config/base.promptfoo.yaml \
-  -c bench/prompt_eval/config/dev.promptfoo.yaml \
-  -c bench/prompt_eval/config/adversarial.promptfoo.yaml \
-  -c bench/prompt_eval/config/holdout.promptfoo.yaml
-python3 -m unittest discover -s bench/prompt_eval/tests -p 'test_*.py'
-```
+TurboDraft keeps local prompt-eval assets only as a temporary compatibility copy until the
+PromptPack/import boundary is finished. Active benchmark, adjudication, judge-lock, and
+prompt-optimization work should happen in the external repo, not here.
 
-Run autonomous phases (local):
-```sh
-python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phase0_bootstrap --cycle-id local-cycle
-python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phaseB_judge_reliability --cycle-id local-cycle --max-cases 6
-python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phaseD_dev --cycle-id local-cycle --max-cases 3 --simulate-no-provider
-```
+See:
+- `docs/PROMPT_EVAL_REPO_SPLIT_2026-03-12.md`
 
-Holdout phase requires explicit opt-in:
-```sh
-PROMPT_EVAL_ALLOW_HOLDOUT=1 \
-python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phaseF_holdout --cycle-id local-cycle --simulate-no-provider
-```
+TurboDraft-owned scope going forward:
+- runtime prompt loading and routing,
+- preset selection/integration,
+- future PromptPack/import support.
 
 ## Architecture
 
