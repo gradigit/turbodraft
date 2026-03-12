@@ -12,6 +12,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
   private let editorVC: EditorViewController
   private var didBecomeActiveObserver: NSObjectProtocol?
   private var closeTask: Task<Void, Never>?
+  private var closeCleanupTask: Task<Void, Never>?
   var onClosed: (() -> Void)?
   var onBecameMain: (() -> Void)?
 
@@ -192,11 +193,19 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
   private func beginCloseSequence(reason: String) {
     guard closeTask == nil else { return }
-    closeTask = Task { @MainActor [weak self] in
-      guard let self else { return }
+    window?.orderOut(nil)
 
-      self.window?.orderOut(nil)
+    closeTask = Task { [weak self] in
+      guard let self else { return }
       await self.session.markClosed()
+      await MainActor.run { [weak self] in
+        self?.closeTask = nil
+      }
+    }
+
+    closeCleanupTask?.cancel()
+    closeCleanupTask = Task { @MainActor [weak self] in
+      guard let self else { return }
 
       let flushTask = Task { @MainActor [weak self] in
         guard let self else { return }
@@ -223,7 +232,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
       self.editorVC.prepareForIdlePool()
       self.onClosed?()
-      self.closeTask = nil
+      self.closeCleanupTask = nil
     }
   }
 
