@@ -709,10 +709,16 @@ static char *format_open_request_json(
   int column,
   const char *cwd_escaped,
   const char *source_escaped,
+  const char *queue_path_escaped,
+  const char *queue_key_escaped,
+  int queue_format_version,
   const char *context_path_escaped,
   int context_format_version
 ) {
   const bool has_source = source_escaped && source_escaped[0] != '\0';
+  const bool has_queue_path = queue_path_escaped && queue_path_escaped[0] != '\0';
+  const bool has_queue_key = queue_key_escaped && queue_key_escaped[0] != '\0';
+  const bool has_queue_format = queue_format_version > 0;
   const bool has_context_path = context_path_escaped && context_path_escaped[0] != '\0';
   const bool has_context_format = context_format_version > 0;
 
@@ -720,6 +726,8 @@ static char *format_open_request_json(
     + strlen(path_escaped)
     + strlen(cwd_escaped)
     + (has_source ? strlen(source_escaped) : 0)
+    + (has_queue_path ? strlen(queue_path_escaped) : 0)
+    + (has_queue_key ? strlen(queue_key_escaped) : 0)
     + (has_context_path ? strlen(context_path_escaped) : 0);
   char *out = (char *)malloc(cap);
   if (!out) return NULL;
@@ -747,6 +755,21 @@ static char *format_open_request_json(
   used += (size_t)n;
   if (has_source) {
     n = snprintf(out + used, cap - used, ",\"source\":\"%s\"", source_escaped);
+    if (n < 0 || (size_t)n >= cap - used) goto fail;
+    used += (size_t)n;
+  }
+  if (has_queue_path) {
+    n = snprintf(out + used, cap - used, ",\"queuePath\":\"%s\"", queue_path_escaped);
+    if (n < 0 || (size_t)n >= cap - used) goto fail;
+    used += (size_t)n;
+  }
+  if (has_queue_key) {
+    n = snprintf(out + used, cap - used, ",\"queueKey\":\"%s\"", queue_key_escaped);
+    if (n < 0 || (size_t)n >= cap - used) goto fail;
+    used += (size_t)n;
+  }
+  if (has_queue_format) {
+    n = snprintf(out + used, cap - used, ",\"queueFormatVersion\":%d", queue_format_version);
     if (n < 0 || (size_t)n >= cap - used) goto fail;
     used += (size_t)n;
   }
@@ -932,8 +955,16 @@ int main(int argc, char **argv) {
   char *cwd_escaped = json_escape(cwd_raw);
   if (!cwd_escaped) cwd_escaped = json_escape("/");
   const char *session_source_raw = getenv("TURBODRAFT_SESSION_SOURCE");
+  const char *queue_path_raw = getenv("TURBODRAFT_SESSION_QUEUE_PATH");
+  const char *queue_key_raw = getenv("TURBODRAFT_SESSION_QUEUE_KEY");
+  const char *queue_format_raw = getenv("TURBODRAFT_SESSION_QUEUE_FORMAT_VERSION");
   const char *context_path_raw = getenv("TURBODRAFT_SESSION_CONTEXT_PATH");
   const char *context_format_raw = getenv("TURBODRAFT_SESSION_CONTEXT_FORMAT_VERSION");
+  int queue_format_version = 0;
+  if (queue_format_raw && queue_format_raw[0] != '\0') {
+    queue_format_version = atoi(queue_format_raw);
+    if (queue_format_version < 0) queue_format_version = 0;
+  }
   int context_format_version = 0;
   if (context_format_raw && context_format_raw[0] != '\0') {
     context_format_version = atoi(context_format_raw);
@@ -941,9 +972,17 @@ int main(int argc, char **argv) {
   }
 
   char *source_escaped = NULL;
+  char *queue_path_escaped = NULL;
+  char *queue_key_escaped = NULL;
   char *context_path_escaped = NULL;
   if (session_source_raw && session_source_raw[0] != '\0') {
     source_escaped = json_escape(session_source_raw);
+  }
+  if (queue_path_raw && queue_path_raw[0] != '\0') {
+    queue_path_escaped = json_escape(queue_path_raw);
+  }
+  if (queue_key_raw && queue_key_raw[0] != '\0') {
+    queue_key_escaped = json_escape(queue_key_raw);
   }
   if (context_path_raw && context_path_raw[0] != '\0') {
     context_path_escaped = json_escape(context_path_raw);
@@ -955,12 +994,17 @@ int main(int argc, char **argv) {
     column,
     cwd_escaped,
     source_escaped,
+    queue_path_escaped,
+    queue_key_escaped,
+    queue_format_version,
     context_path_escaped,
     context_format_version
   );
   free(path_escaped);
   free(cwd_escaped);
   free(source_escaped);
+  free(queue_path_escaped);
+  free(queue_key_escaped);
   free(context_path_escaped);
   if (!open_json) {
     fprintf(stderr, "error: failed to format open request\n");

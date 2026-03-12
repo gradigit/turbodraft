@@ -544,6 +544,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           contextPath: requestedContextPath,
           contextFormatVersion: requestedContextFormatVersion
         )
+        func sessionOpenTelemetryPayload(sessionId: String, path: String, reusedSession: Bool) -> [String: Any] {
+          var payload: [String: Any] = [
+            "event": "app_session_open",
+            "sessionId": sessionId,
+            "path": path,
+            "reusedSession": reusedSession,
+            "hasQueueAttachment": externalQueueAttachment != nil,
+            "queueAttachmentSupported": externalQueueAttachment?.isSupportedFormat ?? false,
+            "hasContextAttachment": externalSessionContextAttachment != nil,
+            "contextAttachmentSupported": externalSessionContextAttachment?.isSupportedFormat ?? false,
+          ]
+          if let requestedSource, !requestedSource.isEmpty {
+            payload["source"] = requestedSource
+          }
+          return payload
+        }
         let editorSession: EditorSession
         let wc: EditorWindowController
         if let reuse = reusableSession(forPath: normalizedPath) {
@@ -557,10 +573,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             touchSession(current.sessionId)
             wc.focusExistingSessionWindow()
             let openMs = nowMs() - t0
-            appendLatencyRecord([
-              "event": "app_session_open",
-              "openMs": openMs,
-            ])
+            var telemetry = sessionOpenTelemetryPayload(
+              sessionId: current.sessionId,
+              path: current.fileURL.standardizedFileURL.path,
+              reusedSession: true
+            )
+            telemetry["openMs"] = openMs
+            appendLatencyRecord(telemetry)
             let out = SessionOpenResult(
               sessionId: current.sessionId,
               path: current.fileURL.path,
@@ -598,10 +617,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let openMs = nowMs() - t0
-        appendLatencyRecord([
-          "event": "app_session_open",
-          "openMs": openMs,
-        ])
+        var telemetry = sessionOpenTelemetryPayload(
+          sessionId: info.sessionId,
+          path: info.fileURL.standardizedFileURL.path,
+          reusedSession: false
+        )
+        telemetry["openMs"] = openMs
+        appendLatencyRecord(telemetry)
 
         let out = SessionOpenResult(
           sessionId: info.sessionId,

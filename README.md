@@ -111,11 +111,14 @@ Optional invoking-session context handoff is also supported via environment vari
 
 ```sh
 export TURBODRAFT_SESSION_SOURCE=codex-cli
+export TURBODRAFT_SESSION_QUEUE_PATH=/absolute/path/to/session.queue
+export TURBODRAFT_SESSION_QUEUE_KEY=session-id
+export TURBODRAFT_SESSION_QUEUE_FORMAT_VERSION=1
 export TURBODRAFT_SESSION_CONTEXT_PATH=/absolute/path/to/context.json
 export TURBODRAFT_SESSION_CONTEXT_FORMAT_VERSION=1
 ```
 
-When set, TurboDraft forwards the context attachment through `session.open` and the `drafting_agent` receives it as background-only context during `Improve Prompt` / `Chat Refine`.
+When set, TurboDraft forwards session attachment metadata through `session.open`. Queue metadata attaches the optional external queue surface; invoking context is passed to the `drafting_agent` as background-only context during `Improve Prompt` / `Chat Refine`.
 Details: `docs/SESSION_CONTEXT_HANDOFF.md`
 
 ## LaunchAgent (recommended)

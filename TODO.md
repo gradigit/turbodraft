@@ -13,8 +13,8 @@ Use the prompt-eval split to refocus this repo on TurboDraft product/runtime wor
 
 ## Milestones
 
-- [ ] T1: Core drafting UX hardening + right-panel productization + required validation gating
-- [ ] T2: Session-context receiver design / TurboDraft-side integration prep for invoking CLIs
+- [x] T1: Core drafting UX hardening + right-panel productization + required validation gating
+- [x] T2: Session-context receiver design / TurboDraft-side integration prep for invoking CLIs
 - [ ] T3: Expand product QA coverage for real Ctrl+G/Ctrl+Q/sidebar/queue/drafting flows beyond T1 gating
 - [ ] T4: Revisit PromptPack/import boundary only after T1-T3 are stable and prompt-eval output shape is real
 
@@ -40,6 +40,8 @@ Do **not** start with PromptPack/import work. Temporary prompt duplication is in
 ### T3 progress
 
 - [x] Add a repeatable local product-QA runner covering required editor validation plus API open/close regression smoke, with optional real Ctrl+G/Ctrl+Q probing
+- [x] Add attached-session API smoke coverage for queue/context handoff metadata and open telemetry validation
+- [x] Fix the full-suite JSON-RPC socket test crash so the required Swift suite is stable again
 
 # Forge TODO — Prompt Eval Recommendation Execution
 

@@ -25,7 +25,12 @@ RUN_REAL_UI=1 scripts/run_product_qa.sh
 - validates the resident app open/close path with a small steady-state sample
 - writes machine-readable artifacts under `tmp/product-qa/.../open-close-api`
 
-### Phase 3 — Real Ctrl+G/Ctrl+Q local probe (optional)
+### Phase 3 — Attached queue/context API smoke
+- `python3 scripts/bench_open_close_suite.py --session-source ... --queue-path ... --context-path ...`
+- validates that both the CLI shim and the app accept session attachment metadata during open/close cycles
+- writes machine-readable artifacts under `tmp/product-qa/.../open-close-attached`
+
+### Phase 4 — Real Ctrl+G/Ctrl+Q local probe (optional)
 - `python3 scripts/bench_open_close_real_cli.py`
 - intended for a real frontmost agent CLI window
 - disabled by default because it depends on Accessibility and real-window focus conditions
@@ -39,6 +44,9 @@ The default runner is intentionally lighter than release/nightly benchmarking:
   - cycles: `6`
   - warmup: `1`
   - retries: `2`
+- attached-session smoke:
+  - cycles: `3`
+  - warmup: `1`
 - real UI probe:
   - cycles: `4`
   - warmup: `1`
@@ -51,6 +59,8 @@ Override with env vars if needed:
 - `OPEN_CLOSE_CYCLES`
 - `OPEN_CLOSE_WARMUP`
 - `OPEN_CLOSE_RETRIES`
+- `ATTACHED_OPEN_CLOSE_CYCLES`
+- `ATTACHED_OPEN_CLOSE_WARMUP`
 - `RUN_REAL_UI`
 - `REAL_UI_CYCLES`
 - `REAL_UI_WARMUP`
@@ -65,6 +75,7 @@ Override with env vars if needed:
   - Ctrl+G open path
   - Ctrl+Q/session close path
   - sidebar/queue integration
+  - session attachment handoff (`source`, queue metadata, invoking context)
   - drafting-related editor workflow behavior
 - Keep `scripts/run_editor_validation.sh` as the mandatory fast gate.
 - Keep the full benchmark commands in `docs/OPEN_CLOSE_BENCHMARK.md` for deeper latency work and trend tracking.

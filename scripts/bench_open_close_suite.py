@@ -138,6 +138,43 @@ def ensure_dir(path: pathlib.Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
+def normalized_optional_text(value: str) -> Optional[str]:
+    trimmed = str(value or "").strip()
+    return trimmed if trimmed else None
+
+
+def build_open_env(
+    *,
+    session_source: Optional[str],
+    queue_path: Optional[str],
+    queue_key: Optional[str],
+    queue_format_version: Optional[int],
+    context_path: Optional[str],
+    context_format_version: Optional[int],
+) -> Dict[str, str]:
+    env = os.environ.copy()
+    mapping = {
+        "TURBODRAFT_SESSION_SOURCE": normalized_optional_text(session_source or ""),
+        "TURBODRAFT_SESSION_QUEUE_PATH": normalized_optional_text(queue_path or ""),
+        "TURBODRAFT_SESSION_QUEUE_KEY": normalized_optional_text(queue_key or ""),
+        "TURBODRAFT_SESSION_CONTEXT_PATH": normalized_optional_text(context_path or ""),
+    }
+    for key, value in mapping.items():
+        if value is None:
+            env.pop(key, None)
+        else:
+            env[key] = value
+    if queue_format_version and int(queue_format_version) > 0:
+        env["TURBODRAFT_SESSION_QUEUE_FORMAT_VERSION"] = str(int(queue_format_version))
+    else:
+        env.pop("TURBODRAFT_SESSION_QUEUE_FORMAT_VERSION", None)
+    if context_format_version and int(context_format_version) > 0:
+        env["TURBODRAFT_SESSION_CONTEXT_FORMAT_VERSION"] = str(int(context_format_version))
+    else:
+        env.pop("TURBODRAFT_SESSION_CONTEXT_FORMAT_VERSION", None)
+    return env
+
+
 def apple_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -470,6 +507,12 @@ def run_api_cycle_attempt(
     telemetry_path: pathlib.Path,
     open_timeout_s: float,
     close_timeout_s: float,
+    session_source: Optional[str],
+    queue_path: Optional[str],
+    queue_key: Optional[str],
+    queue_format_version: Optional[int],
+    context_path: Optional[str],
+    context_format_version: Optional[int],
 ) -> CycleAttemptResult:
     cycle: Dict[str, Any] = {
         "cycle": cycle_idx,
@@ -481,12 +524,35 @@ def run_api_cycle_attempt(
     }
     telemetry_offset = telemetry_path.stat().st_size if telemetry_path.exists() else 0
 
-    cmd = [str(turbodraft_bin), "open", "--path", str(fixture_path), "--wait", "--timeout-ms", str(int(max(1000, (open_timeout_s + close_timeout_s) * 1000)))]
+    normalized_fixture_path = str(fixture_path.resolve())
+    env = build_open_env(
+        session_source=session_source,
+        queue_path=queue_path,
+        queue_key=queue_key,
+        queue_format_version=queue_format_version,
+        context_path=context_path,
+        context_format_version=context_format_version,
+    )
+    expects_queue_attachment = normalized_optional_text(queue_path or "") is not None
+    expects_context_attachment = normalized_optional_text(context_path or "") is not None
+    expected_queue_supported = expects_queue_attachment and int(queue_format_version or 0) in (0, 1)
+    expected_context_supported = expects_context_attachment and int(context_format_version or 0) in (0, 1)
+
+    cmd = [str(turbodraft_bin), "open", "--path", normalized_fixture_path, "--wait", "--timeout-ms", str(int(max(1000, (open_timeout_s + close_timeout_s) * 1000)))]
     t_trigger = time.perf_counter()
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, env=env)
     cycle["timestamps"]["trigger_ns"] = time.perf_counter_ns()
 
     try:
+        app_open_evt, telemetry_offset = wait_for_new_jsonl(
+            telemetry_path,
+            telemetry_offset,
+            timeout_s=open_timeout_s,
+            predicate=lambda o: o.get("event") == "app_session_open" and o.get("path") == normalized_fixture_path,
+        )
+        cycle["appOpenTelemetry"] = app_open_evt
+        cycle["timestamps"]["app_open_event_received_ns"] = time.perf_counter_ns()
+
         open_evt, telemetry_offset = wait_for_new_jsonl(
             telemetry_path,
             telemetry_offset,
@@ -495,6 +561,28 @@ def run_api_cycle_attempt(
         )
         cycle["openTelemetry"] = open_evt
         cycle["timestamps"]["open_event_received_ns"] = time.perf_counter_ns()
+        cycle["validation"]["attachment_errors"] = []
+
+        if isinstance(app_open_evt.get("sessionId"), str) and app_open_evt.get("sessionId") != open_evt.get("sessionId"):
+            cycle["validation"]["attachment_errors"].append("session_id_mismatch_between_app_and_cli")
+        if numeric(app_open_evt.get("openMs")) is None:
+            cycle["validation"]["attachment_errors"].append("missing_app_open_latency")
+        if bool(open_evt.get("hasQueueAttachment")) != expects_queue_attachment:
+            cycle["validation"]["attachment_errors"].append("cli_queue_attachment_flag_mismatch")
+        if bool(open_evt.get("hasContextAttachment")) != expects_context_attachment:
+            cycle["validation"]["attachment_errors"].append("cli_context_attachment_flag_mismatch")
+        if bool(app_open_evt.get("hasQueueAttachment")) != expects_queue_attachment:
+            cycle["validation"]["attachment_errors"].append("app_queue_attachment_flag_mismatch")
+        if bool(app_open_evt.get("hasContextAttachment")) != expects_context_attachment:
+            cycle["validation"]["attachment_errors"].append("app_context_attachment_flag_mismatch")
+        if bool(app_open_evt.get("queueAttachmentSupported")) != expected_queue_supported:
+            cycle["validation"]["attachment_errors"].append("app_queue_supported_flag_mismatch")
+        if bool(app_open_evt.get("contextAttachmentSupported")) != expected_context_supported:
+            cycle["validation"]["attachment_errors"].append("app_context_supported_flag_mismatch")
+        if session_source and app_open_evt.get("source") != session_source:
+            cycle["validation"]["attachment_errors"].append("app_source_mismatch")
+        if session_source and open_evt.get("source") != session_source:
+            cycle["validation"]["attachment_errors"].append("cli_source_mismatch")
 
         # Close trigger via RPC session.close when possible (keeps app resident).
         # Fallback to app.quit for backward compatibility if session id telemetry
@@ -549,6 +637,8 @@ def run_api_cycle_attempt(
         ts = cycle["timestamps"]
         if ts["trigger_ns"] > ts["open_event_received_ns"]:
             ord_errs.append("trigger_after_open_event")
+        if ts["app_open_event_received_ns"] > ts["open_event_received_ns"]:
+            ord_errs.append("app_open_event_after_cli_open")
         if ts["open_event_received_ns"] > ts["close_trigger_ns"]:
             ord_errs.append("open_event_after_close_trigger")
         if ts["close_trigger_ns"] > ts["proc_exit_ns"]:
@@ -564,6 +654,8 @@ def run_api_cycle_attempt(
             return CycleAttemptResult(False, True, f"open command exited {proc.returncode}", cycle)
         if cycle["apiOpenTotalMs"] is None or cycle["apiCloseTriggerToExitMs"] is None:
             return CycleAttemptResult(False, True, "missing_primary_metrics", cycle)
+        if cycle["validation"]["attachment_errors"]:
+            return CycleAttemptResult(False, True, "attachment_validation_failed", cycle)
         if not cycle["validation"]["ordering_ok"]:
             return CycleAttemptResult(False, True, "timestamp_ordering_invalid", cycle)
 
@@ -737,6 +829,12 @@ def main() -> int:
     ap.add_argument("--no-clean-slate", action="store_false", dest="clean_slate")
     ap.add_argument("--inject-transient-failure-cycle", type=int, default=0, help="For validation: force first attempt failure for this cycle")
     ap.add_argument("--fixture", default="bench/preambles/core.md")
+    ap.add_argument("--session-source", default="")
+    ap.add_argument("--queue-path", default="")
+    ap.add_argument("--queue-key", default="")
+    ap.add_argument("--queue-format-version", type=int, default=0)
+    ap.add_argument("--context-path", default="")
+    ap.add_argument("--context-format-version", type=int, default=0)
     ap.add_argument("--out-dir", default="")
     ap.add_argument("--compare", default="", help="Optional previous report JSON for trend deltas")
     args = ap.parse_args()
@@ -762,6 +860,13 @@ def main() -> int:
       raise SystemExit(f"fixture not found: {fixture_src}")
     fixture = out_dir / "open-close-fixture.md"
     fixture.write_text(fixture_src.read_text(encoding="utf-8"), encoding="utf-8")
+
+    session_source = normalized_optional_text(args.session_source)
+    queue_path = normalized_optional_text(args.queue_path)
+    queue_key = normalized_optional_text(args.queue_key)
+    queue_format_version = int(args.queue_format_version) if int(args.queue_format_version) > 0 else None
+    context_path = normalized_optional_text(args.context_path)
+    context_format_version = int(args.context_format_version) if int(args.context_format_version) > 0 else None
 
     precheck = preconditions(repo, bench_bin, app_bin)
 
@@ -806,6 +911,12 @@ def main() -> int:
                     telemetry_path=telemetry_path,
                     open_timeout_s=float(args.open_timeout_s),
                     close_timeout_s=float(args.close_timeout_s),
+                    session_source=session_source,
+                    queue_path=queue_path,
+                    queue_key=queue_key,
+                    queue_format_version=queue_format_version,
+                    context_path=context_path,
+                    context_format_version=context_format_version,
                 )
                 final_cycle = res.cycle
                 final_cycle["warmup"] = warmup
@@ -927,6 +1038,12 @@ def main() -> int:
             "fixture": str(fixture),
             "socketPath": str(socket_path),
             "telemetryPath": str(telemetry_path),
+            "sessionSource": session_source,
+            "queuePath": queue_path,
+            "queueKey": queue_key,
+            "queueFormatVersion": queue_format_version,
+            "contextPath": context_path,
+            "contextFormatVersion": context_format_version,
         },
         "cycles": cycles,
         "failures": failures,

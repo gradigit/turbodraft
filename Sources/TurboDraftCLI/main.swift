@@ -15,6 +15,49 @@ enum CLIError: Error {
 
 struct CLI {
   let args: [String]
+  private struct SessionOpenAttachmentMetadata {
+    var source: String? = nil
+    var queuePath: String? = nil
+    var queueKey: String? = nil
+    var queueFormatVersion: Int? = nil
+    var contextPath: String? = nil
+    var contextFormatVersion: Int? = nil
+
+    var hasQueueAttachment: Bool { queuePath != nil }
+    var hasContextAttachment: Bool { contextPath != nil }
+
+    static func fromEnvironment(_ env: [String: String] = ProcessInfo.processInfo.environment) -> SessionOpenAttachmentMetadata {
+      func normalized(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+          return nil
+        }
+        return trimmed
+      }
+
+      func positiveInt(_ value: String?) -> Int? {
+        guard let normalized = normalized(value), let parsed = Int(normalized), parsed > 0 else { return nil }
+        return parsed
+      }
+
+      return SessionOpenAttachmentMetadata(
+        source: normalized(env["TURBODRAFT_SESSION_SOURCE"]),
+        queuePath: normalized(env["TURBODRAFT_SESSION_QUEUE_PATH"]),
+        queueKey: normalized(env["TURBODRAFT_SESSION_QUEUE_KEY"]),
+        queueFormatVersion: positiveInt(env["TURBODRAFT_SESSION_QUEUE_FORMAT_VERSION"]),
+        contextPath: normalized(env["TURBODRAFT_SESSION_CONTEXT_PATH"]),
+        contextFormatVersion: positiveInt(env["TURBODRAFT_SESSION_CONTEXT_FORMAT_VERSION"])
+      )
+    }
+
+    func apply(to paramsObj: inout [String: JSONValue]) {
+      if let source { paramsObj["source"] = .string(source) }
+      if let queuePath { paramsObj["queuePath"] = .string(queuePath) }
+      if let queueKey { paramsObj["queueKey"] = .string(queueKey) }
+      if let queueFormatVersion { paramsObj["queueFormatVersion"] = .int(Int64(queueFormatVersion)) }
+      if let contextPath { paramsObj["contextPath"] = .string(contextPath) }
+      if let contextFormatVersion { paramsObj["contextFormatVersion"] = .int(Int64(contextFormatVersion)) }
+    }
+  }
   private static let telemetryDateFormatter = ISO8601DateFormatter()
   private static var telemetryHandle: FileHandle?
   private static let telemetryFileURL: URL? = {
@@ -74,9 +117,15 @@ Commands:
     let wait = args.contains("--wait")
     let timeoutMs = argInt("--timeout-ms") ?? 600_000
     let useStdio = args.contains("--stdio")
+    let attachmentMetadata = SessionOpenAttachmentMetadata.fromEnvironment()
 
     if useStdio {
-      let (proc, conn, sessionId) = try openViaStdio(path: path, line: line, column: column)
+      let (proc, conn, sessionId) = try openViaStdio(
+        path: path,
+        line: line,
+        column: column,
+        attachmentMetadata: attachmentMetadata
+      )
       if wait {
         let reason = try waitViaConnection(conn, sessionId: sessionId, timeoutMs: timeoutMs)
         if reason == "userClosed" {
@@ -96,18 +145,30 @@ Commands:
       let conn = JSONRPCConnection(readHandle: handle, writeHandle: handle)
 
       let rpcStart = nowMs()
-      let sessionId = try openViaConnection(conn, path: path, line: line, column: column)
+      let sessionId = try openViaConnection(
+        conn,
+        path: path,
+        line: line,
+        column: column,
+        attachmentMetadata: attachmentMetadata
+      )
       let rpcMs = nowMs() - rpcStart
       let totalMs = nowMs() - t0
 
-      appendOpenLatencyRecord([
+      var openRecord: [String: Any] = [
         "event": "cli_open",
         "mode": "socket",
         "sessionId": sessionId,
         "connectMs": connectMs,
         "rpcOpenMs": rpcMs,
         "totalMs": totalMs,
-      ])
+        "hasQueueAttachment": attachmentMetadata.hasQueueAttachment,
+        "hasContextAttachment": attachmentMetadata.hasContextAttachment,
+      ]
+      if let source = attachmentMetadata.source {
+        openRecord["source"] = source
+      }
+      appendOpenLatencyRecord(openRecord)
       if wait {
         let waitStart = nowMs()
         let reason = try waitViaConnection(conn, sessionId: sessionId, timeoutMs: timeoutMs)
@@ -659,7 +720,7 @@ Commands:
     let fd = try connectOrLaunch(socketPath: socketPath, timeoutMs: timeoutMs)
     let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
     let conn = JSONRPCConnection(readHandle: handle, writeHandle: handle)
-    return try openViaConnection(conn, path: path, line: line, column: column)
+    return try openViaConnection(conn, path: path, line: line, column: column, attachmentMetadata: .init())
   }
 
   private func waitViaSocket(socketPath: String, sessionId: String, timeoutMs: Int) throws -> String {
@@ -686,15 +747,38 @@ Commands:
     return (proc, conn)
   }
 
-  private func openViaStdio(path: String, line: Int?, column: Int?) throws -> (Process, JSONRPCConnection, String) {
+  private func openViaStdio(
+    path: String,
+    line: Int?,
+    column: Int?,
+    attachmentMetadata: SessionOpenAttachmentMetadata
+  ) throws -> (Process, JSONRPCConnection, String) {
     let (proc, conn) = try spawnStdioApp()
-    let sessionId = try openViaConnection(conn, path: path, line: line, column: column)
+    let sessionId = try openViaConnection(
+      conn,
+      path: path,
+      line: line,
+      column: column,
+      attachmentMetadata: attachmentMetadata
+    )
     return (proc, conn, sessionId)
   }
 
-  private func openViaConnection(_ conn: JSONRPCConnection, path: String, line: Int?, column: Int?) throws -> String {
+  private func openViaConnection(
+    _ conn: JSONRPCConnection,
+    path: String,
+    line: Int?,
+    column: Int?,
+    attachmentMetadata: SessionOpenAttachmentMetadata
+  ) throws -> String {
     try sendHello(conn)
-    let decoded = try sendSessionOpen(conn, path: path, line: line, column: column)
+    let decoded = try sendSessionOpen(
+      conn,
+      path: path,
+      line: line,
+      column: column,
+      attachmentMetadata: attachmentMetadata
+    )
     return decoded.sessionId
   }
 
@@ -731,13 +815,20 @@ Commands:
     _ = try sendHelloWithResult(conn)
   }
 
-  private func sendSessionOpen(_ conn: JSONRPCConnection, path: String, line: Int?, column: Int?) throws -> SessionOpenResult {
+  private func sendSessionOpen(
+    _ conn: JSONRPCConnection,
+    path: String,
+    line: Int?,
+    column: Int?,
+    attachmentMetadata: SessionOpenAttachmentMetadata = .init()
+  ) throws -> SessionOpenResult {
     var paramsObj: [String: JSONValue] = [
       "path": .string(path),
       "protocolVersion": .int(Int64(TurboDraftProtocolVersion.current)),
     ]
     if let line { paramsObj["line"] = .int(Int64(line)) }
     if let column { paramsObj["column"] = .int(Int64(column)) }
+    attachmentMetadata.apply(to: &paramsObj)
     let openReq = JSONRPCRequest(id: .int(2), method: TurboDraftMethod.sessionOpen, params: .object(paramsObj))
     try conn.sendJSON(openReq)
     let resp = try conn.readResponse()
