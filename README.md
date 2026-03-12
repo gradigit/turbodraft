@@ -261,6 +261,7 @@ swift build            # debug build
 swift build -c release # release build
 swift test             # run all tests
 scripts/run_editor_validation.sh   # phased editor/search validation
+scripts/run_product_qa.sh          # product QA: validation + open/close smoke
 scripts/install        # build + symlink + restart LaunchAgent
 ```
 
@@ -281,6 +282,14 @@ End-to-end UX benchmark (requires Accessibility permission):
 python3 scripts/test_editor_find_replace_e2e.py --keep-fixture
 python3 scripts/test_editor_undo_redo_e2e.py
 ```
+
+Product QA suite:
+```sh
+scripts/run_product_qa.sh
+RUN_REAL_UI=1 scripts/run_product_qa.sh
+```
+This layers required editor validation with API open/close regression smoke and an optional real Ctrl+G/Ctrl+Q local probe.
+Methodology: `docs/PRODUCT_QA_SUITE.md`
 
 Open/close benchmark suite:
 ```sh

@@ -16,6 +16,7 @@ Target: next TurboDraft release after benchmark-suite cleanup and docs refresh.
 - [ ] `swift build -c release`
 - [ ] `swift test`
 - [ ] `scripts/run_editor_validation.sh`
+- [ ] `scripts/run_product_qa.sh`
 - [ ] `python3 scripts/bench_open_close_suite.py --cycles 20 --warmup 1 --retries 2`
 - [ ] `python3 scripts/bench_open_close_real_cli.py --cycles 20 --warmup 1 --trigger-mode cgevent`
 - [ ] `python3 scripts/bench_ram_suite.py --cycles 20 --warmup 1 --retries 1 --enforce-gates`

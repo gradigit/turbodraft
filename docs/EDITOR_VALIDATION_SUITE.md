@@ -39,3 +39,12 @@ RUN_AX_UI=1 scripts/run_editor_validation.sh
 - AX phases require macOS Accessibility + Automation permissions.
 - The AX scripts are intended for local validation (not CI runners).
 - If phase 5 fails, inspect artifacts under `tmp/ui-e2e-artifacts/`.
+
+For broader local product QA that also exercises open/close regression smoke, use:
+
+```bash
+scripts/run_product_qa.sh
+RUN_REAL_UI=1 scripts/run_product_qa.sh
+```
+
+That suite is documented in `docs/PRODUCT_QA_SUITE.md`.

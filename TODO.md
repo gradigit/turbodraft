@@ -33,6 +33,10 @@ Do **not** start with PromptPack/import work. Temporary prompt duplication is in
 - [x] Queue settings, agent-agnostic queue copy, selection-seeded queue creation, and required validation-gate expansion
 - [x] Drafting state/error surfacing follow-up
 
+### T3 progress
+
+- [x] Add a repeatable local product-QA runner covering required editor validation plus API open/close regression smoke, with optional real Ctrl+G/Ctrl+Q probing
+
 # Forge TODO — Prompt Eval Recommendation Execution
 
 ## Goal
