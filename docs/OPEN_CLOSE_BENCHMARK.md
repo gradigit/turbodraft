@@ -74,6 +74,7 @@ Run while your real agent CLI window is frontmost:
 python3 scripts/bench_open_close_real_cli.py --cycles 20 --warmup 1 --poll-ms 2
 ```
 Defaults are optimized for speed (`Cmd+W` close only). Add `--typing-probe` and/or `--save-before-close` for stricter (slower) validation.
+`auto` trigger mode now prefers low-overhead HID dispatch (`cgevent`) so the measured readiness tracks the real Ctrl+G path more closely.
 If your terminal ignores synthetic Ctrl+G, use `--trigger-mode osascript`.
 The report includes `triggerDispatchMs` and post-dispatch adjusted latencies so you can separate key-injection overhead from TurboDraft readiness.
 Telemetry correlation is off by default for speed; enable only when needed with `--collect-telemetry` (and tune `--telemetry-timeout-s`).

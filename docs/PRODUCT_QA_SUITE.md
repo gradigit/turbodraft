@@ -34,6 +34,7 @@ RUN_REAL_UI=1 scripts/run_product_qa.sh
 - `python3 scripts/bench_open_close_real_cli.py`
 - intended for a real frontmost agent CLI window
 - disabled by default because it depends on Accessibility and real-window focus conditions
+- default `auto` trigger mode prefers low-overhead HID dispatch; override with `REAL_UI_TRIGGER_MODE=osascript` only if your terminal ignores direct Ctrl+G injection
 - writes artifacts under `tmp/product-qa/.../open-close-real-cli`
 
 ## Default profile

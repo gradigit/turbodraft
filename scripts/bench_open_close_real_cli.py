@@ -382,7 +382,12 @@ def main() -> int:
         help="Fail run when selected gate metric p95 exceeds this threshold",
     )
     ap.add_argument("--countdown-s", type=float, default=6.0, help="Startup delay so you can switch to your real CLI window")
-    ap.add_argument("--trigger-mode", choices=["auto", "cgevent", "osascript"], default="auto")
+    ap.add_argument(
+        "--trigger-mode",
+        choices=["auto", "cgevent", "osascript"],
+        default="auto",
+        help="auto prefers low-overhead cgevent dispatch; use osascript only when your terminal ignores HID key events",
+    )
     ap.add_argument("--out-dir", default="")
     args = ap.parse_args()
 
@@ -428,18 +433,13 @@ def main() -> int:
             trigger_used = "cgevent"
             trigger_err = ""
             dispatch_ms = 0.0
-            if args.trigger_mode in ("auto", "osascript"):
+            if args.trigger_mode == "osascript":
                 ok, err, dms = send_ctrl_g_via_osascript(front_before)
                 if ok:
                     trigger_used = "osascript"
                     dispatch_ms = dms
-                elif args.trigger_mode == "osascript":
-                    raise RuntimeError(f"trigger_failed:{err}")
                 else:
-                    trigger_err = err
-                    t_dispatch = time.perf_counter()
-                    send_ctrl_g()
-                    dispatch_ms = (time.perf_counter() - t_dispatch) * 1000.0
+                    raise RuntimeError(f"trigger_failed:{err}")
             else:
                 t_dispatch = time.perf_counter()
                 send_ctrl_g()
