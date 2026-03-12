@@ -4,6 +4,23 @@ import TurboDraftProtocol
 import TurboDraftTransport
 import XCTest
 
+private final class ServerTaskBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var task: Task<Void, Never>?
+
+  func set(_ task: Task<Void, Never>) {
+    lock.lock()
+    self.task = task
+    lock.unlock()
+  }
+
+  func get() -> Task<Void, Never>? {
+    lock.lock()
+    defer { lock.unlock() }
+    return task
+  }
+}
+
 final class CLIFLowTests: XCTestCase {
   func testOpenSaveFlowOverUnixDomainSocket() throws {
     let dir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
@@ -16,6 +33,8 @@ final class CLIFLowTests: XCTestCase {
 
     let sock = dir.appendingPathComponent("server.sock").path
     let session = EditorSession()
+    let serverTaskBox = ServerTaskBox()
+    let serverTaskStarted = expectation(description: "server task started")
 
     let server = try UnixDomainSocketServer(socketPath: sock)
     server.start { fd in
@@ -39,7 +58,8 @@ final class CLIFLowTests: XCTestCase {
 
           case TurboDraftMethod.sessionOpen:
             let params = try (req.params ?? .object([:])).decode(SessionOpenParams.self)
-            let info = try await session.open(fileURL: URL(fileURLWithPath: params.path))
+            let path = params.path
+            let info = try await session.open(fileURL: URL(fileURLWithPath: path))
             return ok([
               "sessionId": .string(info.sessionId),
               "path": .string(info.fileURL.path),
@@ -50,7 +70,8 @@ final class CLIFLowTests: XCTestCase {
 
           case TurboDraftMethod.sessionSave:
             let params = try (req.params ?? .object([:])).decode(SessionSaveParams.self)
-            await session.updateBufferContent(params.content)
+            let content = params.content
+            await session.updateBufferContent(content)
             let _ = try await session.autosave(reason: "rpc_save")
             let info = await session.currentInfo()
             return ok([
@@ -65,7 +86,8 @@ final class CLIFLowTests: XCTestCase {
           return err(JSONRPCStandardErrorCode.internalError, "handler failed: \(error)")
         }
       }
-      serverConn.run()
+      serverTaskBox.set(serverConn.run())
+      serverTaskStarted.fulfill()
     }
 
     let cfd = try UnixDomainSocket.connect(path: sock)
@@ -95,7 +117,14 @@ final class CLIFLowTests: XCTestCase {
     XCTAssertEqual(disk, newContent)
 
     try? ch.close()
+    wait(for: [serverTaskStarted], timeout: 2.0)
     server.stop()
+    let task = serverTaskBox.get()
+    let drained = expectation(description: "server task drained")
+    Task {
+      _ = await task?.result
+      drained.fulfill()
+    }
+    wait(for: [drained], timeout: 2.0)
   }
 }
-

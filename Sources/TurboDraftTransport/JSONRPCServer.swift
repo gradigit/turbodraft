@@ -12,8 +12,9 @@ public final class JSONRPCServerConnection: @unchecked Sendable {
     self.handler = handler
   }
 
-  public func run() {
-    Task.detached(priority: .utility) { [connection, handler] in
+  @discardableResult
+  public func run() -> Task<Void, Never> {
+    Task(priority: .utility) { [connection, handler] in
       while true {
         do {
           let req = try connection.readRequest()

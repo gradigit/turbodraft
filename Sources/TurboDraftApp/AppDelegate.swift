@@ -521,18 +521,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "protocolVersion mismatch: client=\(clientProtocolVersion) server=\(TurboDraftProtocolVersion.current)"
           )
         }
+        let requestedPath = params.path
+        let requestedCwd = params.cwd
+        let requestedLine = params.line
+        let requestedColumn = params.column
+        let requestedSource = params.source
+        let requestedQueuePath = params.queuePath
+        let requestedQueueKey = params.queueKey
+        let requestedQueueFormatVersion = params.queueFormatVersion
+        let requestedContextPath = params.contextPath
+        let requestedContextFormatVersion = params.contextFormatVersion
         let t0 = nowMs()
-        let normalizedPath = URL(fileURLWithPath: params.path).standardizedFileURL.path
+        let normalizedPath = URL(fileURLWithPath: requestedPath).standardizedFileURL.path
         let externalQueueAttachment = ExternalQueueAttachment(
-          source: params.source,
-          queuePath: params.queuePath,
-          queueKey: params.queueKey,
-          queueFormatVersion: params.queueFormatVersion
+          source: requestedSource,
+          queuePath: requestedQueuePath,
+          queueKey: requestedQueueKey,
+          queueFormatVersion: requestedQueueFormatVersion
         )
         let externalSessionContextAttachment = ExternalSessionContextAttachment(
-          source: params.source,
-          contextPath: params.contextPath,
-          contextFormatVersion: params.contextFormatVersion
+          source: requestedSource,
+          contextPath: requestedContextPath,
+          contextFormatVersion: requestedContextFormatVersion
         )
         let editorSession: EditorSession
         let wc: EditorWindowController
@@ -570,8 +580,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if NSApp.activationPolicy() == .accessory {
           NSApp.setActivationPolicy(.regular)
         }
-        let url = URL(fileURLWithPath: params.path)
-        let info = try await editorSession.open(fileURL: url, cwd: params.cwd)
+        let url = URL(fileURLWithPath: requestedPath)
+        let info = try await editorSession.open(fileURL: url, cwd: requestedCwd)
         retireSessionMappings(for: editorSession)
         registerSession(
           id: info.sessionId,
@@ -584,7 +594,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Present window asynchronously — doesn't block RPC response
         Task { @MainActor in
-          await wc.presentSession(info, line: params.line, column: params.column)
+          await wc.presentSession(info, line: requestedLine, column: requestedColumn)
         }
 
         let openMs = nowMs() - t0
@@ -660,19 +670,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case TurboDraftMethod.sessionSave:
       do {
         let params = try (req.params ?? .object([:])).decode(SessionSaveParams.self)
+        let sessionId = params.sessionId
+        let baseRevision = params.baseRevision
+        let force = params.force
+        let content = params.content
         let saveT0 = nowMs()
-        guard let editorSession = sessionsById[params.sessionId] else {
+        guard let editorSession = sessionsById[sessionId] else {
           return err(JSONRPCStandardErrorCode.invalidRequest, "Invalid sessionId")
         }
-        touchSession(params.sessionId)
+        touchSession(sessionId)
         // Optimistic concurrency: reject stale saves unless force is true.
-        if let baseRev = params.baseRevision, params.force != true {
+        if let baseRev = baseRevision, force != true {
           if let info = await editorSession.currentInfo(), info.diskRevision != baseRev {
             return err(JSONRPCStandardErrorCode.invalidRequest, "baseRevision mismatch (stale save)")
           }
         }
         // Session-bound save: ignore params.path and only save current session content.
-        await editorSession.updateBufferContent(params.content)
+        await editorSession.updateBufferContent(content)
         let _ = try await editorSession.autosave(reason: "rpc_save")
         let saveMs = nowMs() - saveT0
         if let info = await editorSession.currentInfo() {
