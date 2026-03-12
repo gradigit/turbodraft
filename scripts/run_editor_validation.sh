@@ -4,11 +4,15 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-printf '[phase-1] core search logic tests\n'
+printf '[phase-1] core search + queue storage tests\n'
 swift test --filter TextSearchEngineTests
+swift test --filter SharedQueueFileStoreTests
 
 printf '\n[phase-2] app workflow smoke test\n'
 swift test --filter EditorWorkflowTests/testFindReplaceAndImageSmoke
+swift test --filter QueueSidebarTests
+swift test --filter SidebarDiffPreviewTests
+swift test --filter EditorWindowControllerCloseTests
 
 printf '\n[phase-3] markdown behavior tests\n'
 swift test --filter MarkdownEnterBehaviorTests

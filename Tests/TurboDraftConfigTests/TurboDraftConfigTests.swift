@@ -30,6 +30,11 @@ final class TurboDraftConfigTests: XCTestCase {
     XCTAssertEqual(cfg.agent.reasoningSummary, .auto)
   }
 
+  func testDecodeDefaultsExternalSessionQueues() throws {
+    let cfg = try JSONDecoder().decode(TurboDraftConfig.self, from: Data("{}".utf8))
+    XCTAssertEqual(cfg.externalSessionQueues, .init(enabled: true, autoRevealOnAttach: false))
+  }
+
   func testSanitizesMinimalEffortForSpark() throws {
     let cfg = try JSONDecoder().decode(
       TurboDraftConfig.self,
@@ -109,5 +114,14 @@ final class TurboDraftConfigTests: XCTestCase {
       from: Data(#"{"agent":{"draftingPreset":"pivot_kr_en_reason_ko"}}"#.utf8)
     )
     XCTAssertEqual(cfg.agent.draftingPreset, .pivotKrEnReasonKo)
+  }
+
+  func testExternalSessionQueuesRoundTrip() throws {
+    var cfg = TurboDraftConfig()
+    cfg.externalSessionQueues = .init(enabled: false, autoRevealOnAttach: true)
+
+    let data = try JSONEncoder().encode(cfg)
+    let decoded = try JSONDecoder().decode(TurboDraftConfig.self, from: data)
+    XCTAssertEqual(decoded.externalSessionQueues, .init(enabled: false, autoRevealOnAttach: true))
   }
 }

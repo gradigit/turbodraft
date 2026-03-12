@@ -8,6 +8,33 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     case ultraFast = "ultra_fast"
   }
 
+  public struct ExternalSessionQueues: Codable, Sendable, Equatable {
+    public var enabled: Bool
+    public var autoRevealOnAttach: Bool
+
+    public init(enabled: Bool = true, autoRevealOnAttach: Bool = false) {
+      self.enabled = enabled
+      self.autoRevealOnAttach = autoRevealOnAttach
+    }
+
+    private enum CodingKeys: String, CodingKey {
+      case enabled
+      case autoRevealOnAttach
+    }
+
+    public init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+      self.autoRevealOnAttach = try c.decodeIfPresent(Bool.self, forKey: .autoRevealOnAttach) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(enabled, forKey: .enabled)
+      try c.encode(autoRevealOnAttach, forKey: .autoRevealOnAttach)
+    }
+  }
+
   public enum ThemeMode: String, Codable, Sendable, Equatable {
     case system
     case light
@@ -224,6 +251,7 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
   public var autosaveDebounceMs: Int
   public var autosaveMaxFlushMs: Int
   public var agent: Agent
+  public var externalSessionQueues: ExternalSessionQueues
   public var theme: ThemeMode
   public var editorMode: EditorMode
   public var colorTheme: String
@@ -235,6 +263,7 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     autosaveDebounceMs: Int = 50,
     autosaveMaxFlushMs: Int = 250,
     agent: Agent = Agent(),
+    externalSessionQueues: ExternalSessionQueues = ExternalSessionQueues(),
     theme: ThemeMode = .system,
     editorMode: EditorMode = .reliable,
     colorTheme: String = "turbodraft-dark",
@@ -245,6 +274,7 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     self.autosaveDebounceMs = autosaveDebounceMs
     self.autosaveMaxFlushMs = autosaveMaxFlushMs
     self.agent = agent
+    self.externalSessionQueues = externalSessionQueues
     self.theme = theme
     self.editorMode = editorMode
     self.colorTheme = colorTheme
@@ -257,6 +287,7 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     case autosaveDebounceMs
     case autosaveMaxFlushMs
     case agent
+    case externalSessionQueues
     case theme
     case editorMode
     case colorTheme
@@ -270,6 +301,7 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     self.autosaveDebounceMs = try c.decodeIfPresent(Int.self, forKey: .autosaveDebounceMs) ?? 50
     self.autosaveMaxFlushMs = try c.decodeIfPresent(Int.self, forKey: .autosaveMaxFlushMs) ?? 250
     self.agent = try c.decodeIfPresent(Agent.self, forKey: .agent) ?? Agent()
+    self.externalSessionQueues = try c.decodeIfPresent(ExternalSessionQueues.self, forKey: .externalSessionQueues) ?? ExternalSessionQueues()
     self.theme = try c.decodeIfPresent(ThemeMode.self, forKey: .theme) ?? .system
     self.editorMode = try c.decodeIfPresent(EditorMode.self, forKey: .editorMode) ?? .reliable
     self.colorTheme = try c.decodeIfPresent(String.self, forKey: .colorTheme) ?? "turbodraft-dark"
@@ -283,6 +315,7 @@ public struct TurboDraftConfig: Codable, Sendable, Equatable {
     try c.encode(autosaveDebounceMs, forKey: .autosaveDebounceMs)
     try c.encode(autosaveMaxFlushMs, forKey: .autosaveMaxFlushMs)
     try c.encode(agent, forKey: .agent)
+    try c.encode(externalSessionQueues, forKey: .externalSessionQueues)
     try c.encode(theme, forKey: .theme)
     try c.encode(editorMode, forKey: .editorMode)
     try c.encode(colorTheme, forKey: .colorTheme)

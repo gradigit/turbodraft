@@ -225,6 +225,8 @@ Config lives at `~/Library/Application Support/TurboDraft/config.json`.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `autosaveDebounceMs` | `50` | Autosave debounce in milliseconds |
+| `externalSessionQueues.enabled` | `true` | Enables attached external session queues (for example Claude Pager queue sessions) |
+| `externalSessionQueues.autoRevealOnAttach` | `false` | Automatically opens the Queue panel when a supported external session queue attaches |
 | `theme` | `"system"` | `"system"`, `"light"`, or `"dark"` |
 | `editorMode` | `"reliable"` | `"reliable"` or `"ultra_fast"` |
 | `agent.enabled` | `false` | Enable drafting agent |

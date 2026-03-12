@@ -165,6 +165,60 @@ final class AQueueSidebarTests: XCTestCase {
     XCTAssertTrue(bundle.controller._testingQueueStatusText().contains("Unsupported shared queue format"))
   }
 
+  func testDisabledExternalQueueIntegrationSuppressesSidebarAndLoad() async throws {
+    var config = TurboDraftConfig()
+    config.externalSessionQueues = .init(enabled: false, autoRevealOnAttach: false)
+    let bundle = try await makeControllerBundle(
+      initialText: "draft",
+      queueText: """
+      {"id":"one","prompt":"first prompt","added_us":1}
+      """,
+      config: config
+    )
+
+    bundle.controller._testingOpenQueuePanel()
+
+    XCTAssertFalse(bundle.controller._testingIsQueueSidebarVisible())
+    XCTAssertEqual(bundle.controller._testingQueueItemCount(), 0)
+    XCTAssertTrue(bundle.controller._testingQueueStatusText().contains("disabled in settings"))
+  }
+
+  func testAutoRevealOnAttachShowsQueueSidebar() async throws {
+    var config = TurboDraftConfig()
+    config.externalSessionQueues = .init(enabled: true, autoRevealOnAttach: true)
+    let bundle = try await makeControllerBundle(
+      initialText: "draft",
+      queueText: """
+      {"id":"one","prompt":"first prompt","added_us":1}
+      """,
+      config: config
+    )
+
+    XCTAssertTrue(bundle.controller._testingIsQueueSidebarVisible())
+    XCTAssertEqual(bundle.controller._testingQueueSelectedPrompt(), "first prompt")
+  }
+
+  func testQueueNewItemSeedsFromEditorSelection() async throws {
+    let initialText = "Alpha section\nBeta selected text\nGamma section"
+    let bundle = try await makeControllerBundle(
+      initialText: initialText,
+      queueText: "",
+      config: TurboDraftConfig()
+    )
+    let ns = initialText as NSString
+    let range = ns.range(of: "Beta selected text")
+    XCTAssertNotEqual(range.location, NSNotFound)
+
+    bundle.controller._testingSetSelection(range)
+    bundle.controller._testingOpenQueuePanel()
+    bundle.controller._testingQueueNewItem()
+
+    XCTAssertEqual(bundle.controller._testingQueueItemCount(), 1)
+    XCTAssertEqual(bundle.controller._testingQueueSelectedPrompt(), "Beta selected text")
+    XCTAssertEqual(bundle.controller._testingQueueEditorText(), "Beta selected text")
+    XCTAssertTrue(bundle.controller._testingQueueStatusText().contains("current selection"))
+  }
+
   private func waitUntil(
     _ condition: @escaping () -> Bool,
     timeoutMs: Int = 1500,
@@ -179,7 +233,8 @@ final class AQueueSidebarTests: XCTestCase {
 
   private func makeControllerBundle(
     initialText: String,
-    queueText: String
+    queueText: String,
+    config: TurboDraftConfig = TurboDraftConfig()
   ) async throws -> (controller: EditorViewController, queueURL: URL) {
     _ = NSApplication.shared
     let dir = FileManager.default.temporaryDirectory
@@ -195,7 +250,7 @@ final class AQueueSidebarTests: XCTestCase {
 
     let session = EditorSession()
     let info = try await session.open(fileURL: fileURL, cwd: nil)
-    let controller = EditorViewController(session: session, config: TurboDraftConfig())
+    let controller = EditorViewController(session: session, config: config)
     controller.loadViewIfNeeded()
     controller.applySessionInfo(info, moveCursorLine: nil, column: nil)
     controller.setExternalQueueAttachment(
@@ -206,11 +261,11 @@ final class AQueueSidebarTests: XCTestCase {
         queueFormatVersion: 1
       )
     )
-    let expectedCount = queueText
+    let expectedCount = config.externalSessionQueues.enabled ? queueText
       .split(whereSeparator: \.isNewline)
       .map(String.init)
       .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-      .count
+      .count : 0
     await waitUntil(
       { controller._testingQueueItemCount() == expectedCount },
       timeoutMs: 1500

@@ -105,12 +105,12 @@ final class EditorViewController: NSViewController {
   private let draftingDiffScroll = NSScrollView()
   private let draftingDiffView = NSTextView()
   private let queueTitle = NSTextField(labelWithString: "Queued Prompts")
-  private let queueSubtitle = NSTextField(labelWithString: "Shared Claude Pager session queue")
+  private let queueSubtitle = NSTextField(labelWithString: "Shared external session queue")
   private let queueTableScroll = NSScrollView()
   private let queueTableView = NSTableView()
   private let queueEditorScroll = NSScrollView()
   private let queueEditor = NSTextView()
-  private let queueStatusLabel = NSTextField(labelWithString: "No shared queue attached.")
+  private let queueStatusLabel = NSTextField(labelWithString: "No external session queue attached.")
   private let queueNewButton = NSButton(title: "New", target: nil, action: nil)
   private let queueDeleteButton = NSButton(title: "Delete", target: nil, action: nil)
   private let queueReloadButton = NSButton(title: "Reload", target: nil, action: nil)
@@ -1161,8 +1161,8 @@ final class EditorViewController: NSViewController {
     isApplyingQueueEditorUpdate = true
     queueEditor.string = ""
     isApplyingQueueEditorUpdate = false
-    queueSubtitle.stringValue = "Shared Claude Pager session queue"
-    queueStatusLabel.stringValue = "No shared queue attached."
+    queueSubtitle.stringValue = "Shared external session queue"
+    queueStatusLabel.stringValue = "No external session queue attached."
     queueTableView.reloadData()
     updateDraftingSidebarModeControls()
     updateDraftingSidebarControlState()
@@ -1366,8 +1366,12 @@ final class EditorViewController: NSViewController {
     agentConfig.enabled && agentConfig.chatPanelEnabled
   }
 
+  private func isExternalQueueIntegrationEnabled() -> Bool {
+    config.externalSessionQueues.enabled
+  }
+
   private func isQueueSidebarAvailable() -> Bool {
-    externalQueueAttachment?.isSupportedFormat == true
+    isExternalQueueIntegrationEnabled() && externalQueueAttachment?.isSupportedFormat == true
   }
 
   private func normalizedDraftingSidebarMode(_ requested: DraftingSidebarMode) -> DraftingSidebarMode? {
@@ -2311,18 +2315,21 @@ final class EditorViewController: NSViewController {
     refreshQueueAttachmentPresentation()
 
     if let attachment {
+      guard isExternalQueueIntegrationEnabled() else {
+        resetQueueState(statusMessage: disabledQueueStatus())
+        if draftingSidebarMode == .queue {
+          if isChatSidebarAvailable() {
+            setDraftingSidebarMode(.chat)
+          } else {
+            setDraftingSidebarVisible(false)
+          }
+        }
+        updateDraftingSidebarModeControls()
+        updateDraftingSidebarControlState()
+        return
+      }
       guard attachment.isSupportedFormat else {
-        queueWatcher?.stop()
-        queueWatcher = nil
-        queueItems.removeAll()
-        queueSelectedLocalID = nil
-        queueFingerprint = nil
-        queueDirty = false
-        isApplyingQueueEditorUpdate = true
-        queueEditor.string = ""
-        isApplyingQueueEditorUpdate = false
-        queueTableView.reloadData()
-        queueStatusLabel.stringValue = unsupportedQueueStatus(for: attachment)
+        resetQueueState(statusMessage: unsupportedQueueStatus(for: attachment))
         if draftingSidebarMode == .queue {
           if isChatSidebarAvailable() {
             setDraftingSidebarMode(.chat)
@@ -2336,22 +2343,15 @@ final class EditorViewController: NSViewController {
       }
       attachQueueWatcher(for: attachment)
       reloadQueueFromDisk(force: true, reason: "queue attached")
+      if config.externalSessionQueues.autoRevealOnAttach {
+        setDraftingSidebarMode(.queue)
+        setDraftingSidebarVisible(true, focusInput: false)
+      }
       if draftingSidebarVisible, draftingSidebarMode == .queue {
         setDraftingSidebarMode(.queue)
       }
     } else {
-      queueWatcher?.stop()
-      queueWatcher = nil
-      queueItems.removeAll()
-      queueSelectedLocalID = nil
-      queueFingerprint = nil
-      queueObservedDiskState = QueueDiskState(absent: true, fileSize: nil, modifiedAt: nil)
-      queueDirty = false
-      isApplyingQueueEditorUpdate = true
-      queueEditor.string = ""
-      isApplyingQueueEditorUpdate = false
-      queueTableView.reloadData()
-      queueStatusLabel.stringValue = "No shared queue attached."
+      resetQueueState(statusMessage: "No external session queue attached.")
       if draftingSidebarMode == .queue {
         if isChatSidebarAvailable() {
           setDraftingSidebarMode(.chat)
@@ -2392,12 +2392,15 @@ final class EditorViewController: NSViewController {
       return
     }
     commitQueueEditorToSelection()
-    let item = SharedQueueItem.newItem()
+    let seedPrompt = selectedEditorTextForQueueSeed() ?? ""
+    let item = SharedQueueItem.newItem(prompt: seedPrompt)
     queueItems.append(item)
     queueDirty = true
     queueTableView.reloadData()
     selectQueueItem(localID: item.localID, focusEditor: true)
-    queueStatusLabel.stringValue = "Added queued prompt. Save to persist."
+    queueStatusLabel.stringValue = seedPrompt.isEmpty
+      ? "Added empty queued prompt. Save to persist."
+      : "Added queued prompt from current selection. Save to persist."
     updateDraftingSidebarControlState()
   }
 
@@ -2430,15 +2433,32 @@ final class EditorViewController: NSViewController {
   }
 
   private func queueFileURL() -> URL? {
-    guard let attachment = externalQueueAttachment, attachment.isSupportedFormat else { return nil }
+    guard isQueueSidebarAvailable(),
+          let attachment = externalQueueAttachment,
+          attachment.isSupportedFormat else { return nil }
     let path = attachment.queuePath
     guard !path.isEmpty else { return nil }
     return URL(fileURLWithPath: path)
   }
 
+  private func resetQueueState(statusMessage: String) {
+    queueWatcher?.stop()
+    queueWatcher = nil
+    queueItems.removeAll()
+    queueSelectedLocalID = nil
+    queueFingerprint = nil
+    queueObservedDiskState = QueueDiskState(absent: true, fileSize: nil, modifiedAt: nil)
+    queueDirty = false
+    isApplyingQueueEditorUpdate = true
+    queueEditor.string = ""
+    isApplyingQueueEditorUpdate = false
+    queueTableView.reloadData()
+    queueStatusLabel.stringValue = statusMessage
+  }
+
   private func refreshQueueAttachmentPresentation() {
     guard let attachment = externalQueueAttachment else {
-      queueSubtitle.stringValue = "Shared Claude Pager session queue"
+      queueSubtitle.stringValue = "Shared external session queue"
       return
     }
     var parts: [String] = []
@@ -2450,12 +2470,26 @@ final class EditorViewController: NSViewController {
     }
     let version = attachment.queueFormatVersion ?? ExternalQueueAttachment.supportedFormatVersion
     parts.append("format v\(version)")
+    if !isExternalQueueIntegrationEnabled() {
+      parts.append("disabled in settings")
+    }
     queueSubtitle.stringValue = parts.joined(separator: " • ")
   }
 
   private func unsupportedQueueStatus(for attachment: ExternalQueueAttachment) -> String {
     let version = attachment.queueFormatVersion ?? -1
     return "Unsupported shared queue format v\(version). TurboDraft supports v\(ExternalQueueAttachment.supportedFormatVersion)."
+  }
+
+  private func disabledQueueStatus() -> String {
+    "External session queues are disabled in settings."
+  }
+
+  private func unattachedQueueStatus() -> String {
+    if externalQueueAttachment != nil && !isExternalQueueIntegrationEnabled() {
+      return disabledQueueStatus()
+    }
+    return "No external session queue attached."
   }
 
   private func currentQueueDiskState(for url: URL) -> QueueDiskState {
@@ -2509,7 +2543,7 @@ final class EditorViewController: NSViewController {
     queueLoadGeneration += 1
     let generation = queueLoadGeneration
     guard let url = queueFileURL() else {
-      queueStatusLabel.stringValue = "No shared queue attached."
+      queueStatusLabel.stringValue = unattachedQueueStatus()
       queueItems.removeAll()
       queueSelectedLocalID = nil
       queueFingerprint = nil
@@ -2559,7 +2593,7 @@ final class EditorViewController: NSViewController {
   private func saveQueueToDisk() {
     guard let url = queueFileURL() else {
       NSSound.beep()
-      queueStatusLabel.stringValue = "No shared queue attached."
+      queueStatusLabel.stringValue = unattachedQueueStatus()
       return
     }
     guard queueSaveTask == nil else {
@@ -2670,6 +2704,15 @@ final class EditorViewController: NSViewController {
     queueEditor.string = prompt
     isApplyingQueueEditorUpdate = false
     queueEditorScroll.hasVerticalScroller = true
+  }
+
+  private func selectedEditorTextForQueueSeed() -> String? {
+    let selection = textView.selectedRange()
+    guard selection.length > 0 else { return nil }
+    let ns = textView.string as NSString
+    guard selection.location >= 0, selection.location + selection.length <= ns.length else { return nil }
+    let selectedText = ns.substring(with: selection)
+    return selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : selectedText
   }
 
   private func commitQueueEditorToSelection() {

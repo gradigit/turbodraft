@@ -5,6 +5,34 @@
 - [ ] Design PromptPack/import boundary so prompt content ownership can move cleanly
 - [ ] Update TurboDraft runtime to consume exported prompt artifacts instead of repo-local prompt content
 
+## Forge TODO — TurboDraft Product Track (2026-03-12)
+
+## Goal
+
+Use the prompt-eval split to refocus this repo on TurboDraft product/runtime work only.
+
+## Milestones
+
+- [ ] T1: Core drafting UX hardening + right-panel productization + required validation gating
+- [ ] T2: Session-context receiver design / TurboDraft-side integration prep for invoking CLIs
+- [ ] T3: Expand product QA coverage for real Ctrl+G/Ctrl+Q/sidebar/queue/drafting flows beyond T1 gating
+- [ ] T4: Revisit PromptPack/import boundary only after T1-T3 are stable and prompt-eval output shape is real
+
+## Current recommendation
+
+Start with **T1**. It should combine:
+
+- Improve Prompt / Chat Refine state and error surfacing,
+- right-panel productization (queue visibility/settings, agent-agnostic copy, panel IA, minimal queue UX gaps),
+- and promotion of queue/sidebar/drafting regressions into required validation.
+
+Do **not** start with PromptPack/import work. Temporary prompt duplication is intentional until the external prompt-eval repo produces a real finalized artifact boundary.
+
+### T1 progress
+
+- [x] Queue settings, agent-agnostic queue copy, selection-seeded queue creation, and required validation-gate expansion
+- [ ] Drafting state/error surfacing follow-up
+
 # Forge TODO — Prompt Eval Recommendation Execution
 
 ## Goal

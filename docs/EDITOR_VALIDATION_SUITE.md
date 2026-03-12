@@ -16,10 +16,14 @@ RUN_AX_UI=1 scripts/run_editor_validation.sh
 
 ## Phase breakdown
 
-1. **Core search logic tests**
+1. **Core search + queue storage tests**
    - `TextSearchEngineTests`
+   - `SharedQueueFileStoreTests`
 2. **App workflow smoke**
    - `EditorWorkflowTests/testFindReplaceAndImageSmoke`
+   - `QueueSidebarTests`
+   - `SidebarDiffPreviewTests`
+   - `EditorWindowControllerCloseTests`
 3. **Markdown behavior coverage**
    - `MarkdownEnterBehaviorTests`
    - `MarkdownOrderedListRenumberingTests`
