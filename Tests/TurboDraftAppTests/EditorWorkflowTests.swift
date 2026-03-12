@@ -18,6 +18,53 @@ final class EditorWorkflowTests: XCTestCase {
     }
   }
 
+  private final class RouteReportingDraftAdapter: AgentAdapting, AgentRouteReporting, @unchecked Sendable {
+    let value: String
+    let label: String
+    private var _lastRouteLabel: String = ""
+
+    init(value: String, label: String) {
+      self.value = value
+      self.label = label
+    }
+
+    var lastRouteLabel: String { _lastRouteLabel }
+
+    func draft(prompt: String, instruction: String, images: [URL], cwd: String?) async throws -> String {
+      _ = prompt
+      _ = instruction
+      _ = images
+      _ = cwd
+      _lastRouteLabel = label
+      return value
+    }
+  }
+
+  private enum MockDraftError: Error, LocalizedError {
+    case boom
+    var errorDescription: String? { "boom" }
+  }
+
+  private final class FailingRouteReportingDraftAdapter: AgentAdapting, AgentRouteReporting, @unchecked Sendable {
+    let label: String
+    private var _lastRouteLabel: String = ""
+
+    init(label: String) {
+      self.label = label
+    }
+
+    var lastRouteLabel: String { _lastRouteLabel }
+
+    func draft(prompt: String, instruction: String, images: [URL], cwd: String?) async throws -> String {
+      _ = prompt
+      _ = instruction
+      _ = images
+      _ = cwd
+      _lastRouteLabel = label
+      throw MockDraftError.boom
+    }
+  }
+
   private final class MockSidebarChatAdapter: AgentAdapting, AgentSidebarChatAdapting, @unchecked Sendable {
     var lastMessage: String = ""
     var lastDraft: String = ""
@@ -83,6 +130,25 @@ final class EditorWorkflowTests: XCTestCase {
     }
   }
 
+  private final class SlowSidebarChatAdapter: AgentAdapting, AgentSidebarChatAdapting, @unchecked Sendable {
+    func draft(prompt: String, instruction: String, images: [URL], cwd: String?) async throws -> String {
+      _ = prompt
+      _ = instruction
+      _ = images
+      _ = cwd
+      return "draft"
+    }
+
+    func chat(message: String, draft: String, images: [URL], cwd: String?) async throws -> String {
+      _ = message
+      _ = draft
+      _ = images
+      _ = cwd
+      try? await Task.sleep(nanoseconds: 300_000_000)
+      return "slow reply"
+    }
+  }
+
   private var tempURLs: [URL] = []
   private var windows: [NSWindow] = []
   private var controllers: [EditorViewController] = []
@@ -134,6 +200,18 @@ final class EditorWorkflowTests: XCTestCase {
     controllers.append(vc)
     windows.append(window)
     return vc
+  }
+
+  private func waitUntil(
+    _ condition: @escaping () -> Bool,
+    timeoutMs: Int = 1500,
+    pollMs: UInt64 = 20
+  ) async {
+    let iterations = max(1, timeoutMs / Int(pollMs))
+    for _ in 0..<iterations {
+      if condition() { return }
+      try? await Task.sleep(nanoseconds: pollMs * 1_000_000)
+    }
   }
 
   func testFindReplaceAndImageSmoke() async throws {
@@ -441,5 +519,59 @@ final class EditorWorkflowTests: XCTestCase {
     vc._testingSetDraftingChatInput("disabled fallback note")
     XCTAssertTrue(vc._testingSidebarDoCommand(#selector(NSResponder.insertNewline(_:))))
     XCTAssertTrue(vc._testingDocumentText().contains("<!-- @td(question): disabled fallback note -->"))
+  }
+
+  func testImprovePromptNoChangeSurfacesBannerWithRoute() async throws {
+    let vc = try await makeController(initialText: "draft")
+    var agent = TurboDraftConfig.Agent()
+    agent.enabled = true
+    vc.setAgentConfig(agent)
+    vc._testingSetAgentAdapter(RouteReportingDraftAdapter(value: "draft", label: "codex exec (direct)"))
+
+    vc._testingRunAgent()
+    await waitUntil({ !vc._testingIsAgentRunning() })
+
+    XCTAssertEqual(vc._testingDocumentText(), "draft")
+    XCTAssertEqual(vc._testingBannerMessage(), "Drafting agent returned no changes via codex exec (direct).")
+    XCTAssertTrue(vc._testingDraftingChatTranscript().contains("assistant: no changes suggested via codex exec (direct)"))
+  }
+
+  func testImprovePromptFailureSurfacesRouteInBanner() async throws {
+    let vc = try await makeController(initialText: "draft")
+    var agent = TurboDraftConfig.Agent()
+    agent.enabled = true
+    vc.setAgentConfig(agent)
+    vc._testingSetAgentAdapter(FailingRouteReportingDraftAdapter(label: "codex app-server (direct)"))
+
+    vc._testingRunAgent()
+    await waitUntil({ !vc._testingIsAgentRunning() })
+
+    XCTAssertEqual(vc._testingBannerMessage(), "Agent failed via codex app-server (direct): boom")
+    XCTAssertTrue(vc._testingDraftingChatTranscript().contains("assistant: failed via codex app-server (direct) (boom)"))
+  }
+
+  func testImprovePromptBlockedWhileDraftingChatRunning() async throws {
+    let vc = try await makeController(initialText: "draft")
+    var agent = TurboDraftConfig.Agent()
+    agent.enabled = true
+    agent.chatPanelEnabled = true
+    vc.setAgentConfig(agent)
+    vc._testingSetAgentAdapter(SlowSidebarChatAdapter())
+
+    vc._testingSetDraftingChatInput("please refine")
+    XCTAssertTrue(vc._testingSendDraftingChatMessage())
+    await waitUntil({ vc._testingIsDraftingChatRunning() })
+
+    vc._testingRunAgent()
+
+    XCTAssertEqual(
+      vc._testingBannerMessage(),
+      "Drafting chat is already running. Wait for it to finish before improving the prompt."
+    )
+    XCTAssertFalse(vc._testingIsAgentRunning())
+    XCTAssertFalse(vc._testingIsAgentButtonEnabled())
+
+    await waitUntil({ !vc._testingIsDraftingChatRunning() }, timeoutMs: 2000)
+    XCTAssertTrue(vc._testingIsAgentButtonEnabled())
   }
 }

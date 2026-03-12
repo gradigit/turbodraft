@@ -1722,6 +1722,7 @@ final class EditorViewController: NSViewController {
 
   private func updateDraftingSidebarControlState() {
     let busy = agentRunning || draftingChatRunning
+    agentButton.isEnabled = !busy
     draftingChatSendButton.isEnabled = !busy
     draftingChatAddImproveButton.isEnabled = !busy
     draftingChatAddNoteButton.isEnabled = !busy
@@ -1739,6 +1740,33 @@ final class EditorViewController: NSViewController {
     queueReloadButton.isEnabled = queueAttached
     queueSaveButton.isEnabled = queueAttached && queueDirty
     queueEditor.isEditable = queueAttached && hasSelection
+  }
+
+  nonisolated private func reportedRouteLabel(from adapter: AgentAdapting?) -> String? {
+    reportedRouteLabel(from: adapter as? AgentRouteReporting)
+  }
+
+  nonisolated private func reportedRouteLabel(from reporting: AgentRouteReporting?) -> String? {
+    guard let route = reporting?.lastRouteLabel.trimmingCharacters(in: .whitespacesAndNewlines),
+          !route.isEmpty else { return nil }
+    return route
+  }
+
+  nonisolated private func routeSuffix(_ routeLabel: String?) -> String {
+    guard let routeLabel, !routeLabel.isEmpty else { return "" }
+    return " via \(routeLabel)"
+  }
+
+  private func presentDraftingBusyMessage(for action: String) {
+    let message: String
+    if draftingChatRunning {
+      message = "Drafting chat is already running. Wait for it to finish before \(action)."
+    } else {
+      message = "Drafting agent is already running. Wait for it to finish before \(action)."
+    }
+    banner.set(message: message, snapshotId: nil)
+    banner.isHidden = false
+    NSSound.beep()
   }
 
   private func updateDraftingChatInputHeight() {
@@ -1799,7 +1827,7 @@ final class EditorViewController: NSViewController {
   @discardableResult
   private func sendDraftingChatMessage() -> Bool {
     guard !draftingChatRunning, !agentRunning else {
-      NSSound.beep()
+      presentDraftingBusyMessage(for: "sending another chat message")
       return false
     }
     guard agentConfig.enabled else {
@@ -1822,7 +1850,7 @@ final class EditorViewController: NSViewController {
       return submitDraftingChatNote(runImprove: false, annotationType: selectedDraftingAnnotationType())
     }
     guard let chatAdapter = makeSidebarChatAdapter() ?? (adapter as? AgentSidebarChatAdapting) else {
-      banner.set(message: "Sidebar chat unavailable for current backend. Added note instead.", snapshotId: nil)
+      banner.set(message: "Sidebar chat unavailable for backend \(agentConfig.backend.rawValue). Added note instead.", snapshotId: nil)
       banner.isHidden = false
       return submitDraftingChatNote(runImprove: false, annotationType: selectedDraftingAnnotationType())
     }
@@ -1891,8 +1919,10 @@ final class EditorViewController: NSViewController {
         }
       } catch {
         await MainActor.run {
-          self.finalizeDraftingAssistantStreamingLine(finalText: "failed (\(error))", routeLabel: nil)
-          self.banner.set(message: "Drafting chat failed: \(error)", snapshotId: nil)
+          let route = self.reportedRouteLabel(from: chatAdapter as? AgentRouteReporting)
+            ?? self.reportedRouteLabel(from: adapter)
+          self.finalizeDraftingAssistantStreamingLine(finalText: "failed (\(error))", routeLabel: route)
+          self.banner.set(message: "Drafting chat failed\(self.routeSuffix(route)): \(error)", snapshotId: nil)
           self.banner.isHidden = false
         }
       }
@@ -3343,7 +3373,10 @@ final class EditorViewController: NSViewController {
   }
 
   @objc private func runAgent() {
-    guard !agentRunning else { return }
+    guard !agentRunning, !draftingChatRunning else {
+      presentDraftingBusyMessage(for: "improving the prompt")
+      return
+    }
     guard agentConfig.enabled else {
       banner.set(message: "Drafting agent is disabled. Enable it from the Drafting menu.", snapshotId: nil)
       banner.isHidden = false
@@ -3370,6 +3403,7 @@ final class EditorViewController: NSViewController {
     updateDraftingSidebarControlState()
     banner.set(message: "Running drafting agent...", snapshotId: nil)
     banner.isHidden = false
+    appendDraftingChatTranscript("system: running drafting_agent improve")
 
     Task {
       // Wait for any pending background image conversion to finish.
@@ -3381,28 +3415,38 @@ final class EditorViewController: NSViewController {
       do {
         await flushAutosaveNow(reason: "agent_preflight")
         let draft = try await adapter.draft(prompt: resolved.prompt, instruction: instruction, images: resolved.images, cwd: self.sessionCwd)
+        let route = reportedRouteLabel(from: adapter)
 
         let currentText = await MainActor.run { self.textView.string }
+        if draft == currentText {
+          await MainActor.run {
+            self.appendDraftingChatTranscript("assistant: no changes suggested\(self.routeSuffix(route))")
+            self.banner.set(message: "Drafting agent returned no changes\(self.routeSuffix(route)).", snapshotId: nil)
+            self.banner.isHidden = false
+          }
+          return
+        }
         let diffSummary = lineDiffSummary(from: currentText, to: draft)
         await session.updateBufferContent(currentText)
         let restoreId = await session.snapshot(reason: "before_agent_apply")
         await MainActor.run {
           let diffLabel = "Δ +\(diffSummary.insertions)/-\(diffSummary.removals) lines"
-          if let route = (adapter as? AgentRouteReporting)?.lastRouteLabel, !route.isEmpty {
+          if let route {
             self.appendDraftingChatTranscript("assistant: applied improved draft (\(route), \(diffLabel))")
           } else {
             self.appendDraftingChatTranscript("assistant: applied improved draft (\(diffLabel))")
           }
           self.replaceEntireDocumentWithUndo(draft, actionName: "Improve Prompt")
           self.breakUndoCoalescingBoundary()
-          self.banner.set(message: "Applied agent output. You can restore your previous buffer.", snapshotId: restoreId)
+          self.banner.set(message: "Applied agent output\(self.routeSuffix(route)). You can restore your previous buffer.", snapshotId: restoreId)
           self.banner.isHidden = false
           self.pruneUnreferencedAttachedImages(using: self.textView.string)
         }
       } catch {
         await MainActor.run {
-          self.appendDraftingChatTranscript("assistant: failed (\(error))")
-          self.banner.set(message: "Agent failed: \(error)", snapshotId: nil)
+          let route = self.reportedRouteLabel(from: adapter)
+          self.appendDraftingChatTranscript("assistant: failed\(self.routeSuffix(route)) (\(error))")
+          self.banner.set(message: "Agent failed\(self.routeSuffix(route)): \(error)", snapshotId: nil)
           self.banner.isHidden = false
         }
       }
@@ -4633,6 +4677,8 @@ final class BannerView: NSView {
     button.isHidden = (snapshotId == nil)
   }
 
+  func _testingMessage() -> String { label.stringValue }
+
   @objc private func tapped() { onRestore?() }
 }
 
@@ -4773,6 +4819,10 @@ extension EditorViewController {
   func _testingDraftingDiffText() -> String { draftingDiffView.string }
   func _testingHasDraftingSuggestedDraft() -> Bool { draftingSidebarSuggestedDraft != nil }
   func _testingIsDraftingChatRunning() -> Bool { draftingChatRunning }
+  func _testingIsAgentRunning() -> Bool { agentRunning }
+  func _testingRunAgent() { runAgent() }
+  func _testingBannerMessage() -> String { banner._testingMessage() }
+  func _testingIsAgentButtonEnabled() -> Bool { agentButton.isEnabled }
   func _testingApplyDraftingSuggestion() { draftingChatApplySuggestionAction(nil) }
   func _testingToggleDraftingContextPanel() { draftingChatToggleContextAction(nil) }
   func _testingToggleDraftingDiffPanel() { draftingChatToggleDiffAction(nil) }

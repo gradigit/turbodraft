@@ -31,7 +31,7 @@ Do **not** start with PromptPack/import work. Temporary prompt duplication is in
 ### T1 progress
 
 - [x] Queue settings, agent-agnostic queue copy, selection-seeded queue creation, and required validation-gate expansion
-- [ ] Drafting state/error surfacing follow-up
+- [x] Drafting state/error surfacing follow-up
 
 # Forge TODO — Prompt Eval Recommendation Execution
 
