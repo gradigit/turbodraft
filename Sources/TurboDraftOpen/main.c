@@ -680,11 +680,6 @@ static bool extract_session_id(const char *body, char **out_session_id) {
   return json_extract_string_value(body, "\"sessionId\"", out_session_id);
 }
 
-static bool wait_reason_user_closed(const char *body) {
-  if (!body) return false;
-  return strstr(body, "\"reason\":\"userClosed\"") != NULL;
-}
-
 static bool json_extract_number_value(const char *json, const char *key, double *out_value) {
   if (!json || !key || !out_value) return false;
   const char *p = strstr(json, key);
@@ -799,16 +794,6 @@ static char *format_wait_request_json(const char *session_id, int timeout_ms) {
   char *out = (char *)malloc((size_t)n + 1);
   if (!out) return NULL;
   snprintf(out, (size_t)n + 1, fmt, session_id, timeout_ms);
-  return out;
-}
-
-static char *format_close_request_json(const char *session_id) {
-  const char *fmt = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"turbodraft.session.close\",\"params\":{\"sessionId\":\"%s\"}}";
-  int n = snprintf(NULL, 0, fmt, session_id);
-  if (n < 0) return NULL;
-  char *out = (char *)malloc((size_t)n + 1);
-  if (!out) return NULL;
-  snprintf(out, (size_t)n + 1, fmt, session_id);
   return out;
 }
 
@@ -1146,23 +1131,7 @@ int main(int argc, char **argv) {
       free(socket_path);
       return 1;
     }
-    bool user_closed = wait_reason_user_closed(wait_resp);
     free(wait_body);
-
-    if (user_closed) {
-      // Best-effort close hint for server-side session bookkeeping.
-      char *close_json = format_close_request_json(session_id);
-      if (close_json) {
-        if (send_jsonrpc(fd, close_json) == 0) {
-          uint8_t *close_body = NULL;
-          size_t close_len = 0;
-          if (framer_read_frame(fd, &fr, 500, &close_body, &close_len) == 0) {
-            free(close_body);
-          }
-        }
-        free(close_json);
-      }
-    }
 
     if (editor_mode) {
       restore_terminal_focus();

@@ -208,32 +208,41 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     closeCleanupTask?.cancel()
-    closeCleanupTask = Task { @MainActor [weak self] in
+    closeCleanupTask = Task { [weak self] in
+      await Task.yield()
       guard let self else { return }
+      await self.runDeferredCloseCleanup(reason: reason)
+    }
+  }
 
-      let flushTask = Task { @MainActor [weak self] in
-        guard let self else { return }
-        await self.editorVC.flushAutosaveNow(reason: reason)
+  private func runDeferredCloseCleanup(reason: String) async {
+    guard !Task.isCancelled else { return }
+
+    let flushTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+      await self.editorVC.flushAutosaveNow(reason: reason)
+    }
+
+    let flushFinished = await withTaskGroup(of: Bool.self) { group in
+      group.addTask {
+        _ = await flushTask.result
+        return true
       }
-
-      let flushFinished = await withTaskGroup(of: Bool.self) { group in
-        group.addTask {
-          _ = await flushTask.result
-          return true
-        }
-        group.addTask {
-          try? await Task.sleep(nanoseconds: 3_000_000_000)
-          return false
-        }
-        let finished = await group.next() ?? true
-        group.cancelAll()
-        return finished
+      group.addTask {
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        return false
       }
+      let finished = await group.next() ?? true
+      group.cancelAll()
+      return finished
+    }
 
-      if !flushFinished {
-        flushTask.cancel()
-      }
+    if !flushFinished {
+      flushTask.cancel()
+    }
 
+    await MainActor.run { [weak self] in
+      guard let self else { return }
       self.editorVC.prepareForIdlePool()
       self.onClosed?()
       self.closeCleanupTask = nil

@@ -726,7 +726,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           return ok(SessionCloseResult(ok: false))
         }
         touchSession(params.sessionId)
-
         if let wc = windowsById[params.sessionId], wc.window != nil {
           wc.requestSessionClose()
         } else {
@@ -1447,6 +1446,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // Best-effort telemetry only.
     }
   }
+
 }
 
 // Helpers to bridge Encodable -> JSONValue without generic envelopes.

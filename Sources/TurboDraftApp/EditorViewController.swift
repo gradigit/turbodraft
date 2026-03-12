@@ -152,6 +152,7 @@ final class EditorViewController: NSViewController {
   private var queueSelectedLocalID: String?
   private var queueFingerprint: String?
   private var queueObservedDiskState = QueueDiskState(absent: true, fileSize: nil, modifiedAt: nil)
+  private var queueActiveAttachmentPath: String?
   private var queueDirty = false
   private var isApplyingQueueEditorUpdate = false
   private var attachedImages: [String: URL] = [:]
@@ -1406,6 +1407,9 @@ final class EditorViewController: NSViewController {
     draftingSidebarModeControl.selectedSegment = resolved.rawValue
     draftingChatContentStack.isHidden = (resolved != .chat)
     queueContentStack.isHidden = (resolved != .queue)
+    if resolved == .queue {
+      activateQueueAttachmentIfNeeded(reason: "queue panel activated")
+    }
     if resolved == .chat, draftingSidebarVisible, draftingChatMessages.isEmpty {
       appendDraftingChatTranscript("system: drafting sidebar ready")
     }
@@ -2379,6 +2383,9 @@ final class EditorViewController: NSViewController {
     queueWatcherDebouncer.cancel()
     externalQueueAttachment = attachment
     if oldPath != attachment?.queuePath {
+      queueWatcher?.stop()
+      queueWatcher = nil
+      queueActiveAttachmentPath = nil
       queueDirty = false
       queueFingerprint = nil
       queueObservedDiskState = QueueDiskState(absent: true, fileSize: nil, modifiedAt: nil)
@@ -2413,14 +2420,13 @@ final class EditorViewController: NSViewController {
         updateDraftingSidebarControlState()
         return
       }
-      attachQueueWatcher(for: attachment)
-      reloadQueueFromDisk(force: true, reason: "queue attached")
       if config.externalSessionQueues.autoRevealOnAttach {
         setDraftingSidebarMode(.queue)
         setDraftingSidebarVisible(true, focusInput: false)
-      }
-      if draftingSidebarVisible, draftingSidebarMode == .queue {
-        setDraftingSidebarMode(.queue)
+      } else if draftingSidebarVisible, draftingSidebarMode == .queue {
+        activateQueueAttachmentIfNeeded(reason: "queue attached while visible")
+      } else {
+        queueStatusLabel.stringValue = "Queue attached. Open Queue to load."
       }
     } else {
       resetQueueState(statusMessage: "No external session queue attached.")
@@ -2482,6 +2488,7 @@ final class EditorViewController: NSViewController {
       NSSound.beep()
       return
     }
+    activateQueueAttachmentIfNeeded(reason: "queue new")
     commitQueueEditorToSelection()
     let seedPrompt = selectedEditorTextForQueueSeed() ?? ""
     let item = SharedQueueItem.newItem(prompt: seedPrompt)
@@ -2496,6 +2503,7 @@ final class EditorViewController: NSViewController {
   }
 
   @objc private func queueDeleteAction(_ sender: Any?) {
+    activateQueueAttachmentIfNeeded(reason: "queue delete")
     guard let index = selectedQueueIndex() else {
       NSSound.beep()
       return
@@ -2516,10 +2524,12 @@ final class EditorViewController: NSViewController {
   }
 
   @objc private func queueReloadAction(_ sender: Any?) {
+    activateQueueAttachmentIfNeeded(reason: "queue reload")
     reloadQueueFromDisk(force: true, reason: "queue reloaded")
   }
 
   @objc private func queueSaveAction(_ sender: Any?) {
+    activateQueueAttachmentIfNeeded(reason: "queue save")
     saveQueueToDisk()
   }
 
@@ -2535,6 +2545,7 @@ final class EditorViewController: NSViewController {
   private func resetQueueState(statusMessage: String) {
     queueWatcher?.stop()
     queueWatcher = nil
+    queueActiveAttachmentPath = nil
     queueItems.removeAll()
     queueSelectedLocalID = nil
     queueFingerprint = nil
@@ -2605,6 +2616,7 @@ final class EditorViewController: NSViewController {
     do {
       let watcher = try DirectoryWatcher(directoryURL: watchURL)
       queueWatcher = watcher
+      queueActiveAttachmentPath = attachment.queuePath
       watcher.start { [weak self] in
         guard let self else { return }
         Task { @MainActor in
@@ -2613,6 +2625,21 @@ final class EditorViewController: NSViewController {
       }
     } catch {
       queueStatusLabel.stringValue = "Queue watcher unavailable: \(error.localizedDescription)"
+    }
+  }
+
+  private func activateQueueAttachmentIfNeeded(reason: String) {
+    guard isQueueSidebarAvailable(),
+          let attachment = externalQueueAttachment,
+          attachment.isSupportedFormat
+    else { return }
+
+    if queueActiveAttachmentPath != attachment.queuePath || queueWatcher == nil {
+      attachQueueWatcher(for: attachment)
+    }
+
+    if queueActiveAttachmentPath != attachment.queuePath || queueFingerprint == nil {
+      reloadQueueFromDisk(force: true, reason: reason)
     }
   }
 

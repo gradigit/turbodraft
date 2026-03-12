@@ -127,10 +127,7 @@ Commands:
         attachmentMetadata: attachmentMetadata
       )
       if wait {
-        let reason = try waitViaConnection(conn, sessionId: sessionId, timeoutMs: timeoutMs)
-        if reason == "userClosed" {
-          _ = try? sendSessionClose(conn, sessionId: sessionId)
-        }
+        _ = try waitViaConnection(conn, sessionId: sessionId, timeoutMs: timeoutMs)
         _ = try quitViaConnection(conn)
         proc.waitUntilExit()
       }
@@ -171,10 +168,7 @@ Commands:
       appendOpenLatencyRecord(openRecord)
       if wait {
         let waitStart = nowMs()
-        let reason = try waitViaConnection(conn, sessionId: sessionId, timeoutMs: timeoutMs)
-        if reason == "userClosed" {
-          _ = try? sendSessionClose(conn, sessionId: sessionId)
-        }
+        _ = try waitViaConnection(conn, sessionId: sessionId, timeoutMs: timeoutMs)
         appendOpenLatencyRecord([
           "event": "cli_wait",
           "mode": "socket",
@@ -902,19 +896,6 @@ Commands:
     }
     guard let result = resp.result else { return SessionWaitResult(reason: "unknown") }
     return try result.decode(SessionWaitResult.self)
-  }
-
-  private func sendSessionClose(_ conn: JSONRPCConnection, sessionId: String) throws -> SessionCloseResult {
-    let closeReq = JSONRPCRequest(id: .int(9), method: TurboDraftMethod.sessionClose, params: .object([
-      "sessionId": .string(sessionId),
-    ]))
-    try conn.sendJSON(closeReq)
-    let resp = try conn.readResponse()
-    if let err = resp.error {
-      throw CLIError.connectFailed("close error \(err.code): \(err.message)")
-    }
-    guard let result = resp.result else { return SessionCloseResult(ok: false) }
-    return try result.decode(SessionCloseResult.self)
   }
 
   private func quitViaConnection(_ conn: JSONRPCConnection) throws -> Bool {

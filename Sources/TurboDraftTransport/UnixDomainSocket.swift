@@ -196,7 +196,7 @@ public final class UnixDomainSocketServer: @unchecked Sendable {
 
   public init(socketPath: String) throws {
     self.listenFD = try UnixDomainSocket.bindAndListen(path: socketPath)
-    self.queue = DispatchQueue(label: "turbodraft.uds.accept")
+    self.queue = DispatchQueue(label: "turbodraft.uds.accept", qos: .userInitiated)
   }
 
   deinit {

@@ -35,12 +35,30 @@ final class AQueueSidebarTests: XCTestCase {
     XCTAssertFalse(bundle.controller._testingIsQueueSidebarVisible())
 
     bundle.controller._testingOpenQueuePanel()
+    await waitUntil({ bundle.controller._testingQueueItemCount() == 2 })
 
     XCTAssertTrue(bundle.controller._testingIsQueueSidebarVisible())
     XCTAssertEqual(bundle.controller._testingQueueItemCount(), 2)
     XCTAssertEqual(bundle.controller._testingQueueSelectedRow(), 0)
     XCTAssertEqual(bundle.controller._testingQueueSelectedPrompt(), "first prompt")
     XCTAssertEqual(bundle.controller._testingQueueEditorText(), "first prompt")
+  }
+
+  func testQueueAttachmentDefersLoadUntilQueuePanelOpens() async throws {
+    let bundle = try await makeControllerBundle(
+      initialText: "draft",
+      queueText: """
+      {"id":"one","prompt":"first prompt","added_us":1}
+      """
+    )
+
+    XCTAssertEqual(bundle.controller._testingQueueItemCount(), 0)
+    XCTAssertTrue(bundle.controller._testingQueueStatusText().contains("Open Queue to load"))
+
+    bundle.controller._testingOpenQueuePanel()
+    await waitUntil({ bundle.controller._testingQueueItemCount() == 1 })
+
+    XCTAssertEqual(bundle.controller._testingQueueSelectedPrompt(), "first prompt")
   }
 
   func testQueueSelectionEditAndSavePersistsToDisk() async throws {
@@ -53,6 +71,7 @@ final class AQueueSidebarTests: XCTestCase {
     )
 
     bundle.controller._testingOpenQueuePanel()
+    await waitUntil({ bundle.controller._testingQueueItemCount() == 2 })
     bundle.controller._testingQueueSelectRow(1)
 
     XCTAssertEqual(bundle.controller._testingQueueSelectedRow(), 1)
@@ -80,6 +99,7 @@ final class AQueueSidebarTests: XCTestCase {
     )
 
     bundle.controller._testingOpenQueuePanel()
+    await waitUntil({ bundle.controller._testingQueueItemCount() == 1 })
 
     try """
     {"id":"one","prompt":"updated by watcher","added_us":1}
@@ -102,6 +122,7 @@ final class AQueueSidebarTests: XCTestCase {
     )
 
     bundle.controller._testingOpenQueuePanel()
+    await waitUntil({ bundle.controller._testingQueueItemCount() == 1 })
     XCTAssertEqual(bundle.controller._testingQueueItemCount(), 1)
 
     bundle.controller._testingDeleteQueueSelection()
@@ -125,6 +146,7 @@ final class AQueueSidebarTests: XCTestCase {
     )
 
     bundle.controller._testingOpenQueuePanel()
+    await waitUntil({ bundle.controller._testingQueueItemCount() == 1 })
     bundle.controller._testingSetQueueEditorText("local draft change")
 
     try """
@@ -211,6 +233,7 @@ final class AQueueSidebarTests: XCTestCase {
 
     bundle.controller._testingSetSelection(range)
     bundle.controller._testingOpenQueuePanel()
+    await waitUntil({ bundle.controller._testingQueueItemCount() == 0 })
     bundle.controller._testingQueueNewItem()
 
     XCTAssertEqual(bundle.controller._testingQueueItemCount(), 1)
@@ -261,13 +284,13 @@ final class AQueueSidebarTests: XCTestCase {
         queueFormatVersion: 1
       )
     )
-    let expectedCount = config.externalSessionQueues.enabled ? queueText
+    let initialExpectedCount = (config.externalSessionQueues.enabled && config.externalSessionQueues.autoRevealOnAttach) ? queueText
       .split(whereSeparator: \.isNewline)
       .map(String.init)
       .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
       .count : 0
     await waitUntil(
-      { controller._testingQueueItemCount() == expectedCount },
+      { controller._testingQueueItemCount() == initialExpectedCount },
       timeoutMs: 1500
     )
 
