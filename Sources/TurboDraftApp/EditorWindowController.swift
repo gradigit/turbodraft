@@ -13,6 +13,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
   private var didBecomeActiveObserver: NSObjectProtocol?
   private var closeTask: Task<Void, Never>?
   private var closeCleanupTask: Task<Void, Never>?
+  private var pendingFocusTask: Task<Void, Never>?
   var onClosed: (() -> Void)?
   var onBecameMain: (() -> Void)?
 
@@ -54,7 +55,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
       Task { @MainActor [weak self] in
         guard let self else { return }
         guard self.window?.isVisible == true else { return }
-        self.editorVC.focusEditor()
+        self.scheduleEditorFocus(delayNanoseconds: 12_000_000)
       }
     }
   }
@@ -62,6 +63,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
   deinit {
+    pendingFocusTask?.cancel()
     if let token = didBecomeActiveObserver {
       NotificationCenter.default.removeObserver(token)
     }
@@ -77,11 +79,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
   }
 
   func windowDidBecomeKey(_ notification: Notification) {
-    editorVC.focusEditor()
+    scheduleEditorFocus()
   }
 
   func windowDidBecomeMain(_ notification: Notification) {
-    editorVC.focusEditor()
+    scheduleEditorFocus()
     onBecameMain?()
   }
 
@@ -168,7 +170,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
       NSApp.activate(ignoringOtherApps: true)
     }
     window?.makeKeyAndOrderFront(nil)
-    editorVC.focusEditor()
+    scheduleEditorFocus(delayNanoseconds: 12_000_000)
   }
 
   func restorePreviousBuffer() {
@@ -251,13 +253,25 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
   func presentSession(_ info: SessionInfo, line: Int?, column: Int?) async {
     editorVC.applySessionInfo(info, moveCursorLine: line, column: column)
-    window?.orderFrontRegardless()
-    window?.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
-    NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
-    editorVC.focusEditor()
+    window?.makeKeyAndOrderFront(nil)
+    scheduleEditorFocus(delayNanoseconds: 12_000_000)
     if config.editorMode == .reliable {
       _ = await editorVC.waitUntilEditorReady(timeoutMs: 350)
+    }
+  }
+
+  private func scheduleEditorFocus(delayNanoseconds: UInt64 = 0) {
+    pendingFocusTask?.cancel()
+    pendingFocusTask = Task { @MainActor [weak self] in
+      if delayNanoseconds > 0 {
+        try? await Task.sleep(nanoseconds: delayNanoseconds)
+      } else {
+        await Task.yield()
+      }
+      guard let self else { return }
+      self.editorVC.focusEditor()
+      self.pendingFocusTask = nil
     }
   }
 

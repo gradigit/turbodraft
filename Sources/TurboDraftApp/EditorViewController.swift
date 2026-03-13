@@ -2261,43 +2261,45 @@ final class EditorViewController: NSViewController {
 
   func focusEditor() {
     guard view.window != nil else { return }
-    if isEditorFirstResponder() { return }
-    let attemptFocus = { [weak self] in
-      guard let self, let window = self.view.window else { return }
-      if !window.isKeyWindow {
-        window.makeKeyAndOrderFront(nil)
-      }
-      _ = window.makeFirstResponder(nil)
-      _ = window.makeFirstResponder(self.textView)
-      #if !TURBODRAFT_USE_CODEEDIT_TEXTVIEW
-      let len = (self.textView.string as NSString).length
-      var sel = self.textView.selectedRange()
-      if sel.location == NSNotFound {
-        sel = NSRange(location: len, length: 0)
-      } else {
-        sel = NSRange(location: min(sel.location, len), length: 0)
-      }
-      self.textView.setSelectedRange(sel)
-      self.textView.scrollRangeToVisible(sel)
-      #endif
+    if isEditorFirstResponder() {
+      recordSessionReadyIfNeeded()
+      return
+    }
+    guard let window = view.window, window.isVisible else { return }
+    guard NSApp.isActive, window.isKeyWindow else { return }
+    guard window.firstResponder !== textView else {
+      recordSessionReadyIfNeeded()
+      return
     }
 
-    attemptFocus()
-    recordSessionReadyIfNeeded()
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { attemptFocus() }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.055) { [weak self] in
-      self?.recordSessionReadyIfNeeded()
+    _ = window.makeFirstResponder(textView)
+    #if !TURBODRAFT_USE_CODEEDIT_TEXTVIEW
+    let len = (textView.string as NSString).length
+    var sel = textView.selectedRange()
+    if sel.location == NSNotFound {
+      sel = NSRange(location: len, length: 0)
+    } else {
+      sel = NSRange(location: min(sel.location, len), length: 0)
     }
+    textView.setSelectedRange(sel)
+    textView.scrollRangeToVisible(sel)
+    #endif
+    recordSessionReadyIfNeeded()
   }
 
   func waitUntilEditorReady(timeoutMs: Int = 320) async -> Bool {
     let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(max(1, timeoutMs)) * 1_000_000
+    var nextFocusAttemptNs = DispatchTime.now().uptimeNanoseconds
     while DispatchTime.now().uptimeNanoseconds < deadline {
       if isEditorFirstResponder() {
         recordSessionReadyIfNeeded()
         return true
       }
-      focusEditor()
+      let now = DispatchTime.now().uptimeNanoseconds
+      if now >= nextFocusAttemptNs {
+        focusEditor()
+        nextFocusAttemptNs = now + 24_000_000
+      }
       try? await Task.sleep(nanoseconds: 8_000_000)
     }
     let ready = isEditorFirstResponder()
