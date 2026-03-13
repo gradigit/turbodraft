@@ -33,7 +33,6 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
   private let applyAction: (SettingsAction) -> TurboDraftConfig
   private var isRefreshingControls = false
 
-  private let scrollView = NSScrollView()
   private let contentStack = NSStackView()
 
   private let themePopup = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -78,25 +77,16 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
 
   override func loadView() {
     let root = NSView()
-    root.translatesAutoresizingMaskIntoConstraints = false
-
-    scrollView.translatesAutoresizingMaskIntoConstraints = false
-    scrollView.drawsBackground = false
-    scrollView.borderType = .noBorder
-    scrollView.hasVerticalScroller = true
-    scrollView.autohidesScrollers = true
-    scrollView.scrollerStyle = .overlay
-
-    let contentView = NSView()
-    contentView.translatesAutoresizingMaskIntoConstraints = false
-    scrollView.documentView = contentView
+    root.wantsLayer = true
+    root.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+    root.frame = NSRect(x: 0, y: 0, width: 560, height: 640)
+    root.autoresizingMask = [.width, .height]
 
     contentStack.orientation = .vertical
     contentStack.alignment = .leading
     contentStack.spacing = 18
     contentStack.edgeInsets = NSEdgeInsets(top: 18, left: 20, bottom: 20, right: 20)
     contentStack.translatesAutoresizingMaskIntoConstraints = false
-    contentView.addSubview(contentStack)
 
     contentStack.addArrangedSubview(makeAppearanceSection())
     contentStack.addArrangedSubview(makeDraftingSection())
@@ -104,20 +94,17 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
     contentStack.addArrangedSubview(makeAdvancedSection())
     contentStack.addArrangedSubview(makeFooterNote())
 
-    root.addSubview(scrollView)
+    root.addSubview(contentStack)
     view = root
 
+    let bottomConstraint = contentStack.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+    bottomConstraint.priority = .defaultLow
     NSLayoutConstraint.activate([
-      scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-      scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-      scrollView.topAnchor.constraint(equalTo: root.topAnchor),
-      scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-
-      contentStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-      contentStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-      contentStack.topAnchor.constraint(equalTo: contentView.topAnchor),
-      contentStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-      contentStack.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+      contentStack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+      contentStack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+      contentStack.topAnchor.constraint(equalTo: root.topAnchor),
+      bottomConstraint,
+      contentStack.widthAnchor.constraint(equalTo: root.widthAnchor),
     ])
 
     configureTargets()
@@ -564,5 +551,9 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
   func _testingSetModelTextAndCommit(_ text: String) {
     modelField.stringValue = text
     controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: modelField))
+  }
+
+  func _testingSectionCount() -> Int {
+    contentStack.arrangedSubviews.count
   }
 }

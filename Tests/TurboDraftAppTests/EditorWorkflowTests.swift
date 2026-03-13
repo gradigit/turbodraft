@@ -523,6 +523,22 @@ final class EditorWorkflowTests: XCTestCase {
     XCTAssertTrue(vc._testingDocumentText().contains("<!-- @td(question): disabled fallback note -->"))
   }
 
+  func testOpeningDraftingChatDoesNotCoverChatRefineButton() async throws {
+    let vc = try await makeController(initialText: "hello")
+    var agent = TurboDraftConfig.Agent()
+    agent.enabled = true
+    agent.chatPanelEnabled = true
+    vc.setAgentConfig(agent)
+
+    vc._testingOpenDraftingChat()
+    await waitUntil({ vc._testingIsDraftingSidebarVisible() })
+    vc.view.layoutSubtreeIfNeeded()
+
+    XCTAssertFalse(vc._testingIsChatButtonHidden())
+    XCTAssertEqual(vc._testingChatButtonTitle(), "Hide Chat")
+    XCTAssertLessThanOrEqual(vc._testingChatButtonFrameInView().maxX, vc._testingDraftingSidebarFrameInView().minX)
+  }
+
   func testImprovePromptNoChangeSurfacesBannerWithRoute() async throws {
     let vc = try await makeController(initialText: "draft")
     var agent = TurboDraftConfig.Agent()

@@ -3,6 +3,7 @@ import TurboDraftConfig
 
 @MainActor
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+  private let defaultContentSize = NSSize(width: 560, height: 640)
   private let settingsViewController: SettingsViewController
   var onClose: (() -> Void)?
 
@@ -22,7 +23,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     )
 
     let window = NSWindow(
-      contentRect: NSRect(x: 240, y: 240, width: 560, height: 640),
+      contentRect: NSRect(x: 240, y: 240, width: defaultContentSize.width, height: defaultContentSize.height),
       styleMask: [.titled, .closable, .miniaturizable],
       backing: .buffered,
       defer: false
@@ -41,6 +42,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     fatalError("init(coder:) has not been implemented")
   }
 
+  override func showWindow(_ sender: Any?) {
+    super.showWindow(sender)
+    normalizeWindowFrameIfNeeded()
+  }
+
   func refresh(
     config: TurboDraftConfig,
     colorThemes: [EditorColorTheme],
@@ -57,5 +63,23 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
   func windowWillClose(_ notification: Notification) {
     onClose?()
+  }
+
+  private func normalizeWindowFrameIfNeeded() {
+    guard let window else { return }
+    let minContentSize = window.contentMinSize
+    let currentContentRect = window.contentRect(forFrameRect: window.frame)
+    guard currentContentRect.width < minContentSize.width || currentContentRect.height < minContentSize.height else {
+      return
+    }
+
+    let targetContentRect = NSRect(
+      x: currentContentRect.origin.x,
+      y: currentContentRect.origin.y,
+      width: max(defaultContentSize.width, minContentSize.width),
+      height: max(defaultContentSize.height, minContentSize.height)
+    )
+    window.setFrame(window.frameRect(forContentRect: targetContentRect), display: false)
+    window.center()
   }
 }

@@ -63,4 +63,11 @@ final class SettingsViewControllerTests: XCTestCase {
     XCTAssertEqual(current.agent.model, "gpt-5.4")
     XCTAssertEqual(controller._testingModelText(), "gpt-5.4")
   }
+
+  func testSettingsViewBuildsAllSections() {
+    let controller = makeController(config: TurboDraftConfig()) { _ in TurboDraftConfig() }
+
+    XCTAssertEqual(controller._testingSectionCount(), 5)
+    XCTAssertGreaterThan(controller.view.fittingSize.height, 300)
+  }
 }

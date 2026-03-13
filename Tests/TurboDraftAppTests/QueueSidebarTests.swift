@@ -316,6 +316,34 @@ final class AQueueSidebarTests: XCTestCase {
     XCTAssertTrue(bundle.controller._testingQueueStatusText().contains("current selection"))
   }
 
+  func testQueueAttachmentKeepsChatEntryVisibleAndUsesToggleTitles() async throws {
+    var config = TurboDraftConfig()
+    config.agent.enabled = true
+    config.agent.chatPanelEnabled = true
+    let bundle = try await makeControllerBundle(
+      initialText: "draft",
+      queueText: """
+      {"id":"one","prompt":"first prompt","added_us":1}
+      """,
+      config: config
+    )
+
+    XCTAssertFalse(bundle.controller._testingIsChatButtonHidden())
+    XCTAssertFalse(bundle.controller._testingIsQueueButtonHidden())
+    XCTAssertEqual(bundle.controller._testingChatButtonTitle(), "Chat Refine")
+    XCTAssertEqual(bundle.controller._testingQueueButtonTitle(), "Queue")
+
+    bundle.controller._testingOpenDraftingChat()
+    XCTAssertEqual(bundle.controller._testingChatButtonTitle(), "Hide Chat")
+    XCTAssertEqual(bundle.controller._testingQueueButtonTitle(), "Queue")
+
+    bundle.controller._testingOpenQueuePanel()
+    await waitUntil({ bundle.controller._testingQueueItemCount() == 1 })
+    XCTAssertFalse(bundle.controller._testingIsChatButtonHidden())
+    XCTAssertEqual(bundle.controller._testingChatButtonTitle(), "Chat Refine")
+    XCTAssertEqual(bundle.controller._testingQueueButtonTitle(), "Hide Queue")
+  }
+
   private func waitUntil(
     _ condition: @escaping () -> Bool,
     timeoutMs: Int = 1500,

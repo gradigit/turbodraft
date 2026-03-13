@@ -76,6 +76,7 @@ final class EditorViewController: NSViewController {
   private let agentButton = NSButton(title: "Improve Prompt", target: nil, action: nil)
   private let chatButton = NSButton(title: "Chat Refine", target: nil, action: nil)
   private let queueButton = NSButton(title: "Queue", target: nil, action: nil)
+  private let agentRowSpacer = NSView(frame: .zero)
   private let saveStatus = NSTextField(labelWithString: "Saved")
   private let draftingSidebar = NSVisualEffectView()
   private let draftingSidebarResizeHandle = SidebarResizeHandleView()
@@ -132,6 +133,7 @@ final class EditorViewController: NSViewController {
   private var draftingSidebarVisible = false
   private var draftingSidebarMode: DraftingSidebarMode = .chat
   private var draftingSidebarPreferredWidth: CGFloat = 360
+  private let draftingSidebarResizeHandleWidth: CGFloat = 8
   private var mainStackTrailingConstraint: NSLayoutConstraint?
   private var draftingSidebarWidthConstraint: NSLayoutConstraint?
   private var draftingSidebarDragStartWindowX: CGFloat?
@@ -541,8 +543,11 @@ final class EditorViewController: NSViewController {
     ])
 
     agentRow.orientation = .horizontal
+    agentRow.alignment = .centerY
+    agentRow.distribution = .fill
     agentRow.spacing = 10
     agentRow.translatesAutoresizingMaskIntoConstraints = false
+    agentRow.detachesHiddenViews = true
     agentRow.edgeInsets = NSEdgeInsets(top: 0, left: 18, bottom: 6, right: 18)
 
     saveStatus.font = NSFont.systemFont(ofSize: 11, weight: .regular)
@@ -553,19 +558,29 @@ final class EditorViewController: NSViewController {
     agentButton.target = self
     agentButton.action = #selector(runAgent)
     agentButton.refusesFirstResponder = true
+    agentButton.controlSize = .regular
+    agentButton.bezelStyle = .rounded
     agentRow.addArrangedSubview(agentButton)
     agentButton.setContentHuggingPriority(.required, for: .horizontal)
     chatButton.target = self
     chatButton.action = #selector(openDraftingChat)
     chatButton.refusesFirstResponder = true
+    chatButton.controlSize = .regular
+    chatButton.bezelStyle = .rounded
     agentRow.addArrangedSubview(chatButton)
     chatButton.setContentHuggingPriority(.required, for: .horizontal)
     queueButton.target = self
     queueButton.action = #selector(openQueuePanel)
     queueButton.refusesFirstResponder = true
+    queueButton.controlSize = .regular
+    queueButton.bezelStyle = .rounded
     queueButton.isHidden = true
     agentRow.addArrangedSubview(queueButton)
     queueButton.setContentHuggingPriority(.required, for: .horizontal)
+    agentRowSpacer.translatesAutoresizingMaskIntoConstraints = false
+    agentRowSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    agentRowSpacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    agentRow.addArrangedSubview(agentRowSpacer)
 
     draftingSidebar.material = .hudWindow
     draftingSidebar.blendingMode = .withinWindow
@@ -958,7 +973,7 @@ final class EditorViewController: NSViewController {
       stack.topAnchor.constraint(equalTo: view.topAnchor),
       stack.bottomAnchor.constraint(equalTo: view.bottomAnchor),
       draftingSidebarResizeHandle.trailingAnchor.constraint(equalTo: draftingSidebar.leadingAnchor),
-      draftingSidebarResizeHandle.widthAnchor.constraint(equalToConstant: 8),
+      draftingSidebarResizeHandle.widthAnchor.constraint(equalToConstant: draftingSidebarResizeHandleWidth),
       draftingSidebarResizeHandle.topAnchor.constraint(equalTo: view.topAnchor),
       draftingSidebarResizeHandle.bottomAnchor.constraint(equalTo: view.bottomAnchor),
       draftingSidebar.topAnchor.constraint(equalTo: view.topAnchor),
@@ -1354,6 +1369,10 @@ final class EditorViewController: NSViewController {
       NSSound.beep()
       return
     }
+    if draftingSidebarVisible, draftingSidebarMode == .chat {
+      setDraftingSidebarVisible(false)
+      return
+    }
     setDraftingSidebarMode(.chat)
     setDraftingSidebarVisible(true, focusInput: true)
   }
@@ -1361,6 +1380,10 @@ final class EditorViewController: NSViewController {
   @objc private func openQueuePanel() {
     guard isQueueSidebarAvailable() else {
       NSSound.beep()
+      return
+    }
+    if draftingSidebarVisible, draftingSidebarMode == .queue {
+      setDraftingSidebarVisible(false)
       return
     }
     setDraftingSidebarMode(.queue)
@@ -1422,9 +1445,8 @@ final class EditorViewController: NSViewController {
   private func updateDraftingSidebarModeControls() {
     let chatAvailable = isChatSidebarAvailable()
     let queueAvailable = isQueueSidebarAvailable()
-    chatButton.isHidden = !chatAvailable
-    queueButton.isHidden = !queueAvailable
-    draftingSidebarModeControl.isHidden = !(chatAvailable && queueAvailable)
+    updateDraftingEntryButtons(chatAvailable: chatAvailable, queueAvailable: queueAvailable)
+    draftingSidebarModeControl.isHidden = !(draftingSidebarVisible && chatAvailable && queueAvailable)
     draftingSidebarModeControl.setEnabled(chatAvailable, forSegment: DraftingSidebarMode.chat.rawValue)
     draftingSidebarModeControl.setEnabled(queueAvailable, forSegment: DraftingSidebarMode.queue.rawValue)
 
@@ -1440,6 +1462,15 @@ final class EditorViewController: NSViewController {
         setDraftingSidebarVisible(false)
       }
     }
+  }
+
+  private func updateDraftingEntryButtons(chatAvailable: Bool, queueAvailable: Bool) {
+    let chatActive = draftingSidebarVisible && draftingSidebarMode == .chat && chatAvailable
+    let queueActive = draftingSidebarVisible && draftingSidebarMode == .queue && queueAvailable
+    chatButton.isHidden = !chatAvailable
+    queueButton.isHidden = !queueAvailable
+    chatButton.title = chatActive ? "Hide Chat" : "Chat Refine"
+    queueButton.title = queueActive ? "Hide Queue" : "Queue"
   }
 
   private func selectedDraftingAnnotationType() -> DraftingAnnotationType {
@@ -1502,6 +1533,7 @@ final class EditorViewController: NSViewController {
     let clampedWidth = clampedDraftingSidebarWidth(width)
     draftingSidebarPreferredWidth = clampedWidth
     draftingSidebarWidthConstraint?.constant = clampedWidth
+    mainStackTrailingConstraint?.constant = draftingSidebarVisible ? -(clampedWidth + draftingSidebarResizeHandleWidth) : 0
 
     if animated {
       NSAnimationContext.runAnimationGroup { ctx in
@@ -1563,7 +1595,6 @@ final class EditorViewController: NSViewController {
     if visible {
       draftingSidebarResizeHandle.isHidden = false
       draftingSidebarResizeHandle.layer?.backgroundColor = colorTheme.secondaryText.withAlphaComponent(0.14).cgColor
-      mainStackTrailingConstraint?.constant = 0
       applyDraftingSidebarWidth(draftingSidebarPreferredWidth, animated: true)
     } else {
       draftingSidebarResizeHandle.isHidden = true
@@ -1576,6 +1607,9 @@ final class EditorViewController: NSViewController {
         view.animator().layoutSubtreeIfNeeded()
       }
     }
+
+    updateDraftingSidebarModeControls()
+    updateDraftingSidebarControlState()
 
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
@@ -3719,7 +3753,6 @@ final class EditorViewController: NSViewController {
   private func applyAgentConfig() {
     agentRow.isHidden = false
     agentButton.isHidden = !agentConfig.enabled
-    chatButton.isHidden = !isChatSidebarAvailable()
     if !isChatSidebarAvailable(), draftingSidebarMode == .chat {
       if isQueueSidebarAvailable() {
         setDraftingSidebarMode(.queue)
@@ -4932,11 +4965,23 @@ extension EditorViewController {
   func _testingRunAgent() { runAgent() }
   func _testingBannerMessage() -> String { banner._testingMessage() }
   func _testingIsAgentButtonEnabled() -> Bool { agentButton.isEnabled }
+  func _testingIsChatButtonHidden() -> Bool { chatButton.isHidden }
+  func _testingChatButtonFrameInView() -> NSRect {
+    view.layoutSubtreeIfNeeded()
+    return chatButton.superview?.convert(chatButton.frame, to: view) ?? .zero
+  }
+  func _testingDraftingSidebarFrameInView() -> NSRect {
+    view.layoutSubtreeIfNeeded()
+    return draftingSidebar.superview?.convert(draftingSidebar.frame, to: view) ?? .zero
+  }
   func _testingApplyDraftingSuggestion() { draftingChatApplySuggestionAction(nil) }
   func _testingToggleDraftingContextPanel() { draftingChatToggleContextAction(nil) }
   func _testingToggleDraftingDiffPanel() { draftingChatToggleDiffAction(nil) }
   func _testingIsDraftingContextVisible() -> Bool { draftingContextVisible && !draftingContextScroll.isHidden }
   func _testingIsDraftingDiffVisible() -> Bool { draftingDiffVisible && !draftingDiffScroll.isHidden }
+  func _testingIsQueueButtonHidden() -> Bool { queueButton.isHidden }
+  func _testingChatButtonTitle() -> String { chatButton.title }
+  func _testingQueueButtonTitle() -> String { queueButton.title }
   func _testingSetAgentAdapter(_ adapter: AgentAdapting?) {
     agentAdapter = adapter
     draftingSidebarChatAdapter = nil
