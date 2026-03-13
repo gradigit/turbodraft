@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_url="${TURBODRAFT_REPO_URL:-https://github.com/gradigit/turbodraft.git}"
+repo_dir_default="${HOME}/Projects/turbodraft"
+if [[ ! -d "${HOME}/Projects" ]]; then
+  repo_dir_default="${HOME}/turbodraft"
+fi
+repo_dir="${TURBODRAFT_REPO_DIR:-$repo_dir_default}"
+
+pass_args=()
+
+usage() {
+  cat <<EOF
+TurboDraft bootstrap installer.
+
+Use this when you do not already have a local TurboDraft checkout.
+It will clone or reuse a checkout, then run that checkout's scripts/install.
+
+Usage:
+  scripts/bootstrap-install [options forwarded to scripts/install]
+
+Bootstrap options:
+  --repo-dir <path>   Clone/use checkout at this path
+  --repo-url <url>    Clone from this git URL
+  -h, --help          Show this help
+
+Examples:
+  scripts/bootstrap-install
+  scripts/bootstrap-install --mode install --yes
+  scripts/bootstrap-install --repo-dir ~/Projects/turbodraft --mode repair --yes
+EOF
+}
+
+require_macos() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "TurboDraft bootstrap install is macOS-only." >&2
+    exit 2
+  fi
+}
+
+require_tooling() {
+  command -v git >/dev/null 2>&1 || {
+    echo "git is required for bootstrap install." >&2
+    exit 2
+  }
+  command -v swift >/dev/null 2>&1 || {
+    echo "swift is required to build TurboDraft." >&2
+    exit 2
+  }
+}
+
+is_turbodraft_checkout() {
+  local dir="$1"
+  [[ -d "$dir/.git" && -f "$dir/Package.swift" && -x "$dir/scripts/install" ]]
+}
+
+ensure_checkout() {
+  if is_turbodraft_checkout "$PWD"; then
+    printf '%s\n' "$PWD"
+    return 0
+  fi
+
+  if is_turbodraft_checkout "$repo_dir"; then
+    printf '%s\n' "$repo_dir"
+    return 0
+  fi
+
+  if [[ -e "$repo_dir" && ! -d "$repo_dir/.git" ]]; then
+    echo "Refusing to use non-repo path for bootstrap install: $repo_dir" >&2
+    echo "Choose an empty path or an existing TurboDraft checkout with --repo-dir." >&2
+    exit 2
+  fi
+
+  mkdir -p "$(dirname "$repo_dir")"
+  if [[ -d "$repo_dir/.git" ]]; then
+    printf '%s\n' "$repo_dir"
+    return 0
+  fi
+
+  echo "Cloning TurboDraft into $repo_dir"
+  git clone "$repo_url" "$repo_dir"
+  printf '%s\n' "$repo_dir"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --repo-dir)
+      [[ $# -ge 2 ]] || { echo "missing value for --repo-dir" >&2; exit 2; }
+      repo_dir="$2"
+      shift 2
+      ;;
+    --repo-url)
+      [[ $# -ge 2 ]] || { echo "missing value for --repo-url" >&2; exit 2; }
+      repo_url="$2"
+      shift 2
+      ;;
+    -h|--help|help)
+      usage
+      exit 0
+      ;;
+    *)
+      pass_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+require_macos
+require_tooling
+checkout_dir="$(ensure_checkout)"
+
+echo "Using TurboDraft checkout: $checkout_dir"
+cd "$checkout_dir"
+exec ./scripts/install "${pass_args[@]}"

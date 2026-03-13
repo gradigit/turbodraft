@@ -2,6 +2,8 @@
 
 This documents the full behavior of `scripts/install` so you can review and evolve it.
 
+`scripts/install` is repo-local. If no TurboDraft checkout exists yet, use `scripts/bootstrap-install` first; it clones or reuses a checkout and then delegates to `scripts/install`.
+
 ## High-level state flow
 
 ```mermaid

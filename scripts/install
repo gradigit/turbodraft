@@ -16,7 +16,7 @@ visual_action="auto"   # auto|yes|no
 
 usage() {
   cat <<'EOF'
-TurboDraft install / update / configure wizard.
+TurboDraft repo-local install / update / configure wizard.
 
 Usage:
   scripts/install [options]
@@ -29,7 +29,42 @@ Options:
   --set-path <auto|yes|no> Configure PATH in shell rc
   --set-visual <auto|yes|no> Configure VISUAL=turbodraft in shell rc
   -h, --help               Show this help
+
+This script must run from a cloned TurboDraft repository checkout.
+If you only have a repo URL or no local checkout yet, use:
+  scripts/bootstrap-install
 EOF
+}
+
+require_macos() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "TurboDraft install is macOS-only." >&2
+    exit 2
+  fi
+}
+
+require_repo_root() {
+  local missing=()
+  [[ -f "$repo_root/Package.swift" ]] || missing+=("Package.swift")
+  [[ -x "$launch_agent_script" ]] || missing+=("scripts/turbodraft-launch-agent")
+  [[ -d "$repo_root/Sources" ]] || missing+=("Sources/")
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "scripts/install must run from a TurboDraft repo checkout." >&2
+    echo "Missing required repo-local files: ${missing[*]}" >&2
+    echo "If you only have a repo URL, run scripts/bootstrap-install instead." >&2
+    exit 2
+  fi
+}
+
+require_tooling() {
+  command -v swift >/dev/null 2>&1 || {
+    echo "swift is required to build TurboDraft." >&2
+    exit 2
+  }
+  command -v launchctl >/dev/null 2>&1 || {
+    echo "launchctl is required on macOS for LaunchAgent management." >&2
+    exit 2
+  }
 }
 
 prompt_user() {
@@ -147,12 +182,44 @@ configure_shell_settings() {
 
 verify_install() {
   echo
-  if command -v turbodraft >/dev/null 2>&1; then
-    echo "Done. turbodraft is on your PATH."
-  else
-    echo "Done. Add $bin_dir to your PATH to use turbodraft."
+  local direct_cli="$bin_dir/turbodraft"
+  local release_cli="$repo_root/.build/release/turbodraft"
+  local cli_to_check=""
+  if [[ -x "$direct_cli" ]]; then
+    cli_to_check="$direct_cli"
+  elif [[ -x "$release_cli" ]]; then
+    cli_to_check="$release_cli"
   fi
-  echo "Try: turbodraft --help"
+
+  if [[ -n "$cli_to_check" ]]; then
+    if "$cli_to_check" --help >/dev/null 2>&1; then
+      echo "Binary check: ok ($cli_to_check --help)"
+    else
+      echo "Binary check failed: $cli_to_check --help" >&2
+      exit 1
+    fi
+  else
+    echo "Binary check failed: turbodraft was not built/linked as expected." >&2
+    exit 1
+  fi
+
+  if command -v turbodraft >/dev/null 2>&1; then
+    echo "PATH check: turbodraft is on your PATH."
+  else
+    echo "PATH check: turbodraft is not on your PATH yet. Add $bin_dir to your PATH."
+  fi
+
+  if is_launch_agent_installed; then
+    if "$launch_agent_script" status >/dev/null 2>&1; then
+      echo "LaunchAgent check: installed."
+    else
+      echo "LaunchAgent status check failed." >&2
+      exit 1
+    fi
+  else
+    echo "LaunchAgent check: not installed."
+  fi
+  echo "Try: $cli_to_check --help"
 }
 
 run_launch_agent_action() {
@@ -337,6 +404,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+require_macos
+require_repo_root
+require_tooling
 prompt_mode_if_needed
 
 case "$mode" in

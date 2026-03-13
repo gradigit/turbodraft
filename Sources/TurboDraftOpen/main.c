@@ -107,12 +107,18 @@ static char **build_filtered_spawn_env(void) {
   return envp;
 }
 
+static void print_usage(FILE *stream) {
+  fprintf(stream, "usage: turbodraft [--path] <file> [+line] [--line N] [--column N] [--wait] [--timeout-ms N] [--socket-path <path>] [--debug-ready-latency] [--debug-ready-timeout-ms N]\n");
+}
+
 static void die_usage(const char *msg) {
   if (msg && msg[0] != '\0') {
     fprintf(stderr, "error: %s\n", msg);
+    print_usage(stderr);
+    exit(2);
   }
-  fprintf(stderr, "usage: turbodraft [--path] <file> [+line] [--line N] [--column N] [--wait] [--timeout-ms N] [--socket-path <path>] [--debug-ready-latency] [--debug-ready-timeout-ms N]\n");
-  exit(2);
+  print_usage(stdout);
+  exit(0);
 }
 
 static int64_t now_mono_ms(void) {

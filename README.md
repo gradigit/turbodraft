@@ -10,10 +10,10 @@ TurboDraft sits in between: a resident macOS app that opens instantly via Unix s
 
 ## Install
 
-One-line installer (interactive wizard):
+One-line bootstrap installer (interactive wizard):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/gradigit/turbodraft/main/scripts/install | bash
+curl -fsSL https://raw.githubusercontent.com/gradigit/turbodraft/main/scripts/bootstrap-install | bash
 ```
 
 Prefer an agent to install for you? Paste this repo into Claude/Codex and ask it to follow the **AGENT INSTALL SECTION (FOR AI AGENTS)** in this README.
@@ -24,6 +24,7 @@ https://github.com/gradigit/turbodraft
 
 Use the AGENT INSTALL SECTION in README.md.
 Use your AskUserQuestion/Question tool to run this like an interactive install wizard.
+If you do not already have a local checkout, clone the repo first or use scripts/bootstrap-install.
 Ask me confirmation questions before changing launch agent or shell config.
 Then report commands run, files changed, and how to rollback.
 ```
@@ -36,7 +37,15 @@ cd turbodraft
 scripts/install
 ```
 
-The installer is a single entrypoint for:
+Bootstrap from a repo URL or a machine without a checkout:
+
+```sh
+scripts/bootstrap-install
+```
+
+Use `scripts/bootstrap-install` when you do not already have a local TurboDraft checkout. Use `scripts/install` only from inside a cloned TurboDraft repository checkout.
+
+The repo-local installer is a single entrypoint for:
 - fresh install
 - update
 - configure (PATH / VISUAL / LaunchAgent)
@@ -365,6 +374,15 @@ If you are an AI agent reading this repository, follow this section exactly.
 
 Before running install/config/uninstall actions, you must ask the user short confirmation questions using your question tool (`AskUserQuestion`, `Question`, or equivalent). Do not skip this.
 
+### Required repo/bootstrap behavior
+
+If you only have a repository URL and no confirmed local checkout yet:
+
+1. clone the repo first, or
+2. run `scripts/bootstrap-install`
+
+Do **not** try to pipe `scripts/install` directly from a remote URL. `scripts/install` is repo-local and expects sibling files from a real checkout.
+
 Collect these choices first:
 
 1. mode: `install`, `update`, `configure`, `repair`, or `uninstall`
@@ -376,6 +394,11 @@ Collect these choices first:
 Never assume `--yes` unless the user explicitly requests non-interactive automation.
 
 ### Agent command mapping
+
+- bootstrap when no local checkout exists yet:
+  ```sh
+  scripts/bootstrap-install --mode install --yes
+  ```
 
 - guided wizard (default):
   ```sh
@@ -397,9 +420,10 @@ Never assume `--yes` unless the user explicitly requests non-interactive automat
 ### Required verification
 
 After running install/config/repair, verify:
-1. `turbodraft --help` works
-2. `scripts/turbodraft-launch-agent status` matches requested state
-3. shell config matches requested `PATH` / `VISUAL` choices
+1. repo root is correct before install (`Package.swift`, `scripts/install`, `scripts/turbodraft-launch-agent` exist)
+2. `turbodraft --help` works
+3. `scripts/turbodraft-launch-agent status` matches requested state
+4. shell config matches requested `PATH` / `VISUAL` choices
 
 ### Required report back to user
 

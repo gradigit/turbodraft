@@ -1,10 +1,16 @@
 # TurboDraft Agent Install / Configure Guide
 
-Use this when an AI agent is asked to install or reconfigure TurboDraft in a local cloned repo.
+Use this when an AI agent is asked to install or reconfigure TurboDraft.
+
+If there is no local TurboDraft checkout yet, use `scripts/bootstrap-install` first (or clone the repo manually). `scripts/install` is repo-local and must run from inside a cloned TurboDraft checkout.
 
 ## 1) Agent must run as an interactive wizard (required)
 
 Before any install/config/uninstall command:
+
+0. If only a repo URL is available and no checkout is confirmed:
+   - clone the repo, or
+   - run `scripts/bootstrap-install`
 
 1. Ask the user which mode they want:
    - install/update
@@ -29,6 +35,12 @@ Never assume `--yes` unless the user explicitly requests non-interactive automat
 
 ```sh
 scripts/install
+```
+
+### Bootstrap from repo URL / no local checkout
+
+```sh
+scripts/bootstrap-install --mode install --yes
 ```
 
 ### Non-interactive install/update
@@ -59,9 +71,10 @@ scripts/install --mode uninstall
 
 After running install/config/repair:
 
-1. `turbodraft --help` succeeds.
-2. `scripts/turbodraft-launch-agent status` matches the user’s selected agent behavior.
-3. Shell config reflects selected options (`PATH`, `VISUAL`).
+1. Repo root is correct before install (`Package.swift`, `scripts/install`, `scripts/turbodraft-launch-agent` exist).
+2. `turbodraft --help` succeeds.
+3. `scripts/turbodraft-launch-agent status` matches the user’s selected agent behavior.
+4. Shell config reflects selected options (`PATH`, `VISUAL`).
 
 ## 4) What to report back to the user
 
