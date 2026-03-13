@@ -75,8 +75,9 @@ Make sure `~/.local/bin` is on your `PATH`.
   - Tab / Shift+Tab indent-outdent
   - Ordered-list auto-renumbering after structural edits
   - Better task-list continuation and checkbox handling
-- Prompt-improve workflow:
+- Drafting workflow:
   - Canonical roles: `drafting_agent` (rewrite only) and `execution_agent` (executes tasks)
+  - `Improve Prompt` and `Chat Refine` with route-aware runtime state / failure surfacing
   - Undo/redo across repeated improve runs
   - Restore behavior aligned with active working buffer expectations
   - Adaptive drafting presets: coding, refactor, review, research, brainstorm
@@ -85,7 +86,10 @@ Make sure `~/.local/bin` is on your `PATH`.
     - `pivot_kr_en_reason_ko` (EN reasoning contract + final KO output)
     - `pivot_kr_en_optimize_ko` (KR→EN optimization + KO output contract)
   - Annotation channel support via strict markers (`<!-- @td(type): ... -->`) and quick inline prefixes (`@@ question: ...`)
-  - Chat-refine sidebar with interactive assistant turns, iterative annotation, and optional immediate improve
+- Right panel + attachments:
+  - Chat Refine sidebar with interactive assistant turns, iterative annotation, and optional immediate improve
+  - Optional external Queue panel for attached session queues (for example Claude Pager)
+  - Session-context handoff support for invoking CLI wrappers
 - Native find + replace:
   - Inline find UI, replace next/all, match case, whole word, regex
   - Selection-to-find (`⌘E`), next/previous match navigation
@@ -127,7 +131,7 @@ export TURBODRAFT_SESSION_CONTEXT_PATH=/absolute/path/to/context.json
 export TURBODRAFT_SESSION_CONTEXT_FORMAT_VERSION=1
 ```
 
-When set, TurboDraft forwards session attachment metadata through `session.open`. Queue metadata attaches the optional external queue surface; invoking context is passed to the `drafting_agent` as background-only context during `Improve Prompt` / `Chat Refine`.
+When set, TurboDraft forwards session attachment metadata through `session.open`. Queue metadata attaches the optional external queue surface; invoking context is passed to the `drafting_agent` as background-only context during `Improve Prompt` / `Chat Refine`. Detailed integration notes live in `docs/SESSION_CONTEXT_HANDOFF.md`.
 Details: `docs/SESSION_CONTEXT_HANDOFF.md`
 
 ## LaunchAgent (recommended)
@@ -221,7 +225,7 @@ Tables, footnotes, and full CommonMark/GFM edge cases are out of scope. This is 
 - `⌥⌘F` Replace
 - `⌘G` / `⇧⌘G` Find next / previous
 - `⌘E` Use selection for find
-- `Esc` Close find/replace UI
+- `Esc` Close find/replace first, then the drafting sidebar, then the TurboDraft window
 - `Ctrl+V` Clipboard paste parity (including image/file clipboard content)
 
 ## How it works
@@ -312,7 +316,6 @@ scripts/run_product_qa.sh
 RUN_REAL_UI=1 scripts/run_product_qa.sh
 ```
 This layers required editor validation with API open/close regression smoke and an optional real Ctrl+G/Ctrl+Q local probe.
-Methodology: `docs/PRODUCT_QA_SUITE.md`
 
 Open/close benchmark suite:
 ```sh
@@ -321,29 +324,21 @@ python3 scripts/bench_open_close_real_cli.py --cycles 20 --warmup 1 --poll-ms 2
 turbodraft --path /tmp/prompt.md --debug-ready-latency
 ```
 `bench_open_close_real_cli.py` enforces a default readiness gate: fail when p95 > 80ms.
-Methodology + schema: `docs/OPEN_CLOSE_BENCHMARK.md`
 
 RAM benchmark suite:
 ```sh
 python3 scripts/bench_ram_suite.py --cycles 20 --warmup 1 --retries 1 --enforce-gates
 scripts/bench_ram_nightly.sh
 ```
-Methodology + schema: `docs/RAM_BENCHMARK.md`
-
 Baseline thresholds are in `bench/editor/baseline.json`. P95 values have headroom for CI variance.
+Internal benchmark methodology / rollout notes are kept as local-only developer docs.
 
 ## Prompt preset evaluation
 
-The authoritative prompt-eval / judge-lock program now lives in the standalone repo:
+The active prompt-eval / judge-lock program now lives in the sibling repo `../prompt-eval-turbodraft`.
 
-- `../prompt-eval-turbodraft`
-
-TurboDraft keeps local prompt-eval assets only as a temporary compatibility copy until the
-PromptPack/import boundary is finished. Active benchmark, adjudication, judge-lock, and
-prompt-optimization work should happen in the external repo, not here.
-
-See:
-- `docs/PROMPT_EVAL_REPO_SPLIT_2026-03-12.md`
+TurboDraft keeps local prompt assets only as a temporary runtime compatibility copy. Active benchmark,
+adjudication, judge-lock, and prompt-optimization work should happen in the external repo, not here.
 
 TurboDraft-owned scope going forward:
 - runtime prompt loading and routing,
@@ -433,9 +428,8 @@ Report all of the following:
 - final status
 - rollback/uninstall command
 
-Reference docs for agents:
+Reference doc for agents:
 - `docs/AGENT_INSTALL.md`
-- `docs/INSTALL_WIZARD_FLOW.md`
 <!-- AGENT-INSTALL-END -->
 
 </details>

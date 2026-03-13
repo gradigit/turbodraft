@@ -22,20 +22,30 @@ __pycache__/
 # Benchmark / scratch
 tmp/
 
-# Research / reference (local-only)
+# Research / reference / internal docs (local-only)
 research-*.md
 docs/markdown-reference.txt
 docs/theme-preview.html
 docs/benchmarks/
+docs/research/
+docs/brainstorms/
+docs/BENCHMARK_*.md
+docs/EDITOR_VALIDATION_SUITE.md
+docs/INSTALL_WIZARD_FLOW.md
+docs/NEXT_RELEASE_PREP.md
+docs/OPEN_CLOSE_BENCHMARK*.md
+docs/OPEN_CLOSE_BENCHMARK*.json
+docs/PRODUCT_QA_SUITE.md
+docs/PROMPTFOO_*
+docs/PROMPT_EVAL_*
+docs/RAM_BENCHMARK*.md
+docs/RAM_BENCHMARK*.json
 docs/EVALUATION_REPORT.md
 docs/performance-review-2026-02-21-phase1-4.md
 docs/phase-1-4-execution-report-2026-02-21.md
 docs/production-readiness-review-2026-02-20.md
-docs/research/promptpad-baseline-review-checklist.md
-docs/research/research-prompt-evaluation-2026-02-14.md
-docs/research/research-prompt-eval-checklist-and-engineered-format-2026-02-15.md
 
-# Session handoff (consumed by next agent, not project docs)
+# Session handoff / planning (consumed by agents locally, not project docs)
 HANDOFF.md
 AGENTS.md
 CLAUDE.md
