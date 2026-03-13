@@ -33,7 +33,10 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
   private let applyAction: (SettingsAction) -> TurboDraftConfig
   private var isRefreshingControls = false
 
+  private let scrollView = NSScrollView()
+  private let documentContainerView = NSView()
   private let contentStack = NSStackView()
+  private var contentWidthConstraint: NSLayoutConstraint?
 
   private let themePopup = NSPopUpButton(frame: .zero, pullsDown: false)
   private let colorThemePopup = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -82,6 +85,16 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
     root.frame = NSRect(x: 0, y: 0, width: 560, height: 640)
     root.autoresizingMask = [.width, .height]
 
+    scrollView.translatesAutoresizingMaskIntoConstraints = false
+    scrollView.drawsBackground = false
+    scrollView.borderType = .noBorder
+    scrollView.hasVerticalScroller = true
+    scrollView.hasHorizontalScroller = false
+    scrollView.autohidesScrollers = true
+    scrollView.scrollerStyle = .overlay
+
+    documentContainerView.frame = NSRect(origin: .zero, size: root.frame.size)
+
     contentStack.orientation = .vertical
     contentStack.alignment = .leading
     contentStack.spacing = 18
@@ -94,21 +107,32 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
     contentStack.addArrangedSubview(makeAdvancedSection())
     contentStack.addArrangedSubview(makeFooterNote())
 
-    root.addSubview(contentStack)
+    documentContainerView.addSubview(contentStack)
+    scrollView.documentView = documentContainerView
+    root.addSubview(scrollView)
     view = root
 
-    let bottomConstraint = contentStack.bottomAnchor.constraint(equalTo: root.bottomAnchor)
-    bottomConstraint.priority = .defaultLow
+    contentWidthConstraint = contentStack.widthAnchor.constraint(equalToConstant: root.frame.width)
+    contentWidthConstraint?.priority = .required
     NSLayoutConstraint.activate([
-      contentStack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-      contentStack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-      contentStack.topAnchor.constraint(equalTo: root.topAnchor),
-      bottomConstraint,
-      contentStack.widthAnchor.constraint(equalTo: root.widthAnchor),
+      scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+      scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+      scrollView.topAnchor.constraint(equalTo: root.topAnchor),
+      scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+      contentStack.leadingAnchor.constraint(equalTo: documentContainerView.leadingAnchor),
+      contentStack.trailingAnchor.constraint(equalTo: documentContainerView.trailingAnchor),
+      contentStack.topAnchor.constraint(equalTo: documentContainerView.topAnchor),
+      contentStack.bottomAnchor.constraint(equalTo: documentContainerView.bottomAnchor),
+      contentWidthConstraint!,
     ])
 
     configureTargets()
     refresh(config: config, colorThemes: colorThemes, modelPresets: modelPresets, fontPresets: fontPresets)
+  }
+
+  override func viewDidLayout() {
+    super.viewDidLayout()
+    updateScrollLayout()
   }
 
   func refresh(
@@ -122,6 +146,10 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
     self.modelPresets = modelPresets
     self.fontPresets = fontPresets
     syncControlsFromConfig()
+    if isViewLoaded {
+      view.needsLayout = true
+      view.layoutSubtreeIfNeeded()
+    }
   }
 
   private func configureTargets() {
@@ -188,6 +216,17 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
 
   private func updateDependentControlState() {
     queueAutoRevealButton.isEnabled = queuesEnabledButton.state == .on
+  }
+
+  private func updateScrollLayout() {
+    let visibleWidth = max(scrollView.contentSize.width, 320)
+    if contentWidthConstraint?.constant != visibleWidth {
+      contentWidthConstraint?.constant = visibleWidth
+    }
+
+    documentContainerView.layoutSubtreeIfNeeded()
+    let documentHeight = max(contentStack.fittingSize.height, scrollView.contentSize.height)
+    documentContainerView.frame = NSRect(x: 0, y: 0, width: visibleWidth, height: documentHeight)
   }
 
   private func apply(_ action: SettingsAction) {
@@ -555,5 +594,21 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
 
   func _testingSectionCount() -> Int {
     contentStack.arrangedSubviews.count
+  }
+
+  func _testingHasVerticalScroller() -> Bool {
+    scrollView.hasVerticalScroller
+  }
+
+  func _testingDocumentHeight() -> CGFloat {
+    view.layoutSubtreeIfNeeded()
+    updateScrollLayout()
+    return documentContainerView.frame.height
+  }
+
+  func _testingViewportHeight() -> CGFloat {
+    view.layoutSubtreeIfNeeded()
+    updateScrollLayout()
+    return scrollView.contentSize.height
   }
 }

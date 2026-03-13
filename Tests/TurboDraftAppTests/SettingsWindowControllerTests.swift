@@ -42,7 +42,8 @@ final class SettingsWindowControllerTests: XCTestCase {
 
     window.layoutIfNeeded()
     XCTAssertGreaterThan(window.contentLayoutRect.height, 400)
-    XCTAssertGreaterThan(window.contentViewController?.view.fittingSize.height ?? 0, 300)
+    let settingsVC = window.contentViewController as? SettingsViewController
+    XCTAssertGreaterThan(settingsVC?._testingDocumentHeight() ?? 0, 300)
   }
 
   func testShowWindowNormalizesTinySavedFrame() {

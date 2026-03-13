@@ -68,6 +68,13 @@ final class SettingsViewControllerTests: XCTestCase {
     let controller = makeController(config: TurboDraftConfig()) { _ in TurboDraftConfig() }
 
     XCTAssertEqual(controller._testingSectionCount(), 5)
-    XCTAssertGreaterThan(controller.view.fittingSize.height, 300)
+    XCTAssertGreaterThan(controller._testingDocumentHeight(), 300)
+  }
+
+  func testSettingsViewUsesVerticalScrollForOverflowingContent() {
+    let controller = makeController(config: TurboDraftConfig()) { _ in TurboDraftConfig() }
+
+    XCTAssertTrue(controller._testingHasVerticalScroller())
+    XCTAssertGreaterThan(controller._testingDocumentHeight(), controller._testingViewportHeight())
   }
 }
