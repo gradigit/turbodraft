@@ -5,23 +5,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-03-13
+
 ### Added
 
-- RAM benchmark suite: `scripts/bench_ram_suite.py` with deterministic workload cycles, per-cycle JSONL output, run validity checks, outlier labeling, transient-failure injection support, compare/trend output, and optional CI gate enforcement.
-- RAM nightly helper: `scripts/bench_ram_nightly.sh`.
-- RAM benchmark docs + schema + freeze record:
-  - `docs/RAM_BENCHMARK.md`
-  - `docs/RAM_BENCHMARK_SCHEMA.json`
-  - `docs/RAM_BENCHMARK_FREEZE_2026-02-22.md`
-- New CI workflow: `.github/workflows/benchmark-ram.yml`.
-- `HistoryStoreTests` coverage for duplicate-dedupe, count pruning, byte-budget pruning, and stats accounting.
+- Restored the full `Chat Refine` drafting sidebar with iterative refinement turns, inline note workflows, and optional immediate improve actions.
+- Added an optional external `Queue` panel for attached session queues, including shared queue metadata handoff on `session.open` and conflict-safe shared queue file handling.
+- Added invoking session-context handoff so CLI wrappers can attach bounded background context for `Improve Prompt` and `Chat Refine`.
+- Added queue controls for `externalSessionQueues.enabled` and `externalSessionQueues.autoRevealOnAttach`.
+- Added session-context receiver plumbing across the CLI open path (`TURBODRAFT_SESSION_*`).
+- Added a repo bootstrap installer (`scripts/bootstrap-install`) for agent installs and repo-link installs without an existing checkout.
+- Added a product QA runner (`scripts/run_product_qa.sh`) covering editor validation, API open/close smoke, real Ctrl+G/Ctrl+Q probing, and session-attachment smoke.
 
 ### Changed
 
-- `HistoryStore` now supports byte-budgeted in-memory pruning and consecutive duplicate snapshot dedupe.
-- `EditorSession` now uses tighter bounded history/recovery defaults (count, bytes, recovery load window) to limit resident-memory growth.
-- `BenchMetricsResult` now includes optional diagnostics (`historySnapshotCount`, `historySnapshotBytes`, styler cache counters) used by the RAM benchmark suite.
-- README/release-prep docs now include RAM benchmark methodology, commands, and thresholds.
+- Improved drafting UX with route-aware busy, no-op, and failure surfacing for `Improve Prompt` and `Chat Refine`.
+- Made queue UX agent-agnostic and allowed `New` queue items to seed from the current editor selection.
+- Hardened the install flow with stronger repo-root preflights, verification, LaunchAgent checks, and a clean `turbodraft --help` verification target.
+- Updated the README to reflect the current product surface and moved internal benchmark / prompt-eval / planning docs out of tracked project docs.
+
+### Fixed
+
+- Fixed session close behavior so `session.wait` completes promptly without waiting on slow cleanup work.
+- Fixed shared queue integration across TurboDraft and Claude Pager, including queue metadata handoff and shared queue write safety.
+- Fixed Codex backend reliability by hardening app-server completion handling, adaptive fallback, and total routing latency bounds.
+- Fixed full-suite JSON-RPC socket test instability by retaining and draining server tasks correctly.
+- Reduced session-open focus churn to avoid repeated IMK / first-responder thrash during real Ctrl+G launches.
+
+### Performance
+
+- Improved API open latency and API close latency on the current benchmark path.
+- Reduced attached queue / session-context startup overhead by deferring queue load and watch work until the panel is actually used.
+- Improved the real UI close path and kept the real open path within the intended low-latency range.
+
+### Docs
+
+- Improved install and onboarding documentation for users and AI agents.
+- Trimmed tracked docs down to user- and agent-facing operational docs only.
 
 ## [0.3.0] — 2026-02-22
 
@@ -113,5 +133,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 [0.2.0]: https://github.com/gradigit/turbodraft/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gradigit/turbodraft/releases/tag/v0.1.0
+[0.4.0]: https://github.com/gradigit/turbodraft/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/gradigit/turbodraft/compare/v0.2.0...v0.3.0
-[unreleased]: https://github.com/gradigit/turbodraft/compare/v0.3.0...HEAD
+[unreleased]: https://github.com/gradigit/turbodraft/compare/v0.4.0...HEAD

@@ -8,6 +8,10 @@ Terminal editors work. But they weren't designed for writing prompts. VS Code ta
 
 TurboDraft sits in between: a resident macOS app that opens instantly via Unix socket and renders Markdown as you type.
 
+## What's New
+
+Latest release: **v0.4.0 (2026-03-13)** — see [CHANGELOG.md](CHANGELOG.md) for release notes and upgrade history.
+
 ## Install
 
 One-line bootstrap installer (interactive wizard):
