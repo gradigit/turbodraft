@@ -94,6 +94,8 @@ Make sure `~/.local/bin` is on your `PATH`.
   - Chat Refine sidebar with interactive assistant turns, iterative annotation, and optional immediate improve
   - Optional external Queue panel for attached session queues (for example Claude Pager)
   - Session-context handoff support for invoking CLI wrappers
+- Settings:
+  - Lazy `⌘,` Settings window for common appearance, drafting, and external queue options without touching the open hot path
 - Native find + replace:
   - Inline find UI, replace next/all, match case, whole word, regex
   - Selection-to-find (`⌘E`), next/previous match navigation
@@ -229,6 +231,7 @@ Tables, footnotes, and full CommonMark/GFM edge cases are out of scope. This is 
 - `⌥⌘F` Replace
 - `⌘G` / `⇧⌘G` Find next / previous
 - `⌘E` Use selection for find
+- `⌘,` Open Settings
 - `Esc` Close find/replace first, then the drafting sidebar, then the TurboDraft window
 - `Ctrl+V` Clipboard paste parity (including image/file clipboard content)
 
@@ -252,6 +255,8 @@ turbodraft config init
 ```
 
 Config lives at `~/Library/Application Support/TurboDraft/config.json`.
+
+Common appearance, drafting, and external queue options are available in **TurboDraft → Settings** (`⌘,`). Advanced transport / plugin / experimental options still live in `config.json`.
 
 | Key | Default | Description |
 |-----|---------|-------------|

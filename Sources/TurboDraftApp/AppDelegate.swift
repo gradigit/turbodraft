@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }()
   private var cfg = TurboDraftConfig.load()
+  private var settingsWindowController: SettingsWindowController?
 
   private var colorThemes: [EditorColorTheme] = []
   private var agentEnabledMenuItem: NSMenuItem?
@@ -45,6 +46,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     "o3",
     "o4-mini",
     "claude-sonnet-4-6",
+  ]
+  private let fontPresets: [(title: String, family: String)] = [
+    ("System Mono", "system"),
+    ("Menlo", "Menlo"),
+    ("SF Mono", "SF Mono"),
+    ("JetBrains Mono", "JetBrains Mono NL"),
+    ("Fira Code", "Fira Code"),
   ]
   private let startHidden = CommandLine.arguments.contains("--start-hidden")
   private let terminateOnLastClose = CommandLine.arguments.contains("--terminate-on-last-close")
@@ -442,14 +450,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  private func applyAppearanceToAllWindows() {
+    applyThemeToAllWindows()
+    applyColorThemeToAllWindows()
+  }
+
   private func applyEditorModeToAllWindows() {
     for wc in allWindowControllers {
       wc.setEditorMode(cfg.editorMode)
     }
   }
 
+  private func applyExternalSessionQueuesToAllWindows() {
+    for wc in allWindowControllers {
+      wc.setExternalSessionQueues(cfg.externalSessionQueues)
+    }
+  }
+
+  private func refreshSettingsWindowIfNeeded() {
+    settingsWindowController?.refresh(
+      config: cfg,
+      colorThemes: colorThemes,
+      modelPresets: modelPresets,
+      fontPresets: fontPresets
+    )
+  }
+
+  @discardableResult
+  private func commitConfigMutation(
+    context: String,
+    reinstallMenu: Bool = true,
+    _ mutate: (inout TurboDraftConfig) -> Void
+  ) -> TurboDraftConfig {
+    let old = cfg
+    var updated = cfg
+    mutate(&updated)
+    updated = updated.sanitized()
+    cfg = updated
+    applyConfigDiff(from: old, to: updated)
+    if reinstallMenu {
+      installMenu()
+    }
+    refreshSettingsWindowIfNeeded()
+    persistConfig(context: context)
+    return cfg
+  }
+
+  private func applyConfigDiff(from old: TurboDraftConfig, to new: TurboDraftConfig) {
+    if old.agent != new.agent {
+      applyAgentConfigToAllWindows()
+    }
+    if old.theme != new.theme || old.colorTheme != new.colorTheme {
+      applyAppearanceToAllWindows()
+    }
+    if old.editorMode != new.editorMode {
+      applyEditorModeToAllWindows()
+    }
+    if old.fontSize != new.fontSize || old.fontFamily != new.fontFamily {
+      applyFontToAllWindows()
+    }
+    if old.externalSessionQueues != new.externalSessionQueues {
+      applyExternalSessionQueuesToAllWindows()
+    }
+  }
+
   private func persistConfig(context: String) {
-    cfg = cfg.sanitized()
     do {
       try cfg.write()
     } catch {
@@ -818,6 +883,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let appMenu = NSMenu(title: appName)
     appItem.submenu = appMenu
     appMenu.addItem(NSMenuItem(title: "About \(appName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: ""))
+    let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",")
+    settingsItem.target = self
+    appMenu.addItem(settingsItem)
     appMenu.addItem(.separator())
     let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
     let servicesMenu = NSMenu(title: "Services")
@@ -979,13 +1047,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let fontFamilyParent = NSMenuItem(title: "Font Family", action: nil, keyEquivalent: "")
     let fontFamilyMenu = NSMenu(title: "Font Family")
-    let fontPresets: [(title: String, family: String)] = [
-      ("System Mono", "system"),
-      ("Menlo", "Menlo"),
-      ("SF Mono", "SF Mono"),
-      ("JetBrains Mono", "JetBrains Mono NL"),
-      ("Fira Code", "Fira Code"),
-    ]
     for preset in fontPresets {
       let item = NSMenuItem(title: preset.title, action: #selector(selectFontFamily(_:)), keyEquivalent: "")
       item.target = self
@@ -1148,11 +1209,221 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     NSApp.mainMenu = main
   }
 
+  @MainActor @objc private func showSettings(_ sender: Any?) {
+    let controller: SettingsWindowController
+    if let existing = settingsWindowController {
+      controller = existing
+    } else {
+      let created = SettingsWindowController(
+        config: cfg,
+        colorThemes: colorThemes,
+        modelPresets: modelPresets,
+        fontPresets: fontPresets
+      ) { [weak self] action in
+        self?.handleSettingsAction(action) ?? TurboDraftConfig()
+      }
+      created.onClose = { [weak self] in
+        self?.settingsWindowController = nil
+      }
+      settingsWindowController = created
+      controller = created
+    }
+    controller.refresh(
+      config: cfg,
+      colorThemes: colorThemes,
+      modelPresets: modelPresets,
+      fontPresets: fontPresets
+    )
+    controller.showWindow(nil)
+    controller.window?.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
+  private func handleSettingsAction(_ action: SettingsAction) -> TurboDraftConfig {
+    switch action {
+    case .setThemeMode(let theme):
+      return setThemeMode(theme, context: "settings.theme")
+    case .setEditorMode(let mode):
+      return setEditorMode(mode, context: "settings.editorMode")
+    case .setColorTheme(let themeId):
+      return setColorTheme(themeId, context: "settings.colorTheme")
+    case .setFontSize(let size):
+      return setFontSize(size, context: "settings.fontSize")
+    case .setFontFamily(let family):
+      return setFontFamily(family, context: "settings.fontFamily")
+    case .setAgentEnabled(let enabled):
+      return setAgentEnabled(enabled, context: "settings.agent.enabled")
+    case .setAgentBackend(let backend):
+      return setAgentBackend(backend, context: "settings.agent.backend")
+    case .setAgentModel(let model):
+      return setAgentModel(model, context: "settings.agent.model")
+    case .setPromptProfile(let profile):
+      return setPromptProfile(profile, context: "settings.agent.promptProfile")
+    case .setDraftingPreset(let preset):
+      return setDraftingPreset(preset, context: "settings.agent.draftingPreset")
+    case .setWebSearchMode(let mode):
+      return setWebSearchMode(mode, context: "settings.agent.webSearch")
+    case .setReasoningEffort(let effort):
+      return setReasoningEffort(effort, context: "settings.agent.reasoningEffort")
+    case .setReasoningSummary(let summary):
+      return setReasoningSummary(summary, context: "settings.agent.reasoningSummary")
+    case .setExternalQueuesEnabled(let enabled):
+      return setExternalQueuesEnabled(enabled, context: "settings.externalSessionQueues.enabled")
+    case .setExternalQueuesAutoReveal(let enabled):
+      return setExternalQueuesAutoReveal(enabled, context: "settings.externalSessionQueues.autoRevealOnAttach")
+    case .setChatPanelEnabled(let enabled):
+      return setChatPanelEnabled(enabled, context: "settings.agent.chatPanelEnabled")
+    case .setAnnotationEnabled(let enabled):
+      return setAnnotationEnabled(enabled, context: "settings.agent.annotationEnabled")
+    }
+  }
+
+  private func reconcileReasoningForModel(_ model: String, in config: inout TurboDraftConfig) {
+    let effort = PromptEngineerPrompts.effectiveReasoningEffort(
+      model: model,
+      requested: config.agent.reasoningEffort.rawValue
+    )
+    if effort != config.agent.reasoningEffort.rawValue,
+       let adjusted = TurboDraftConfig.Agent.ReasoningEffort(rawValue: effort) {
+      config.agent.reasoningEffort = adjusted
+    }
+  }
+
+  @discardableResult
+  private func setAgentEnabled(_ enabled: Bool, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) {
+      $0.agent.enabled = enabled
+    }
+  }
+
+  @discardableResult
+  private func setThemeMode(_ theme: TurboDraftConfig.ThemeMode, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) {
+      $0.theme = theme
+    }
+  }
+
+  @discardableResult
+  private func setEditorMode(_ mode: TurboDraftConfig.EditorMode, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) {
+      $0.editorMode = mode
+    }
+  }
+
+  @discardableResult
+  private func setColorTheme(_ themeId: String, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) {
+      $0.colorTheme = themeId
+    }
+  }
+
+  @discardableResult
+  private func setFontSize(_ size: Int, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) {
+      $0.fontSize = size
+    }
+  }
+
+  @discardableResult
+  private func setFontFamily(_ family: String, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) {
+      $0.fontFamily = family
+    }
+  }
+
+  @discardableResult
+  private func setAgentModel(_ model: String, context: String) -> TurboDraftConfig {
+    let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return cfg }
+    return commitConfigMutation(context: context) { config in
+      config.agent.model = trimmed
+      reconcileReasoningForModel(trimmed, in: &config)
+    }
+  }
+
+  @discardableResult
+  private func setPromptProfile(_ profile: TurboDraftConfig.Agent.PromptProfile, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) {
+      $0.agent.promptProfile = profile
+    }
+  }
+
+  @discardableResult
+  private func setDraftingPreset(_ preset: TurboDraftConfig.Agent.DraftingPreset, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) {
+      $0.agent.draftingPreset = preset
+    }
+  }
+
+  @discardableResult
+  private func setAgentBackend(_ backend: TurboDraftConfig.Agent.Backend, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) { config in
+      let oldBackend = config.agent.backend
+      config.agent.backend = backend
+      if backend == .claude, oldBackend != .claude {
+        if config.agent.command == "codex" { config.agent.command = "claude" }
+        if !config.agent.model.hasPrefix("claude-") { config.agent.model = "claude-sonnet-4-6" }
+      } else if backend != .claude, oldBackend == .claude {
+        if config.agent.command == "claude" { config.agent.command = "codex" }
+        if config.agent.model.hasPrefix("claude-") { config.agent.model = "gpt-5.3-codex-spark" }
+      }
+      reconcileReasoningForModel(config.agent.model, in: &config)
+    }
+  }
+
+  @discardableResult
+  private func setReasoningEffort(_ effort: TurboDraftConfig.Agent.ReasoningEffort, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) { config in
+      config.agent.reasoningEffort = effort
+      reconcileReasoningForModel(config.agent.model, in: &config)
+    }
+  }
+
+  @discardableResult
+  private func setReasoningSummary(_ summary: TurboDraftConfig.Agent.ReasoningSummary, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) {
+      $0.agent.reasoningSummary = summary
+    }
+  }
+
+  @discardableResult
+  private func setWebSearchMode(_ mode: TurboDraftConfig.Agent.WebSearchMode, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) {
+      $0.agent.webSearch = mode
+    }
+  }
+
+  @discardableResult
+  private func setExternalQueuesEnabled(_ enabled: Bool, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) {
+      $0.externalSessionQueues.enabled = enabled
+    }
+  }
+
+  @discardableResult
+  private func setExternalQueuesAutoReveal(_ enabled: Bool, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) {
+      $0.externalSessionQueues.autoRevealOnAttach = enabled
+    }
+  }
+
+  @discardableResult
+  private func setChatPanelEnabled(_ enabled: Bool, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) {
+      $0.agent.chatPanelEnabled = enabled
+    }
+  }
+
+  @discardableResult
+  private func setAnnotationEnabled(_ enabled: Bool, context: String) -> TurboDraftConfig {
+    commitConfigMutation(context: context) {
+      $0.agent.annotationEnabled = enabled
+    }
+  }
+
   @MainActor @objc private func togglePromptEngineer(_ sender: NSMenuItem) {
-    cfg.agent.enabled.toggle()
-    sender.state = cfg.agent.enabled ? .on : .off
-    applyAgentConfigToAllWindows()
-    persistConfig(context: "togglePromptEngineer")
+    _ = sender
+    _ = setAgentEnabled(!cfg.agent.enabled, context: "togglePromptEngineer")
   }
 
   @MainActor @objc private func improvePrompt(_ sender: NSMenuItem) {
@@ -1203,30 +1474,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     activeWindowController()?.restorePreviousBuffer()
   }
 
-  private func sanitizeReasoningForModel(_ model: String) {
-    let effort = PromptEngineerPrompts.effectiveReasoningEffort(
-      model: model,
-      requested: cfg.agent.reasoningEffort.rawValue
-    )
-    if effort != cfg.agent.reasoningEffort.rawValue {
-      if let adjusted = TurboDraftConfig.Agent.ReasoningEffort(rawValue: effort) {
-        cfg.agent.reasoningEffort = adjusted
-      }
-    }
-  }
-
   @MainActor @objc private func selectAgentModel(_ sender: NSMenuItem) {
     guard let model = sender.representedObject as? String else { return }
-    cfg.agent.model = model
-    sanitizeReasoningForModel(model)
-    sender.menu?.items.forEach {
-      if $0.action == #selector(selectAgentModel(_:)) {
-        $0.state = .off
-      }
-    }
-    sender.state = .on
-    applyAgentConfigToAllWindows()
-    persistConfig(context: "selectAgentModel")
+    _ = sender
+    _ = setAgentModel(model, context: "selectAgentModel")
   }
 
   @MainActor @objc private func selectCustomAgentModel(_ sender: NSMenuItem) {
@@ -1244,42 +1495,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !model.isEmpty else { return }
 
-    cfg.agent.model = model
-    sanitizeReasoningForModel(model)
-    applyAgentConfigToAllWindows()
-    persistConfig(context: "selectCustomAgentModel")
-    installMenu()
+    _ = setAgentModel(model, context: "selectCustomAgentModel")
   }
 
   @MainActor @objc private func selectThemeMode(_ sender: NSMenuItem) {
     guard let raw = sender.representedObject as? String,
           let v = TurboDraftConfig.ThemeMode(rawValue: raw)
     else { return }
-    cfg.theme = v
-    sender.menu?.items.filter { $0.tag == 901 }.forEach { $0.state = .off }
-    sender.state = .on
-    applyThemeToAllWindows()
-    persistConfig(context: "selectThemeMode")
+    _ = sender
+    _ = setThemeMode(v, context: "selectThemeMode")
   }
 
   @MainActor @objc private func selectEditorMode(_ sender: NSMenuItem) {
     guard let raw = sender.representedObject as? String,
           let v = TurboDraftConfig.EditorMode(rawValue: raw)
     else { return }
-    cfg.editorMode = v
-    sender.menu?.items.filter { $0.tag == 902 }.forEach { $0.state = .off }
-    sender.state = .on
-    applyEditorModeToAllWindows()
-    persistConfig(context: "selectEditorMode")
+    _ = sender
+    _ = setEditorMode(v, context: "selectEditorMode")
   }
 
   @MainActor @objc private func selectColorTheme(_ sender: NSMenuItem) {
     guard let themeId = sender.representedObject as? String else { return }
-    cfg.colorTheme = themeId
-    sender.menu?.items.filter { $0.tag == 903 }.forEach { $0.state = .off }
-    sender.state = .on
-    applyColorThemeToAllWindows()
-    persistConfig(context: "selectColorTheme")
+    _ = sender
+    _ = setColorTheme(themeId, context: "selectColorTheme")
   }
 
   private func applyColorThemeToAllWindows() {
@@ -1291,20 +1529,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   @MainActor @objc private func selectFontSize(_ sender: NSMenuItem) {
     guard let sz = sender.representedObject as? Int else { return }
-    cfg.fontSize = sz
-    sender.menu?.items.filter { $0.tag == 904 }.forEach { $0.state = .off }
-    sender.state = .on
-    applyFontToAllWindows()
-    persistConfig(context: "selectFontSize")
+    _ = sender
+    _ = setFontSize(sz, context: "selectFontSize")
   }
 
   @MainActor @objc private func selectFontFamily(_ sender: NSMenuItem) {
     guard let family = sender.representedObject as? String else { return }
-    cfg.fontFamily = family
-    sender.menu?.items.filter { $0.tag == 905 }.forEach { $0.state = .off }
-    sender.state = .on
-    applyFontToAllWindows()
-    persistConfig(context: "selectFontFamily")
+    _ = sender
+    _ = setFontFamily(family, context: "selectFontFamily")
   }
 
   private func applyFontToAllWindows() {
@@ -1317,67 +1549,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard let raw = sender.representedObject as? String,
           let v = TurboDraftConfig.Agent.PromptProfile(rawValue: raw)
     else { return }
-    cfg.agent.promptProfile = v
-    sender.menu?.items.forEach { $0.state = .off }
-    sender.state = .on
-    applyAgentConfigToAllWindows()
-    persistConfig(context: "selectPromptProfile")
+    _ = sender
+    _ = setPromptProfile(v, context: "selectPromptProfile")
   }
 
   @MainActor @objc private func selectAgentBackend(_ sender: NSMenuItem) {
     guard let raw = sender.representedObject as? String,
           let v = TurboDraftConfig.Agent.Backend(rawValue: raw)
     else { return }
-    let oldBackend = cfg.agent.backend
-    cfg.agent.backend = v
-
-    // Auto-switch command and model when crossing between Codex and Claude backends.
-    if v == .claude, oldBackend != .claude {
-      if cfg.agent.command == "codex" { cfg.agent.command = "claude" }
-      if !cfg.agent.model.hasPrefix("claude-") { cfg.agent.model = "claude-sonnet-4-6" }
-    } else if v != .claude, oldBackend == .claude {
-      if cfg.agent.command == "claude" { cfg.agent.command = "codex" }
-      if cfg.agent.model.hasPrefix("claude-") { cfg.agent.model = "gpt-5.3-codex-spark" }
-    }
-
-    sender.menu?.items.forEach { $0.state = .off }
-    sender.state = .on
-    applyAgentConfigToAllWindows()
-    persistConfig(context: "selectAgentBackend")
-    installMenu()
+    _ = sender
+    _ = setAgentBackend(v, context: "selectAgentBackend")
   }
 
   @MainActor @objc private func selectReasoningEffort(_ sender: NSMenuItem) {
     guard let raw = sender.representedObject as? String,
           let v = TurboDraftConfig.Agent.ReasoningEffort(rawValue: raw)
     else { return }
-    cfg.agent.reasoningEffort = v
-    sender.menu?.items.forEach { $0.state = .off }
-    sender.state = .on
-    applyAgentConfigToAllWindows()
-    persistConfig(context: "selectReasoningEffort")
+    _ = sender
+    _ = setReasoningEffort(v, context: "selectReasoningEffort")
   }
 
   @MainActor @objc private func selectReasoningSummary(_ sender: NSMenuItem) {
     guard let raw = sender.representedObject as? String,
           let v = TurboDraftConfig.Agent.ReasoningSummary(rawValue: raw)
     else { return }
-    cfg.agent.reasoningSummary = v
-    sender.menu?.items.forEach { $0.state = .off }
-    sender.state = .on
-    applyAgentConfigToAllWindows()
-    persistConfig(context: "selectReasoningSummary")
+    _ = sender
+    _ = setReasoningSummary(v, context: "selectReasoningSummary")
   }
 
   @MainActor @objc private func selectWebSearchMode(_ sender: NSMenuItem) {
     guard let raw = sender.representedObject as? String,
           let v = TurboDraftConfig.Agent.WebSearchMode(rawValue: raw)
     else { return }
-    cfg.agent.webSearch = v
-    sender.menu?.items.forEach { $0.state = .off }
-    sender.state = .on
-    applyAgentConfigToAllWindows()
-    persistConfig(context: "selectWebSearchMode")
+    _ = sender
+    _ = setWebSearchMode(v, context: "selectWebSearchMode")
   }
 
   private func cleanUpStaleTempFiles() {

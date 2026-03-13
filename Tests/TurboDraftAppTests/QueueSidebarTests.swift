@@ -220,6 +220,80 @@ final class AQueueSidebarTests: XCTestCase {
     XCTAssertEqual(bundle.controller._testingQueueSelectedPrompt(), "first prompt")
   }
 
+  func testLiveQueueToggleDisablesAttachedQueue() async throws {
+    let bundle = try await makeControllerBundle(
+      initialText: "draft",
+      queueText: """
+      {"id":"one","prompt":"first prompt","added_us":1}
+      """
+    )
+
+    bundle.controller._testingOpenQueuePanel()
+    await waitUntil({ bundle.controller._testingQueueItemCount() == 1 })
+
+    bundle.controller._testingSetExternalSessionQueues(.init(enabled: false, autoRevealOnAttach: false))
+
+    XCTAssertFalse(bundle.controller._testingIsQueueSidebarVisible())
+    XCTAssertEqual(bundle.controller._testingQueueItemCount(), 0)
+    XCTAssertTrue(bundle.controller._testingQueueStatusText().contains("disabled in settings"))
+    XCTAssertEqual(bundle.controller._testingExternalSessionQueuesConfig().enabled, false)
+  }
+
+  func testEnablingAutoRevealAfterAttachmentShowsQueueSidebar() async throws {
+    var config = TurboDraftConfig()
+    config.externalSessionQueues = .init(enabled: true, autoRevealOnAttach: false)
+    let bundle = try await makeControllerBundle(
+      initialText: "draft",
+      queueText: """
+      {"id":"one","prompt":"first prompt","added_us":1}
+      """,
+      config: config
+    )
+
+    XCTAssertFalse(bundle.controller._testingIsQueueSidebarVisible())
+    bundle.controller._testingSetExternalSessionQueues(.init(enabled: true, autoRevealOnAttach: true))
+    await waitUntil({ bundle.controller._testingQueueSelectedPrompt() == "first prompt" })
+
+    XCTAssertTrue(bundle.controller._testingIsQueueSidebarVisible())
+    XCTAssertEqual(bundle.controller._testingQueueSelectedPrompt(), "first prompt")
+  }
+
+  func testQueueSettingAppliedBeforeLaterAttachment() async throws {
+    let dir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("turbodraft-queue-sidebar-tests", isDirectory: true)
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    tempURLs.append(dir)
+
+    let fileURL = dir.appendingPathComponent("draft.md")
+    let queueURL = dir.appendingPathComponent("session.queue")
+    try "draft".write(to: fileURL, atomically: true, encoding: .utf8)
+    try """
+    {"id":"one","prompt":"first prompt","added_us":1}
+    """.write(to: queueURL, atomically: true, encoding: .utf8)
+
+    let session = EditorSession()
+    let info = try await session.open(fileURL: fileURL, cwd: nil)
+    let controller = EditorViewController(session: session, config: TurboDraftConfig())
+    controller.loadViewIfNeeded()
+    controller.applySessionInfo(info, moveCursorLine: nil, column: nil)
+    controller.setExternalSessionQueues(.init(enabled: false, autoRevealOnAttach: false))
+    controller.setExternalQueueAttachment(
+      ExternalQueueAttachment(
+        source: "claude-pager",
+        queuePath: queueURL.path,
+        queueKey: "session",
+        queueFormatVersion: 1
+      )
+    )
+
+    controllers.append(controller)
+
+    XCTAssertFalse(controller._testingIsQueueSidebarVisible())
+    XCTAssertEqual(controller._testingQueueItemCount(), 0)
+    XCTAssertTrue(controller._testingQueueStatusText().contains("disabled in settings"))
+  }
+
   func testQueueNewItemSeedsFromEditorSelection() async throws {
     let initialText = "Alpha section\nBeta selected text\nGamma section"
     let bundle = try await makeControllerBundle(
@@ -257,7 +331,8 @@ final class AQueueSidebarTests: XCTestCase {
   private func makeControllerBundle(
     initialText: String,
     queueText: String,
-    config: TurboDraftConfig = TurboDraftConfig()
+    config: TurboDraftConfig = TurboDraftConfig(),
+    attachQueueOnLoad: Bool = true
   ) async throws -> (controller: EditorViewController, queueURL: URL) {
     _ = NSApplication.shared
     let dir = FileManager.default.temporaryDirectory
@@ -276,15 +351,17 @@ final class AQueueSidebarTests: XCTestCase {
     let controller = EditorViewController(session: session, config: config)
     controller.loadViewIfNeeded()
     controller.applySessionInfo(info, moveCursorLine: nil, column: nil)
-    controller.setExternalQueueAttachment(
-      ExternalQueueAttachment(
-        source: "claude-pager",
-        queuePath: queueURL.path,
-        queueKey: "session",
-        queueFormatVersion: 1
+    if attachQueueOnLoad {
+      controller.setExternalQueueAttachment(
+        ExternalQueueAttachment(
+          source: "claude-pager",
+          queuePath: queueURL.path,
+          queueKey: "session",
+          queueFormatVersion: 1
+        )
       )
-    )
-    let initialExpectedCount = (config.externalSessionQueues.enabled && config.externalSessionQueues.autoRevealOnAttach) ? queueText
+    }
+    let initialExpectedCount = (attachQueueOnLoad && config.externalSessionQueues.enabled && config.externalSessionQueues.autoRevealOnAttach) ? queueText
       .split(whereSeparator: \.isNewline)
       .map(String.init)
       .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }

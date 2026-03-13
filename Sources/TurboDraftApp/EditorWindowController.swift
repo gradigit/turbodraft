@@ -161,6 +161,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     editorVC.setExternalQueueAttachment(attachment)
   }
 
+  func setExternalSessionQueues(_ settings: TurboDraftConfig.ExternalSessionQueues) {
+    editorVC.setExternalSessionQueues(settings)
+  }
+
   func setExternalSessionContextAttachment(_ attachment: ExternalSessionContextAttachment?) {
     editorVC.setExternalSessionContextAttachment(attachment)
   }

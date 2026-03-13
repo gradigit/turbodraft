@@ -20,6 +20,7 @@ final class EditorViewController: NSViewController {
   private let config: TurboDraftConfig
   private var editorMode: TurboDraftConfig.EditorMode
   private var agentConfig: TurboDraftConfig.Agent
+  private var externalSessionQueuesConfig: TurboDraftConfig.ExternalSessionQueues
 
   private let banner = BannerView()
   private let scrollView = NSScrollView()
@@ -230,6 +231,7 @@ final class EditorViewController: NSViewController {
     self.config = config
     self.editorMode = config.editorMode
     self.agentConfig = config.agent
+    self.externalSessionQueuesConfig = config.externalSessionQueues
     let initialFontSize = CGFloat(max(11, min(config.fontSize, 72)))
     #if TURBODRAFT_USE_CODEEDIT_TEXTVIEW
     self.textView = TextView(
@@ -1375,7 +1377,7 @@ final class EditorViewController: NSViewController {
   }
 
   private func isExternalQueueIntegrationEnabled() -> Bool {
-    config.externalSessionQueues.enabled
+    externalSessionQueuesConfig.enabled
   }
 
   private func isQueueSidebarAvailable() -> Bool {
@@ -2394,52 +2396,21 @@ final class EditorViewController: NSViewController {
     }
 
     refreshQueueAttachmentPresentation()
+    reconcileQueueAttachmentState(
+      reason: "queue attachment changed",
+      allowAutoReveal: externalSessionQueuesConfig.autoRevealOnAttach
+    )
+    updateDraftingSidebarModeControls()
+    updateDraftingSidebarControlState()
+  }
 
-    if let attachment {
-      guard isExternalQueueIntegrationEnabled() else {
-        resetQueueState(statusMessage: disabledQueueStatus())
-        if draftingSidebarMode == .queue {
-          if isChatSidebarAvailable() {
-            setDraftingSidebarMode(.chat)
-          } else {
-            setDraftingSidebarVisible(false)
-          }
-        }
-        updateDraftingSidebarModeControls()
-        updateDraftingSidebarControlState()
-        return
-      }
-      guard attachment.isSupportedFormat else {
-        resetQueueState(statusMessage: unsupportedQueueStatus(for: attachment))
-        if draftingSidebarMode == .queue {
-          if isChatSidebarAvailable() {
-            setDraftingSidebarMode(.chat)
-          } else {
-            setDraftingSidebarVisible(false)
-          }
-        }
-        updateDraftingSidebarModeControls()
-        updateDraftingSidebarControlState()
-        return
-      }
-      if config.externalSessionQueues.autoRevealOnAttach {
-        setDraftingSidebarMode(.queue)
-        setDraftingSidebarVisible(true, focusInput: false)
-      } else if draftingSidebarVisible, draftingSidebarMode == .queue {
-        activateQueueAttachmentIfNeeded(reason: "queue attached while visible")
-      } else {
-        queueStatusLabel.stringValue = "Queue attached. Open Queue to load."
-      }
-    } else {
-      resetQueueState(statusMessage: "No external session queue attached.")
-      if draftingSidebarMode == .queue {
-        if isChatSidebarAvailable() {
-          setDraftingSidebarMode(.chat)
-        } else {
-          setDraftingSidebarVisible(false)
-        }
-      }
-    }
+  func setExternalSessionQueues(_ settings: TurboDraftConfig.ExternalSessionQueues) {
+    let old = externalSessionQueuesConfig
+    externalSessionQueuesConfig = settings
+    refreshQueueAttachmentPresentation()
+    let allowAutoReveal = settings.enabled && settings.autoRevealOnAttach
+      && (!old.enabled || (!old.autoRevealOnAttach && settings.autoRevealOnAttach))
+    reconcileQueueAttachmentState(reason: "queue settings changed", allowAutoReveal: allowAutoReveal)
     updateDraftingSidebarModeControls()
     updateDraftingSidebarControlState()
   }
@@ -2587,6 +2558,47 @@ final class EditorViewController: NSViewController {
 
   private func disabledQueueStatus() -> String {
     "External session queues are disabled in settings."
+  }
+
+  private func fallbackFromQueueSidebarIfNeeded() {
+    guard draftingSidebarMode == .queue else { return }
+    if isChatSidebarAvailable() {
+      setDraftingSidebarMode(.chat)
+    } else {
+      setDraftingSidebarVisible(false)
+    }
+  }
+
+  private func reconcileQueueAttachmentState(reason: String, allowAutoReveal: Bool) {
+    guard let attachment = externalQueueAttachment else {
+      resetQueueState(statusMessage: unattachedQueueStatus())
+      fallbackFromQueueSidebarIfNeeded()
+      return
+    }
+
+    guard isExternalQueueIntegrationEnabled() else {
+      resetQueueState(statusMessage: disabledQueueStatus())
+      fallbackFromQueueSidebarIfNeeded()
+      return
+    }
+
+    guard attachment.isSupportedFormat else {
+      resetQueueState(statusMessage: unsupportedQueueStatus(for: attachment))
+      fallbackFromQueueSidebarIfNeeded()
+      return
+    }
+
+    if allowAutoReveal {
+      setDraftingSidebarMode(.queue)
+      setDraftingSidebarVisible(true, focusInput: false)
+      return
+    }
+
+    if draftingSidebarVisible, draftingSidebarMode == .queue {
+      activateQueueAttachmentIfNeeded(reason: reason)
+    } else if queueFingerprint == nil {
+      queueStatusLabel.stringValue = "Queue attached. Open Queue to load."
+    }
   }
 
   private func unattachedQueueStatus() -> String {
@@ -4858,6 +4870,7 @@ extension EditorViewController {
 
   func _testingDocumentText() -> String { textView.string }
   func _testingExternalQueueAttachment() -> ExternalQueueAttachment? { externalQueueAttachment }
+  func _testingExternalSessionQueuesConfig() -> TurboDraftConfig.ExternalSessionQueues { externalSessionQueuesConfig }
   func _testingExternalSessionContextAttachment() -> ExternalSessionContextAttachment? { externalSessionContextAttachment }
   func _testingExternalSessionContextSnapshot() -> ExternalSessionContextSnapshot? { externalSessionContextSnapshot }
   func _testingPromptForDraftingAgent(from text: String) -> String { promptAndImagesForAgent(from: text).prompt }
@@ -4893,6 +4906,9 @@ extension EditorViewController {
     textView.setSelectedRange(range)
   }
   func _testingSelection() -> NSRange { textView.selectedRange() }
+  func _testingSetExternalSessionQueues(_ settings: TurboDraftConfig.ExternalSessionQueues) {
+    setExternalSessionQueues(settings)
+  }
 
   func _testingShowFind(replace: Bool) { showFind(replace: replace) }
   func _testingHideFind() { hideFind() }
