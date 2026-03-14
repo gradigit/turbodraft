@@ -4067,11 +4067,32 @@ extension EditorViewController: NSSearchFieldDelegate, NSTextFieldDelegate {
 }
 
 extension EditorViewController: NSTextViewDelegate {
+  override func cancelOperation(_ sender: Any?) {
+    if !findContainer.isHidden {
+      hideFind()
+      return
+    }
+    if draftingSidebarVisible {
+      setDraftingSidebarVisible(false)
+      return
+    }
+    super.cancelOperation(sender)
+  }
+
   func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
     if textView === draftingChatInput {
       if commandSelector == #selector(NSResponder.insertNewline(_:)) {
         return sendDraftingChatMessage()
       }
+      if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+        guard draftingSidebarVisible else { return false }
+        setDraftingSidebarVisible(false)
+        return true
+      }
+      return false
+    }
+
+    if textView === queueEditor {
       if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
         guard draftingSidebarVisible else { return false }
         setDraftingSidebarVisible(false)
@@ -4997,6 +5018,16 @@ extension EditorViewController {
   @discardableResult
   func _testingSidebarDoCommand(_ selector: Selector) -> Bool {
     self.textView(draftingChatInput, doCommandBy: selector)
+  }
+  @discardableResult
+  func _testingQueueEditorDoCommand(_ selector: Selector) -> Bool {
+    self.textView(queueEditor, doCommandBy: selector)
+  }
+  func _testingQueueFocusEditor() {
+    view.window?.makeFirstResponder(queueEditor)
+  }
+  func _testingClickQueueNewButton() {
+    queueNewButton.performClick(nil)
   }
   func _testingQueueDraftingSidebarFileAttachment(url: URL) {
     enqueueDraftingSidebarFiles([url])

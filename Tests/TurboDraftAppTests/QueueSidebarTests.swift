@@ -294,6 +294,39 @@ final class AQueueSidebarTests: XCTestCase {
     XCTAssertTrue(controller._testingQueueStatusText().contains("disabled in settings"))
   }
 
+  func testEscInQueueEditorClosesSidebar() async throws {
+    let bundle = try await makeControllerBundle(
+      initialText: "draft",
+      queueText: "",
+      config: TurboDraftConfig()
+    )
+
+    bundle.controller._testingOpenQueuePanel()
+    await waitUntil({ bundle.controller._testingIsQueueSidebarVisible() })
+    bundle.controller._testingQueueNewItem()
+    bundle.controller._testingQueueFocusEditor()
+
+    XCTAssertTrue(bundle.controller._testingQueueEditorDoCommand(#selector(NSResponder.cancelOperation(_:))))
+    XCTAssertFalse(bundle.controller._testingIsQueueSidebarVisible())
+  }
+
+  func testQueueNewButtonClickAddsItem() async throws {
+    let bundle = try await makeControllerBundle(
+      initialText: "draft",
+      queueText: "",
+      config: TurboDraftConfig()
+    )
+
+    bundle.controller._testingOpenQueuePanel()
+    await waitUntil({ bundle.controller._testingIsQueueSidebarVisible() })
+    XCTAssertEqual(bundle.controller._testingQueueItemCount(), 0)
+
+    bundle.controller._testingClickQueueNewButton()
+
+    XCTAssertEqual(bundle.controller._testingQueueItemCount(), 1)
+    XCTAssertTrue(bundle.controller._testingQueueStatusText().contains("Added empty queued prompt"))
+  }
+
   func testQueueNewItemSeedsFromEditorSelection() async throws {
     let initialText = "Alpha section\nBeta selected text\nGamma section"
     let bundle = try await makeControllerBundle(
