@@ -554,12 +554,16 @@ final class EditorViewController: NSViewController {
     saveStatus.lineBreakMode = .byTruncatingTail
     saveStatus.alignment = .left
     saveStatus.translatesAutoresizingMaskIntoConstraints = false
+    saveStatus.setContentHuggingPriority(.required, for: .horizontal)
+    saveStatus.setContentCompressionResistancePriority(.required, for: .horizontal)
 
     agentButton.target = self
     agentButton.action = #selector(runAgent)
     agentButton.refusesFirstResponder = true
     agentButton.controlSize = .regular
     agentButton.bezelStyle = .rounded
+    agentRow.addArrangedSubview(saveStatus)
+    agentRow.addArrangedSubview(agentRowSpacer)
     agentRow.addArrangedSubview(agentButton)
     agentButton.setContentHuggingPriority(.required, for: .horizontal)
     chatButton.target = self
@@ -580,7 +584,6 @@ final class EditorViewController: NSViewController {
     agentRowSpacer.translatesAutoresizingMaskIntoConstraints = false
     agentRowSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
     agentRowSpacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    agentRow.addArrangedSubview(agentRowSpacer)
 
     draftingSidebar.material = .hudWindow
     draftingSidebar.blendingMode = .withinWindow
@@ -952,8 +955,8 @@ final class EditorViewController: NSViewController {
     stack.setContentHuggingPriority(.defaultLow, for: .horizontal)
     stack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     stack.addArrangedSubview(banner)
-    stack.addArrangedSubview(scrollView)
     stack.addArrangedSubview(agentRow)
+    stack.addArrangedSubview(scrollView)
     scrollView.setContentHuggingPriority(.defaultLow, for: .horizontal)
     scrollView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     draftingSidebar.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -961,7 +964,6 @@ final class EditorViewController: NSViewController {
     view.addSubview(stack)
     view.addSubview(draftingSidebarResizeHandle)
     view.addSubview(draftingSidebar)
-    view.addSubview(saveStatus)
     view.addSubview(findContainer)
 
     mainStackTrailingConstraint = stack.trailingAnchor.constraint(equalTo: view.trailingAnchor)
@@ -981,8 +983,6 @@ final class EditorViewController: NSViewController {
       draftingSidebar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
       draftingSidebarWidthConstraint!,
       banner.heightAnchor.constraint(greaterThanOrEqualToConstant: 0),
-      saveStatus.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor, constant: 22),
-      saveStatus.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: 2),
       findContainer.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: 8),
       findContainer.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: -12),
       findContainer.leadingAnchor.constraint(greaterThanOrEqualTo: scrollView.leadingAnchor, constant: 12),
