@@ -323,8 +323,41 @@ final class AQueueSidebarTests: XCTestCase {
 
     bundle.controller._testingClickQueueNewButton()
 
+    await waitUntil({ bundle.controller._testingQueueItemCount() == 1 })
     XCTAssertEqual(bundle.controller._testingQueueItemCount(), 1)
-    XCTAssertTrue(bundle.controller._testingQueueStatusText().contains("Added empty queued prompt"))
+    XCTAssertTrue(
+      bundle.controller._testingQueueStatusText().contains("Added empty queued prompt")
+        || bundle.controller._testingQueueStatusText().contains("Added new queued prompt")
+    )
+  }
+
+  func testQueueNewWhileInitialLoadPendingSurvivesSnapshotApply() async throws {
+    let bundle = try await makeControllerBundle(
+      initialText: "draft",
+      queueText: "",
+      config: TurboDraftConfig()
+    )
+
+    bundle.controller._testingOpenQueuePanel()
+    await waitUntil({ bundle.controller._testingIsQueueSidebarVisible() })
+    bundle.controller._testingSimulatePendingInitialQueueLoad()
+
+    bundle.controller._testingClickQueueNewButton()
+
+    XCTAssertEqual(bundle.controller._testingQueueItemCount(), 0)
+    XCTAssertTrue(bundle.controller._testingQueueStatusText().contains("will be added when ready"))
+
+    let snapshot = SharedQueueFileSnapshot(
+      items: [SharedQueueItem.newItem(prompt: "existing queued prompt", id: "existing", addedUs: 1)],
+      fileExists: true,
+      fingerprint: "existing-fingerprint"
+    )
+    bundle.controller._testingApplyQueueSnapshot(snapshot, statusMessage: "Loaded 1 queued prompt.")
+
+    XCTAssertEqual(bundle.controller._testingQueueItemCount(), 2)
+    XCTAssertEqual(bundle.controller._testingQueueSelectedRow(), 1)
+    XCTAssertEqual(bundle.controller._testingQueueSelectedPrompt(), "")
+    XCTAssertTrue(bundle.controller._testingQueueStatusText().contains("Added new queued prompt"))
   }
 
   func testQueueNewItemSeedsFromEditorSelection() async throws {
@@ -340,13 +373,17 @@ final class AQueueSidebarTests: XCTestCase {
 
     bundle.controller._testingSetSelection(range)
     bundle.controller._testingOpenQueuePanel()
-    await waitUntil({ bundle.controller._testingQueueItemCount() == 0 })
+    await waitUntil({ bundle.controller._testingIsQueueSidebarVisible() })
     bundle.controller._testingQueueNewItem()
 
+    await waitUntil({ bundle.controller._testingQueueItemCount() == 1 })
     XCTAssertEqual(bundle.controller._testingQueueItemCount(), 1)
     XCTAssertEqual(bundle.controller._testingQueueSelectedPrompt(), "Beta selected text")
     XCTAssertEqual(bundle.controller._testingQueueEditorText(), "Beta selected text")
-    XCTAssertTrue(bundle.controller._testingQueueStatusText().contains("current selection"))
+    XCTAssertTrue(
+      bundle.controller._testingQueueStatusText().contains("current selection")
+        || bundle.controller._testingQueueStatusText().contains("Added new queued prompt")
+    )
   }
 
   func testQueueAttachmentKeepsChatEntryVisibleAndUsesToggleTitles() async throws {

@@ -154,6 +154,7 @@ final class EditorViewController: NSViewController {
   private var queueItems: [SharedQueueItem] = []
   private var queueSelectedLocalID: String?
   private var queueFingerprint: String?
+  private var pendingQueueNewPrompts: [String] = []
   private var queueObservedDiskState = QueueDiskState(absent: true, fileSize: nil, modifiedAt: nil)
   private var queueActiveAttachmentPath: String?
   private var queueDirty = false
@@ -1181,6 +1182,7 @@ final class EditorViewController: NSViewController {
     queueItems.removeAll()
     queueSelectedLocalID = nil
     queueFingerprint = nil
+    pendingQueueNewPrompts.removeAll()
     queueObservedDiskState = QueueDiskState(absent: true, fileSize: nil, modifiedAt: nil)
     queueDirty = false
     isApplyingQueueEditorUpdate = true
@@ -2426,6 +2428,7 @@ final class EditorViewController: NSViewController {
       queueActiveAttachmentPath = nil
       queueDirty = false
       queueFingerprint = nil
+      pendingQueueNewPrompts.removeAll()
       queueObservedDiskState = QueueDiskState(absent: true, fileSize: nil, modifiedAt: nil)
     }
 
@@ -2495,18 +2498,18 @@ final class EditorViewController: NSViewController {
       NSSound.beep()
       return
     }
-    activateQueueAttachmentIfNeeded(reason: "queue new")
-    commitQueueEditorToSelection()
     let seedPrompt = selectedEditorTextForQueueSeed() ?? ""
-    let item = SharedQueueItem.newItem(prompt: seedPrompt)
-    queueItems.append(item)
-    queueDirty = true
-    queueTableView.reloadData()
-    selectQueueItem(localID: item.localID, focusEditor: true)
-    queueStatusLabel.stringValue = seedPrompt.isEmpty
-      ? "Added empty queued prompt. Save to persist."
-      : "Added queued prompt from current selection. Save to persist."
-    updateDraftingSidebarControlState()
+    activateQueueAttachmentIfNeeded(reason: "queue new")
+    if queueLoadTask != nil, queueFingerprint == nil {
+      pendingQueueNewPrompts.append(seedPrompt)
+      queueStatusLabel.stringValue = seedPrompt.isEmpty
+        ? "Loading shared queue… New prompt will be added when ready."
+        : "Loading shared queue… New prompt from current selection will be added when ready."
+      updateDraftingSidebarControlState()
+      return
+    }
+    commitQueueEditorToSelection()
+    appendQueueItem(prompt: seedPrompt, focusEditor: true)
   }
 
   @objc private func queueDeleteAction(_ sender: Any?) {
@@ -2822,15 +2825,33 @@ final class EditorViewController: NSViewController {
     queueItems = snapshot.items
     queueFingerprint = snapshot.fingerprint
     queueDirty = false
+    var resolvedStatusMessage = statusMessage
+    var preferredSelection = previousSelection
+    if !pendingQueueNewPrompts.isEmpty {
+      let pendingPrompts = pendingQueueNewPrompts
+      pendingQueueNewPrompts.removeAll()
+      var lastAddedLocalID: String?
+      for prompt in pendingPrompts {
+        let item = SharedQueueItem.newItem(prompt: prompt)
+        queueItems.append(item)
+        lastAddedLocalID = item.localID
+      }
+      queueDirty = true
+      preferredSelection = lastAddedLocalID ?? previousSelection
+      let queuedCount = pendingPrompts.count
+      resolvedStatusMessage = queuedCount == 1
+        ? "Shared queue loaded. Added new queued prompt. Save to persist."
+        : "Shared queue loaded. Added \(queuedCount) queued prompts. Save to persist."
+    }
     queueTableView.reloadData()
-    if let previousSelection, snapshot.items.contains(where: { $0.localID == previousSelection }) {
-      selectQueueItem(localID: previousSelection, focusEditor: false)
+    if let preferredSelection, queueItems.contains(where: { $0.localID == preferredSelection }) {
+      selectQueueItem(localID: preferredSelection, focusEditor: false)
     } else if let first = snapshot.items.first {
       selectQueueItem(localID: first.localID, focusEditor: false)
     } else {
       selectQueueItem(localID: nil, focusEditor: false)
     }
-    queueStatusLabel.stringValue = statusMessage
+    queueStatusLabel.stringValue = resolvedStatusMessage
     updateDraftingSidebarControlState()
   }
 
@@ -2870,6 +2891,18 @@ final class EditorViewController: NSViewController {
     queueEditor.string = prompt
     isApplyingQueueEditorUpdate = false
     queueEditorScroll.hasVerticalScroller = true
+  }
+
+  private func appendQueueItem(prompt: String, focusEditor: Bool) {
+    let item = SharedQueueItem.newItem(prompt: prompt)
+    queueItems.append(item)
+    queueDirty = true
+    queueTableView.reloadData()
+    selectQueueItem(localID: item.localID, focusEditor: focusEditor)
+    queueStatusLabel.stringValue = prompt.isEmpty
+      ? "Added empty queued prompt. Save to persist."
+      : "Added queued prompt from current selection. Save to persist."
+    updateDraftingSidebarControlState()
   }
 
   private func selectedEditorTextForQueueSeed() -> String? {
@@ -4953,6 +4986,21 @@ extension EditorViewController {
     queueSelectionDidChange(nil)
   }
   func _testingQueueNewItem() { queueNewAction(nil) }
+  func _testingSimulatePendingInitialQueueLoad() {
+    queueLoadTask?.cancel()
+    queueFingerprint = nil
+    queueLoadTask = Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 5_000_000_000)
+    }
+  }
+  func _testingApplyQueueSnapshot(
+    _ snapshot: SharedQueueFileSnapshot,
+    statusMessage: String = "Loaded testing queue."
+  ) {
+    queueLoadTask?.cancel()
+    queueLoadTask = nil
+    applyQueueSnapshot(snapshot, statusMessage: statusMessage)
+  }
   func _testingDeleteQueueSelection() { queueDeleteAction(nil) }
   func _testingSaveQueue() { queueSaveAction(nil) }
   func _testingReloadQueue() { queueReloadAction(nil) }
