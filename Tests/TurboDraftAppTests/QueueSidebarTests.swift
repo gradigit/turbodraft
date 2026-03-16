@@ -54,6 +54,7 @@ final class AQueueSidebarTests: XCTestCase {
 
     XCTAssertEqual(bundle.controller._testingQueueItemCount(), 0)
     XCTAssertTrue(bundle.controller._testingQueueStatusText().contains("Open Queue to load"))
+    XCTAssertTrue(bundle.controller._testingQueueEditorHintText().contains("Click New Prompt"))
 
     bundle.controller._testingOpenQueuePanel()
     await waitUntil({ bundle.controller._testingQueueItemCount() == 1 })
@@ -202,7 +203,7 @@ final class AQueueSidebarTests: XCTestCase {
 
     XCTAssertFalse(bundle.controller._testingIsQueueSidebarVisible())
     XCTAssertEqual(bundle.controller._testingQueueItemCount(), 0)
-    XCTAssertTrue(bundle.controller._testingQueueStatusText().contains("disabled in settings"))
+    XCTAssertTrue(bundle.controller._testingQueueStatusText().localizedCaseInsensitiveContains("disabled"))
   }
 
   func testAutoRevealOnAttachShowsQueueSidebar() async throws {
@@ -235,7 +236,7 @@ final class AQueueSidebarTests: XCTestCase {
 
     XCTAssertFalse(bundle.controller._testingIsQueueSidebarVisible())
     XCTAssertEqual(bundle.controller._testingQueueItemCount(), 0)
-    XCTAssertTrue(bundle.controller._testingQueueStatusText().contains("disabled in settings"))
+    XCTAssertTrue(bundle.controller._testingQueueStatusText().localizedCaseInsensitiveContains("disabled"))
     XCTAssertEqual(bundle.controller._testingExternalSessionQueuesConfig().enabled, false)
   }
 
@@ -291,7 +292,7 @@ final class AQueueSidebarTests: XCTestCase {
 
     XCTAssertFalse(controller._testingIsQueueSidebarVisible())
     XCTAssertEqual(controller._testingQueueItemCount(), 0)
-    XCTAssertTrue(controller._testingQueueStatusText().contains("disabled in settings"))
+    XCTAssertTrue(controller._testingQueueStatusText().localizedCaseInsensitiveContains("disabled"))
   }
 
   func testEscInQueueEditorClosesSidebar() async throws {
@@ -320,15 +321,18 @@ final class AQueueSidebarTests: XCTestCase {
     bundle.controller._testingOpenQueuePanel()
     await waitUntil({ bundle.controller._testingIsQueueSidebarVisible() })
     XCTAssertEqual(bundle.controller._testingQueueItemCount(), 0)
+    XCTAssertEqual(bundle.controller._testingQueueNewButtonTitle(), "New Prompt")
+    XCTAssertEqual(bundle.controller._testingQueueSaveButtonTitle(), "Save")
 
     bundle.controller._testingClickQueueNewButton()
 
     await waitUntil({ bundle.controller._testingQueueItemCount() == 1 })
     XCTAssertEqual(bundle.controller._testingQueueItemCount(), 1)
     XCTAssertTrue(
-      bundle.controller._testingQueueStatusText().contains("Added empty queued prompt")
+      bundle.controller._testingQueueStatusText().contains("New queued prompt created")
         || bundle.controller._testingQueueStatusText().contains("Added new queued prompt")
     )
+    XCTAssertTrue(bundle.controller._testingQueueEditorHintText().contains("Type the queued prompt here"))
   }
 
   func testQueueNewWhileInitialLoadPendingSurvivesSnapshotApply() async throws {
@@ -384,6 +388,7 @@ final class AQueueSidebarTests: XCTestCase {
       bundle.controller._testingQueueStatusText().contains("current selection")
         || bundle.controller._testingQueueStatusText().contains("Added new queued prompt")
     )
+    XCTAssertTrue(bundle.controller._testingQueueEditorHintText().contains("Edit the selected queued prompt here"))
   }
 
   func testQueueAttachmentKeepsChatEntryVisibleAndUsesToggleTitles() async throws {

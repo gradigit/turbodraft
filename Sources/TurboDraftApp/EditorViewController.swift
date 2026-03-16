@@ -107,16 +107,18 @@ final class EditorViewController: NSViewController {
   private let draftingDiffScroll = NSScrollView()
   private let draftingDiffView = NSTextView()
   private let queueTitle = NSTextField(labelWithString: "Queued Prompts")
-  private let queueSubtitle = NSTextField(labelWithString: "Shared external session queue")
+  private let queueSubtitle = NSTextField(labelWithString: "Shared queue for the attached external session")
+  private let queueEditorTitle = NSTextField(labelWithString: "Selected Prompt")
+  private let queueEditorHint = NSTextField(wrappingLabelWithString: "Click New Prompt to create a queued prompt, or select one above to edit it here.")
   private let queueTableScroll = NSScrollView()
   private let queueTableView = NSTableView()
   private let queueEditorScroll = NSScrollView()
   private let queueEditor = NSTextView()
-  private let queueStatusLabel = NSTextField(labelWithString: "No external session queue attached.")
-  private let queueNewButton = NSButton(title: "New", target: nil, action: nil)
-  private let queueDeleteButton = NSButton(title: "Delete", target: nil, action: nil)
+  private let queueStatusLabel = NSTextField(labelWithString: "No shared queue is attached for this session.")
+  private let queueNewButton = NSButton(title: "New Prompt", target: nil, action: nil)
+  private let queueDeleteButton = NSButton(title: "Delete Prompt", target: nil, action: nil)
   private let queueReloadButton = NSButton(title: "Reload", target: nil, action: nil)
-  private let queueSaveButton = NSButton(title: "Save Queue", target: nil, action: nil)
+  private let queueSaveButton = NSButton(title: "Save", target: nil, action: nil)
   private let queueCloseButton = NSButton(title: "Close", target: nil, action: nil)
   private let draftingChatInputMinHeight: CGFloat = 72
   private let draftingChatInputMaxHeight: CGFloat = 140
@@ -790,6 +792,10 @@ final class EditorViewController: NSViewController {
     queueSubtitle.font = NSFont.systemFont(ofSize: 11, weight: .regular)
     queueSubtitle.lineBreakMode = .byWordWrapping
     queueSubtitle.maximumNumberOfLines = 0
+    queueEditorTitle.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+    queueEditorHint.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+    queueEditorHint.lineBreakMode = .byWordWrapping
+    queueEditorHint.maximumNumberOfLines = 0
 
     let queueColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("prompt"))
     queueColumn.title = "Prompt"
@@ -840,8 +846,8 @@ final class EditorViewController: NSViewController {
     queueEditorScroll.layer?.borderWidth = 0.8
 
     queueStatusLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
-    queueStatusLabel.lineBreakMode = .byTruncatingTail
-    queueStatusLabel.maximumNumberOfLines = 2
+    queueStatusLabel.lineBreakMode = .byWordWrapping
+    queueStatusLabel.maximumNumberOfLines = 3
 
     for button in [queueNewButton, queueDeleteButton, queueReloadButton, queueSaveButton, queueCloseButton] {
       button.target = self
@@ -913,9 +919,11 @@ final class EditorViewController: NSViewController {
     queueContentStack.addArrangedSubview(queueTitle)
     queueContentStack.addArrangedSubview(queueSubtitle)
     queueContentStack.addArrangedSubview(queueTableScroll)
+    queueContentStack.addArrangedSubview(queueEditorTitle)
+    queueContentStack.addArrangedSubview(queueEditorHint)
     queueContentStack.addArrangedSubview(queueEditorScroll)
-    queueContentStack.addArrangedSubview(queueStatusLabel)
     queueContentStack.addArrangedSubview(queueButtonsRow)
+    queueContentStack.addArrangedSubview(queueStatusLabel)
     queueTableScroll.setContentHuggingPriority(.defaultLow, for: .vertical)
     queueTableScroll.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
     queueEditorHeightConstraint = queueEditorScroll.heightAnchor.constraint(equalToConstant: 180)
@@ -1188,8 +1196,8 @@ final class EditorViewController: NSViewController {
     isApplyingQueueEditorUpdate = true
     queueEditor.string = ""
     isApplyingQueueEditorUpdate = false
-    queueSubtitle.stringValue = "Shared external session queue"
-    queueStatusLabel.stringValue = "No external session queue attached."
+    queueSubtitle.stringValue = "Shared queue for the attached external session"
+    queueStatusLabel.stringValue = "No shared queue is attached for this session."
     queueTableView.reloadData()
     updateDraftingSidebarModeControls()
     updateDraftingSidebarControlState()
@@ -1789,6 +1797,7 @@ final class EditorViewController: NSViewController {
     queueReloadButton.isEnabled = queueAttached
     queueSaveButton.isEnabled = queueAttached && queueDirty
     queueEditor.isEditable = queueAttached && hasSelection
+    updateQueueEditorPresentation()
   }
 
   nonisolated private func reportedRouteLabel(from adapter: AgentAdapting?) -> String? {
@@ -2242,11 +2251,13 @@ final class EditorViewController: NSViewController {
     draftingDiffScroll.layer?.borderColor = t.secondaryText.withAlphaComponent(0.38).cgColor
     queueTitle.textColor = t.foreground
     queueSubtitle.textColor = t.secondaryText
+    queueEditorTitle.textColor = t.foreground.withAlphaComponent(0.92)
+    queueEditorHint.textColor = t.secondaryText
     queueStatusLabel.textColor = t.secondaryText
     queueEditor.textColor = t.foreground
     queueEditor.insertionPointColor = t.caret
-    queueEditorScroll.layer?.backgroundColor = t.background.withAlphaComponent(0.42).cgColor
-    queueEditorScroll.layer?.borderColor = t.secondaryText.withAlphaComponent(0.38).cgColor
+    queueEditorScroll.layer?.backgroundColor = t.background.withAlphaComponent(0.34).cgColor
+    queueEditorScroll.layer?.borderColor = t.secondaryText.withAlphaComponent(0.30).cgColor
     queueTableScroll.layer?.backgroundColor = t.background.withAlphaComponent(0.42).cgColor
     queueTableScroll.layer?.borderColor = t.secondaryText.withAlphaComponent(0.38).cgColor
     queueNewButton.contentTintColor = t.link
@@ -2254,6 +2265,7 @@ final class EditorViewController: NSViewController {
     queueReloadButton.contentTintColor = t.link
     queueSaveButton.contentTintColor = t.link
     queueCloseButton.contentTintColor = t.secondaryText.withAlphaComponent(0.95)
+    updateQueueEditorPresentation()
     draftingChatAttachmentSummary.textColor = t.secondaryText
     draftingChatAttachButton.contentTintColor = t.link
     draftingChatClearAttachmentsButton.contentTintColor = t.secondaryText.withAlphaComponent(0.95)
@@ -2528,8 +2540,8 @@ final class EditorViewController: NSViewController {
       selectQueueItem(localID: nil, focusEditor: false)
     }
     queueStatusLabel.stringValue = queueItems.isEmpty
-      ? "Queue cleared locally. Save to remove the shared queue file."
-      : "Deleted queued prompt locally. Save to persist."
+      ? "Queue cleared locally. Click Save to remove it from the shared queue."
+      : "Queued prompt deleted locally. Click Save to persist."
     updateDraftingSidebarControlState()
   }
 
@@ -2566,11 +2578,12 @@ final class EditorViewController: NSViewController {
     isApplyingQueueEditorUpdate = false
     queueTableView.reloadData()
     queueStatusLabel.stringValue = statusMessage
+    updateQueueEditorPresentation()
   }
 
   private func refreshQueueAttachmentPresentation() {
     guard let attachment = externalQueueAttachment else {
-      queueSubtitle.stringValue = "Shared external session queue"
+      queueSubtitle.stringValue = "Shared queue for the attached external session"
       return
     }
     var parts: [String] = []
@@ -2594,7 +2607,7 @@ final class EditorViewController: NSViewController {
   }
 
   private func disabledQueueStatus() -> String {
-    "External session queues are disabled in settings."
+    "External shared queues are disabled in Settings."
   }
 
   private func fallbackFromQueueSidebarIfNeeded() {
@@ -2634,7 +2647,7 @@ final class EditorViewController: NSViewController {
     if draftingSidebarVisible, draftingSidebarMode == .queue {
       activateQueueAttachmentIfNeeded(reason: reason)
     } else if queueFingerprint == nil {
-      queueStatusLabel.stringValue = "Queue attached. Open Queue to load."
+      queueStatusLabel.stringValue = "Shared queue attached. Open Queue to load prompts."
     }
   }
 
@@ -2642,7 +2655,7 @@ final class EditorViewController: NSViewController {
     if externalQueueAttachment != nil && !isExternalQueueIntegrationEnabled() {
       return disabledQueueStatus()
     }
-    return "No external session queue attached."
+    return "No shared queue is attached for this session."
   }
 
   private func currentQueueDiskState(for url: URL) -> QueueDiskState {
@@ -2766,7 +2779,7 @@ final class EditorViewController: NSViewController {
       return
     }
     guard queueSaveTask == nil else {
-      queueStatusLabel.stringValue = "Queue save already in progress."
+      queueStatusLabel.stringValue = "Saving shared queue…"
       return
     }
     queueSaveGeneration += 1
@@ -2806,7 +2819,7 @@ final class EditorViewController: NSViewController {
         if saved.items.isEmpty {
           message = "Saved empty queue. Shared queue file removed."
         } else {
-          message = "Saved \(saved.items.count) queued prompt\(saved.items.count == 1 ? "" : "s")."
+          message = "Saved \(saved.items.count) queued prompt\(saved.items.count == 1 ? "" : "s") to the shared queue."
         }
         self.applyQueueSnapshot(saved, statusMessage: message)
       case .failure(SharedQueueFileStoreError.conflict(expected: _, actual: _)):
@@ -2840,8 +2853,8 @@ final class EditorViewController: NSViewController {
       preferredSelection = lastAddedLocalID ?? previousSelection
       let queuedCount = pendingPrompts.count
       resolvedStatusMessage = queuedCount == 1
-        ? "Shared queue loaded. Added new queued prompt. Save to persist."
-        : "Shared queue loaded. Added \(queuedCount) queued prompts. Save to persist."
+        ? "Shared queue loaded. Added new queued prompt. Edit it below, then Save."
+        : "Shared queue loaded. Added \(queuedCount) queued prompts. Edit them below, then Save."
     }
     queueTableView.reloadData()
     if let preferredSelection, queueItems.contains(where: { $0.localID == preferredSelection }) {
@@ -2857,9 +2870,9 @@ final class EditorViewController: NSViewController {
 
   private func loadedQueueStatus(for snapshot: SharedQueueFileSnapshot) -> String {
     if snapshot.items.isEmpty {
-      return "Queue is empty."
+      return "Shared queue is empty. Click New Prompt to create one."
     }
-    return "Loaded \(snapshot.items.count) queued prompt\(snapshot.items.count == 1 ? "" : "s")."
+    return "Loaded \(snapshot.items.count) queued prompt\(snapshot.items.count == 1 ? "" : "s"). Select one above to edit it below."
   }
 
   private func selectedQueueIndex() -> Int? {
@@ -2891,6 +2904,7 @@ final class EditorViewController: NSViewController {
     queueEditor.string = prompt
     isApplyingQueueEditorUpdate = false
     queueEditorScroll.hasVerticalScroller = true
+    updateQueueEditorPresentation()
   }
 
   private func appendQueueItem(prompt: String, focusEditor: Bool) {
@@ -2900,9 +2914,36 @@ final class EditorViewController: NSViewController {
     queueTableView.reloadData()
     selectQueueItem(localID: item.localID, focusEditor: focusEditor)
     queueStatusLabel.stringValue = prompt.isEmpty
-      ? "Added empty queued prompt. Save to persist."
-      : "Added queued prompt from current selection. Save to persist."
+      ? "New queued prompt created. Type it below, then Save."
+      : "New queued prompt created from the current selection. Edit it below, then Save."
     updateDraftingSidebarControlState()
+  }
+
+  private func updateQueueEditorPresentation() {
+    let hasSelection = selectedQueueIndex() != nil
+    let active = isQueueSidebarAvailable() && hasSelection
+    queueEditorScroll.layer?.backgroundColor = colorTheme.background.withAlphaComponent(active ? 0.42 : 0.26).cgColor
+    queueEditorScroll.layer?.borderColor = (active
+      ? colorTheme.link.withAlphaComponent(0.34)
+      : colorTheme.secondaryText.withAlphaComponent(0.22)
+    ).cgColor
+    if !isQueueSidebarAvailable() {
+      queueEditorHint.stringValue = "No shared queue is attached for this session."
+      queueEditorScroll.alphaValue = 0.72
+      return
+    }
+
+    queueEditorScroll.alphaValue = active ? 1.0 : 0.76
+    if !hasSelection {
+      queueEditorHint.stringValue = "No queued prompt selected. Click New Prompt to create one, or select a prompt above to edit it here."
+      return
+    }
+
+    if queueEditor.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      queueEditorHint.stringValue = "Type the queued prompt here, then click Save."
+    } else {
+      queueEditorHint.stringValue = "Edit the selected queued prompt here. Click Save to persist changes."
+    }
   }
 
   private func selectedEditorTextForQueueSeed() -> String? {
@@ -2930,7 +2971,7 @@ final class EditorViewController: NSViewController {
     if queueItems[index].prompt != newPrompt {
       queueItems[index].prompt = newPrompt
       queueDirty = true
-      queueStatusLabel.stringValue = "Queue edited locally. Save to persist."
+      queueStatusLabel.stringValue = "Queued prompt edited locally. Click Save to persist."
       queueTableView.reloadData(forRowIndexes: IndexSet(integer: index), columnIndexes: IndexSet(integer: 0))
       updateDraftingSidebarControlState()
     }
@@ -4967,6 +5008,9 @@ extension EditorViewController {
   }
   func _testingQueueItemCount() -> Int { queueItems.count }
   func _testingQueueStatusText() -> String { queueStatusLabel.stringValue }
+  func _testingQueueEditorHintText() -> String { queueEditorHint.stringValue }
+  func _testingQueueNewButtonTitle() -> String { queueNewButton.title }
+  func _testingQueueSaveButtonTitle() -> String { queueSaveButton.title }
   func _testingQueueSelectedPrompt() -> String? {
     selectedQueueIndex().map { queueItems[$0].prompt }
   }
