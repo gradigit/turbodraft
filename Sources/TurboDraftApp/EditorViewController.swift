@@ -1956,8 +1956,9 @@ final class EditorViewController: NSViewController {
             cwd: self.sessionCwd,
             onDelta: { [weak self] delta in
               guard !delta.isEmpty else { return }
-              Task { @MainActor in
-                self?.appendDraftingAssistantStreamingDelta(delta)
+              let controller = self
+              Task { @MainActor [controller, delta] in
+                controller?.appendDraftingAssistantStreamingDelta(delta)
               }
             }
           )

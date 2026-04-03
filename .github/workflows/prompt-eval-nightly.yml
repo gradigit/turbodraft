@@ -2,44 +2,12 @@ name: prompt-eval-nightly
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "30 8 * * *"
 
 jobs:
-  nightly:
+  deprecated:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Run phase 0/A/B/C
+      - name: Notice
         run: |
-          python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phase0_bootstrap --cycle-id ci-nightly
-          python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phaseA_policy_freeze --cycle-id ci-nightly
-          python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phaseB_judge_reliability --cycle-id ci-nightly --max-cases 6
-          python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phaseC_candidate_generation --cycle-id ci-nightly
-
-      - name: Run phase D/E (simulate if no provider key)
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phaseD_dev --cycle-id ci-nightly --max-cases 3 --simulate-no-provider
-          python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phaseE_adversarial --cycle-id ci-nightly --max-cases 3 --simulate-no-provider
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: prompt-eval-nightly-artifacts
-          path: bench/prompt_eval/reports/ci-nightly/**
+          echo "Prompt-eval control-plane CI no longer runs in this repo."
+          echo "Use the prompt-eval-turbodraft repo for active prompt-eval workflows."

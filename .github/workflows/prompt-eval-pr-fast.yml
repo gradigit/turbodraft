@@ -2,60 +2,12 @@ name: prompt-eval-pr-fast
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - "bench/prompt_eval/**"
-      - "bench/presets/**"
-      - "bench/prompt_architecture/**"
-      - "docs/PROMPT_EVAL_*"
-      - ".github/workflows/prompt-eval-*.yml"
 
 jobs:
-  pr-fast:
+  deprecated:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Validate Promptfoo configs
+      - name: Notice
         run: |
-          npx --yes promptfoo@0.120.25 validate config \
-            -c bench/prompt_eval/config/base.promptfoo.yaml \
-            -c bench/prompt_eval/config/dev.promptfoo.yaml \
-            -c bench/prompt_eval/config/adversarial.promptfoo.yaml \
-            -c bench/prompt_eval/config/holdout.promptfoo.yaml
-
-      - name: Run tool tests
-        run: |
-          python3 -m unittest discover -s bench/prompt_eval/tests -p 'test_*.py'
-
-      - name: Run phase 0 + phase A
-        run: |
-          python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phase0_bootstrap --cycle-id ci-pr-fast
-          python3 bench/prompt_eval/tools/phase_orchestrator.py --phase phaseA_policy_freeze --cycle-id ci-pr-fast
-
-      - name: Run phase D dev (simulated when no provider key)
-        run: |
-          python3 bench/prompt_eval/tools/phase_orchestrator.py \
-            --phase phaseD_dev \
-            --cycle-id ci-pr-fast \
-            --max-cases 2 \
-            --simulate-no-provider
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: prompt-eval-pr-fast-artifacts
-          path: bench/prompt_eval/reports/ci-pr-fast/**
+          echo "Prompt-eval control-plane CI no longer runs in this repo."
+          echo "Use the prompt-eval-turbodraft repo for active prompt-eval workflows."

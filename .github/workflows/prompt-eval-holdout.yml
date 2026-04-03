@@ -2,47 +2,12 @@ name: prompt-eval-holdout
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "bench/prompt_eval/**"
-      - "bench/presets/**"
-      - "bench/prompt_architecture/**"
 
 jobs:
-  holdout:
+  deprecated:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Run holdout phase with explicit allow flag
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PROMPT_EVAL_ALLOW_HOLDOUT: "1"
+      - name: Notice
         run: |
-          python3 bench/prompt_eval/tools/phase_orchestrator.py \
-            --phase phaseF_holdout \
-            --cycle-id ci-holdout \
-            --max-cases 3 \
-            --simulate-no-provider
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: prompt-eval-holdout-artifacts
-          path: bench/prompt_eval/reports/ci-holdout/**
+          echo "Prompt-eval control-plane CI no longer runs in this repo."
+          echo "Use the prompt-eval-turbodraft repo for active prompt-eval workflows."
